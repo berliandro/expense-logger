@@ -208,17 +208,70 @@ function extractSpreadsheetId_(raw) {
   return s;
 }
 
+// Container-bound scripts (copied from an existing Sheet) already have a
+// spreadsheet. getActiveSpreadsheet() returns it; standalone scripts return null.
+function getBoundSpreadsheet_() {
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) {
+      active.getId();
+      return active;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function getSpreadsheet_() {
+  var bound = getBoundSpreadsheet_();
+  if (bound) return bound;
   var raw = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   var id = extractSpreadsheetId_(raw);
   if (!id) {
-    throw new Error('Spreadsheet is not configured - add SPREADSHEET_ID in Apps Script > Project Settings > Script Properties (paste the ID from your Google Sheet URL).');
+    throw new Error('Spreadsheet is not configured - set it via Settings menu > Set Sheet.');
   }
   try {
     return SpreadsheetApp.openById(id);
   } catch (e) {
-    throw new Error('Could not open the Google Sheet - check SPREADSHEET_ID in Script Properties (must be the sheet ID). Original error: ' + (e && e.message ? e.message : e));
+    throw new Error('Could not open the Google Sheet - check Settings menu > Set Sheet (must be the sheet ID). Original error: ' + (e && e.message ? e.message : e));
   }
+}
+
+// True when logging can proceed: container-bound sheet OR a valid saved ID.
+// Session-gated like hasGeminiKey so config presence is only revealed logged-in.
+function hasSpreadsheet(sessionToken) {
+  requireSession_(sessionToken);
+  try {
+    if (getBoundSpreadsheet_()) return true;
+    var raw = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    var id = extractSpreadsheetId_(raw);
+    if (!id) return false;
+    SpreadsheetApp.openById(id).getId();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Stores the Sheet ID (or full Sheet URL) for standalone scripts. Session-gated.
+function saveSpreadsheetId(sheetIdOrUrl, sessionToken) {
+  requireSession_(sessionToken);
+  var id = extractSpreadsheetId_(sheetIdOrUrl);
+  if (!id) {
+    throw new Error('Paste your Google Sheet ID or full Sheet URL first.');
+  }
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(id);
+    ss.getId();
+  } catch (e) {
+    throw new Error('Could not open that Google Sheet - check the ID/URL and sharing (the sheet must be visible to the deploying account).');
+  }
+  try {
+    PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
+  } catch (e) {
+    throw new Error('Could not save Sheet ID - try again.');
+  }
+  return true;
 }
 
 // ---------- ENTRY POINT (serves the form) ----------

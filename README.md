@@ -100,17 +100,22 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 ```
 
 Open the web-app `/exec` URL, set a 6-digit PIN on first run, then add the
-Gemini API key when prompted (Settings menu → Set/Change API key).
+Gemini API key when prompted (Settings menu → Set API key) and the Google
+Sheet when prompted (Settings menu → Set Sheet). If the script was copied
+from an existing Sheet (container-bound), the bound sheet is used
+automatically; standalone scripts ask for the Sheet ID/URL in-app (same
+style as the API-key prompt). `SPREADSHEET_ID` in Script Properties remains
+supported as a manual fallback.
 
 ## Troubleshooting
 
-- `Invalid argument: id` (or `Spreadsheet is not configured` /
-  `Could not open the Google Sheet`) on Log entry means `SPREADSHEET_ID` is
-  missing or invalid in Apps Script > Project Settings > Script Properties.
-  Paste the sheet ID from the sheet URL (the long value between `/d/` and
-  `/edit`; a full URL is also accepted). Then reload the `/exec` URL and try
-  again. The sheet must also contain a `Template` sheet with the header row
-  from Prerequisites.
+- `Google Sheet is not set` (or `Spreadsheet is not configured` /
+  `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log
+  entry means no usable sheet was found. If bound to a Sheet it is used
+  automatically; otherwise set it via Settings menu → Set Sheet (Sheet ID or
+  full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then
+  reload the `/exec` URL and try again. The sheet must also contain a
+  `Template` sheet with the header row from Prerequisites.
 - `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script
   Properties, or it was never saved via Settings menu → Set API key. Add it,
   then retry.
