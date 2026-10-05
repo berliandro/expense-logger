@@ -1446,6 +1446,10 @@
       var m = String((err && err.message) || err || '');
       return /API key is not set|Gemini API key|API key.*missing/i.test(m);
     }
+    function cfCleanError(err) {
+      var m = String((err && err.message) || err || 'Unknown error');
+      return m.replace(/^Exception:\s*/i, '');
+    }
     function cfNoteAuthExpired() {
       cfClearSession();
       try { window.dispatchEvent(new CustomEvent('cf:auth-expired')); } catch (e) {}
@@ -1785,7 +1789,7 @@
         try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
         return;
       }
-      setStatus('Error: ' + (err && err.message ? err.message : err), 'error');
+      setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
     }
 
     function setStatus(text, cls) {
@@ -2109,7 +2113,7 @@
                 try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
                 return;
               }
-              setStatus('Error: ' + (err && err.message ? err.message : err), 'error');
+              setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
             })
             .processTableBatch(payload, sessionToken);
         } else {
@@ -2465,7 +2469,7 @@
               try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
               return;
             }
-            try { setStatus('Error: ' + (err && err.message ? err.message : err), 'error'); } catch (e) {}
+            try { setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e) {}
           })
           .getRecentLogs(sessionToken, reset ? 0 : histOffset, histLimit);
       }

@@ -193,6 +193,34 @@ function buildPrompt(userNote, photoCount) {
   return base;
 }
 
+// ---------- SPREADSHEET ACCESS (friendly config errors) ----------
+
+// SpreadsheetApp.openById(null) throws cryptic "Invalid argument: id".
+// Validate first so family members see what to fix instead.
+function extractSpreadsheetId_(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return '';
+  var m = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (m && m[1]) return m[1];
+  m = s.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+  if (m && m[1]) return m[1];
+  s = s.replace(/^[\s<>"']+|[\s<>"']+$/g, '');
+  return s;
+}
+
+function getSpreadsheet_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  var id = extractSpreadsheetId_(raw);
+  if (!id) {
+    throw new Error('Spreadsheet is not configured - add SPREADSHEET_ID in Apps Script > Project Settings > Script Properties (paste the ID from your Google Sheet URL).');
+  }
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (e) {
+    throw new Error('Could not open the Google Sheet - check SPREADSHEET_ID in Script Properties (must be the sheet ID). Original error: ' + (e && e.message ? e.message : e));
+  }
+}
+
 // ---------- ENTRY POINT (serves the form) ----------
 
 function doGet() {
@@ -225,7 +253,7 @@ function processExpenses(images, noteText, sessionToken) {
   images = images || [];
   noteText = noteText || '';
 
-  var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
+  var ss = getSpreadsheet_();
 
   // Text-only: the note IS the source data.
   if (images.length === 0) {
@@ -370,7 +398,7 @@ function processTableBatch(rows, sessionToken) {
     throw new Error('Gemini returned ' + txns.length + ' transactions for ' + cleanRows.length + ' rows - please try again.');
   }
 
-  var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
+  var ss = getSpreadsheet_();
   var summaries = [];
   var grandTotal = 0;
   for (var i = 0; i < txns.length; i++) {
@@ -724,7 +752,7 @@ function getRecentLogs(sessionToken, offset, limit) {
   if (limit < 1) limit = 10;
   if (limit > 20) limit = 20;
 
-  var ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
+  var ss = getSpreadsheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var sheets = ss.getSheets();
   var all = [];
