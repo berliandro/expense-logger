@@ -1,0 +1,28 @@
+# Clasp auth tokens (never commit — run `clasp login` locally instead)
+.clasprc.json
+**/.clasprc.json
+
+# OpenCode agent session state (local only)
+.opencode/
+
+# Node / tooling
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets — keys live in Apps Script > Project Settings > Script Properties,
+# never in files. Do not commit service-account JSON, .env files, or tokens.
+.env
+.env.*
+*-credentials.json
+*service-account*.json
+secrets/

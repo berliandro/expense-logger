@@ -1,1 +1,64 @@
-# expense-logger
+# Cashflow Logger (expense-logger)
+
+Snap a receipt (or type a note) → Gemini structures it → rows land in Google
+Sheets. Frosted Liquid Glass UI, Standard + Table-batch tabs, PIN-first 12h
+sessions, recent-logs history.
+
+## How it works
+
+- Frontend: `Index.html` (single page, dark default + light mode)
+- Backend: `Code.js` (Apps Script: serves the page, calls Gemini, writes sheets)
+- `appsscript.json`: timezone `Asia/Jakarta`, web app `USER_DEPLOYING` / `MYSELF`
+- `.clasp.json`: binds this folder to the Apps Script project (script ID only —
+  not a credential; safe to keep tracked)
+
+## Prerequisites
+
+- Node.js + [`@google/clasp`](https://github.com/google/clasp)
+  (`npm install -g @google/clasp`)
+- A Google account with access to Google Sheets + AI Studio
+- A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
+- A Google Sheet with a sheet named exactly `Template` whose row 1 contains:
+  `Date | Merchant | Description | Amount | Category | Spending Type | Type | Notes`
+  (column order is flexible; the sheet may stay hidden)
+
+## Clone & setup
+
+```sh
+git clone https://github.com/berliandro/expense-logger.git
+cd expense-logger
+clasp login          # opens Google OAuth in your browser (auth stays local)
+clasp push           # uploads Code.js + Index.html + appsscript.json
+```
+
+Then in the Apps Script editor (**Project Settings → Script Properties**), add:
+
+| Key              | Value                              |
+|------------------|------------------------------------|
+| `GEMINI_API_KEY` | your Gemini key (AI Studio)        |
+| `SPREADSHEET_ID` | the ID from your sheet's URL       |
+
+No keys ever live in this repo — they stay in Script Properties (and the
+browser only ever holds a random 12h session token, never the PIN or keys).
+
+## Deploy
+
+```sh
+clasp version "Describe the change"
+# first time:
+clasp deploy --description "Cashflow logger"
+# afterwards (keep the same web-app URL / deployment ID):
+clasp redeploy <DEPLOYMENT_ID> -V <VERSION> -d "Describe the change"
+```
+
+Open the web-app `/exec` URL, set a 6-digit PIN on first run, then add the
+Gemini API key when prompted (Settings menu → Set/Change API key).
+
+## Security notes
+
+- The raw PIN is never stored on the device and never accepted by sensitive
+  backend calls — login exchanges it (rate-limited: 5 fails / 10 min) for a
+  random 256-bit session token valid 12h, stored hashed server-side.
+- `PIN_HASH` / `PIN_SALT` / hashed sessions live in Script Properties.
+- `.clasprc.json` (your personal clasp OAuth tokens) and `.opencode/`
+  (agent session state) are git-ignored — never commit them.

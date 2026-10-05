@@ -1,0 +1,2504 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0a0c">
+  <meta name="description" content="Log cashflow — snap a receipt or describe income / expense. Saved to Google Sheets via Gemini.">
+  <title>Cashflow Log</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('cf-theme')||'dark';if(localStorage.getItem('cf-hero-hidden')==='1'){document.documentElement.classList.add('hero-hidden-pre');}}catch(e){document.documentElement.dataset.theme='dark';}</script>
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23e60023'/%3E%3Ctext x='50' y='66' font-family='-apple-system, BlinkMacSystemFont, Georgia, serif' font-weight='900' font-size='52' fill='%23ffffff' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23e60023'/%3E%3Ctext x='50' y='66' font-family='-apple-system, BlinkMacSystemFont, Georgia, serif' font-weight='900' font-size='52' fill='%23ffffff' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* Frosted Liquid Glass — refs: "Frosted liquid glass iOS UI UX" (iOS 26 liquid glass, Pinterest glassmorphism boards).
+       Dark default with glowing orange abstract bg; glass = backdrop blur + rgba + translucent border + soft shadow. */
+    :root {
+      --bg: #0d0a0c;
+      --card: rgba(30, 24, 27, 0.62);
+      --glass-border: rgba(255, 255, 255, 0.14);
+      --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      --ink: #faf7f8;
+      --muted: #b9b1b4;
+      --faint: #8d868a;
+      --line: rgba(255, 255, 255, 0.12);
+      --field: rgba(255, 255, 255, 0.07);
+      --field-hover: rgba(255, 255, 255, 0.12);
+      --accent: #e60023;
+      --accent-orange: #ff6a00;
+      --accent-grad: linear-gradient(135deg, #ff6a00 0%, #e60023 100%);
+      --accent-hover: #c5001e;
+      --accent-pressed: #a8001a;
+      --accent-soft: rgba(255, 106, 0, 0.15);
+      --income: #2fbf9a;
+      --income-soft: rgba(47, 191, 154, 0.14);
+      --ok-bg: rgba(18, 43, 37, 0.7);
+      --ok-ink: #5fd6ae;
+      --err-bg: rgba(51, 25, 28, 0.7);
+      --err-ink: #ff9a9e;
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.65), 0 2px 12px rgba(0, 0, 0, 0.35);
+      --font: "Outfit", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    [data-theme="light"] {
+      --bg: #f6f5f2;
+      --card: rgba(255, 255, 255, 0.68);
+      --glass-border: rgba(255, 255, 255, 0.85);
+      --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      --ink: #161214;
+      --muted: #6f6a6c;
+      --faint: #9a9597;
+      --line: rgba(22, 18, 20, 0.1);
+      --field: rgba(22, 18, 20, 0.05);
+      --field-hover: rgba(22, 18, 20, 0.08);
+      --accent-soft: #fdeef1;
+      --income: #0d7a5f;
+      --income-soft: #e3f3ee;
+      --ok-bg: #e7f4ef;
+      --ok-ink: #0d7a5f;
+      --err-bg: #fdecec;
+      --err-ink: #b4232a;
+      --shadow: 0 24px 48px -24px rgba(22, 18, 20, 0.18), 0 2px 8px rgba(22, 18, 20, 0.04);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 20px 0;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+    }
+
+    /* Fixed soft background layer — deep dark base + blurred glowing orange abstract (dark). */
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(640px 420px at 12% 6%, rgba(255, 106, 0, 0.38) 0%, transparent 62%),
+        radial-gradient(720px 520px at 88% 14%, rgba(230, 0, 35, 0.30) 0%, transparent 60%),
+        radial-gradient(900px 620px at 50% 108%, rgba(255, 150, 50, 0.20) 0%, transparent 62%),
+        radial-gradient(520px 380px at 78% 78%, rgba(255, 80, 120, 0.12) 0%, transparent 60%),
+        #0d0a0c;
+      filter: saturate(1.15);
+    }
+    [data-theme="light"] .bg {
+      background:
+        radial-gradient(900px 480px at 12% -8%, #ffe4e9 0%, transparent 60%),
+        radial-gradient(800px 520px at 105% 10%, #fff1e3 0%, transparent 55%),
+        radial-gradient(700px 420px at 50% 110%, rgba(255, 106, 0, 0.14) 0%, transparent 60%),
+        #f6f5f2;
+    }
+
+    .topbar {
+      width: 100%;
+      max-width: 1040px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-mark {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 22px;
+      line-height: 1;
+      box-shadow: 0 8px 20px -8px rgba(230, 0, 35, 0.55);
+      flex: none;
+    }
+    .brand-name { font-weight: 800; letter-spacing: -0.02em; font-size: 17px; }
+    .brand-sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+    .pill {
+      flex: none;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: var(--glass-hi);
+      padding: 8px 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,0.15); }
+
+    .theme-toggle {
+      flex: none;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--ink);
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: var(--glass-hi);
+      padding: 8px 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+    .theme-toggle:hover { background: var(--field-hover); transform: translateY(-1px); }
+
+    /* Navbar: icon-only theme button + single settings popup (declutters crowded bar) */
+    #theme-toggle, #settings-btn {
+      width: 38px; height: 38px;
+      padding: 0;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      font-size: 17px;
+      line-height: 1;
+    }
+    .settings-wrap { position: relative; flex: none; }
+    #settings-menu {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      min-width: 210px;
+      z-index: 60;
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: var(--shadow), var(--glass-hi);
+      border-radius: 16px;
+      padding: 6px;
+    }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--ink);
+      background: transparent;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 12px;
+      cursor: pointer;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .menu-item:hover { background: var(--field-hover); }
+    .menu-item.danger { color: var(--accent); }
+    .menu-item svg { flex: none; opacity: 0.85; display: block; }
+    #theme-toggle svg, #settings-btn svg { display: block; }
+    .menu-sep { height: 1px; background: var(--line); margin: 5px 8px; }
+
+    .shell {
+      width: 100%;
+      max-width: 1040px;
+      display: grid;
+      grid-template-columns: 0.95fr 1.25fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    /* Left: editorial panel (desktop) */
+    .hero { padding: 12px 8px 0 4px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid #f6d3da;
+      padding: 7px 12px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(32px, 4.4vw, 48px);
+      line-height: 0.98;
+      letter-spacing: -0.035em;
+      font-weight: 800;
+      text-wrap: balance;
+    }
+    h1 .thin { color: var(--muted); font-weight: 600; }
+    .lede {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 15.5px;
+      line-height: 1.55;
+      max-width: 38ch;
+    }
+    .steps { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 12px; }
+    .steps li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 13px 14px;
+    }
+    .step-n {
+      flex: none;
+      width: 28px; height: 28px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 800;
+      background: var(--ink);
+      color: #fff;
+    }
+    .steps b { display: block; font-size: 14px; letter-spacing: -0.01em; }
+    .steps span { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+
+    .type-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .type-card {
+      flex: 1 1 0;
+      min-width: 150px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .type-ico { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; flex: none; }
+    .type-ico.out { background: var(--accent-soft); color: var(--accent); }
+    .type-ico.in { background: var(--income-soft); color: var(--income); }
+    .type-card b { display: block; font-size: 13.5px; }
+    .type-card span { display: block; font-size: 12px; color: var(--muted); }
+
+    .tip {
+      border: 1px dashed #d8d2cf;
+      background: rgba(255,255,255,0.55);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .tip b { color: var(--ink); }
+
+    /* Right: form card */
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(232, 228, 225, 0.9);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      padding: 26px;
+    }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .card-head h2 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+    .card-head p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+    .date-badge {
+      flex: none;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--field);
+      border: 1px solid var(--line);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    label.label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 2px 10px;
+    }
+    .label .opt { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--faint); }
+
+    .form-group { margin-bottom: 20px; }
+
+    .upload-zone {
+      position: relative;
+      border: 1.5px dashed #d6d0cc;
+      border-radius: var(--radius-lg);
+      background: #faf9f8;
+      min-height: 172px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: border-color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+      cursor: pointer;
+    }
+    .upload-zone:hover { border-color: var(--faint); background: var(--field); }
+    .upload-zone:focus-visible { outline: 3px solid rgba(230,0,35,0.3); outline-offset: 2px; }
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      transform: scale(1.005);
+    }
+    .upload-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 22px 16px;
+    }
+    .upload-icon {
+      width: 46px; height: 46px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      margin-bottom: 12px;
+      box-shadow: 0 6px 16px -8px rgba(0,0,0,0.18);
+    }
+    .upload-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .upload-subtitle { font-size: 13px; color: var(--muted); margin: 3px 0 14px; }
+    .upload-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+    .btn-choice {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+    .btn-choice:hover { background: var(--field); transform: translateY(-1px); }
+    .btn-choice:active { transform: translateY(0) scale(0.98); }
+    .btn-choice svg { display: block; }
+    .btn-choice:focus-visible, #submit-btn:focus-visible, .chip:focus-visible, .thumb-remove:focus-visible, .add-more:focus-visible, .add-tile:focus-visible, .lightbox-close:focus-visible, .lightbox-nav:focus-visible, .lightbox-delete:focus-visible, .preview-thumb:focus-visible {
+      outline: 3px solid rgba(230,0,35,0.35);
+      outline-offset: 2px;
+    }
+
+    /* Pinterest-style photo grid: rounded cards, hover zoom, numbered badges */
+    .preview-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+      gap: 8px;
+      padding: 10px;
+      background: #131013;
+      max-height: 340px;
+      overflow-y: auto;
+    }
+    .preview-thumb {
+      position: relative;
+      aspect-ratio: 3 / 4;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #262022;
+      border: 1px solid rgba(255,255,255,0.12);
+      cursor: zoom-in;
+      padding: 0;
+    }
+    .preview-thumb img {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+      transition: transform 0.3s ease;
+    }
+    .preview-thumb:hover img, .preview-thumb:focus-visible img { transform: scale(1.06); }
+    .preview-thumb:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .preview-thumb .thumb-num {
+      position: absolute;
+      bottom: 6px; left: 6px;
+      top: auto;
+      font-size: 11px; font-weight: 800;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .preview-thumb .thumb-remove {
+      position: absolute;
+      top: 4px; right: 4px;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.4);
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      display: grid; place-items: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+    .preview-thumb:hover .thumb-remove, .preview-thumb:focus-within .thumb-remove { opacity: 1; }
+    @media (hover: none) {
+      .preview-thumb .thumb-remove { opacity: 1; }
+    }
+    .preview-thumb .thumb-remove:hover { background: var(--accent); transform: scale(1.08); }
+    .preview-thumb .thumb-expand {
+      position: absolute;
+      inset: auto 6px 6px auto;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.4);
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      display: grid; place-items: center;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .preview-thumb:hover .thumb-expand { opacity: 1; }
+    /* Dashed "+" tile to add more photos, Pinterest-board style */
+    .add-tile {
+      aspect-ratio: 3 / 4;
+      border-radius: 12px;
+      border: 1.5px dashed rgba(255,255,255,0.35);
+      background: transparent;
+      color: rgba(255,255,255,0.75);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+    }
+    .add-tile:hover { border-color: #fff; color: #fff; background: rgba(255,255,255,0.06); }
+    .preview-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #131013;
+      color: #fff;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 13px;
+    }
+    .preview-bar .count { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .preview-bar .add-more {
+      font-family: inherit;
+      font-size: 12.5px; font-weight: 700;
+      color: #fff;
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 999px;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+    .preview-bar .add-more:hover { background: rgba(255,255,255,0.24); }
+    .preview-wrap { width: 100%; }
+    /* Fullscreen lightbox viewer */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(10, 8, 9, 0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .lightbox.open { opacity: 1; pointer-events: auto; }
+    .lightbox-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .lightbox-close {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      display: grid; place-items: center;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .lightbox-close:hover { background: var(--accent); transform: scale(1.06); }
+    .lightbox-stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 8px calc(16px + env(safe-area-inset-bottom));
+      min-height: 0;
+    }
+    .lightbox-stage img {
+      max-width: min(92vw, 900px);
+      max-height: 74dvh;
+      object-fit: contain;
+      border-radius: 16px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+      transform: scale(0.97);
+      transition: transform 0.25s ease;
+      background: #000;
+    }
+    .lightbox.open .lightbox-stage img { transform: scale(1); }
+    .lightbox-nav {
+      flex: none;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      display: grid; place-items: center;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .lightbox-nav:hover { background: rgba(255,255,255,0.28); }
+    .lightbox-nav:disabled { opacity: 0.25; cursor: default; }
+    .lightbox-delete {
+      align-self: center;
+      margin-bottom: calc(18px + env(safe-area-inset-bottom));
+      font-family: inherit;
+      font-size: 13.5px; font-weight: 700;
+      color: #ffb3b8;
+      background: rgba(230,0,35,0.16);
+      border: 1px solid rgba(230,0,35,0.5);
+      border-radius: 999px;
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .lightbox-delete:hover { background: var(--accent); color: #fff; }
+    @media (max-width: 480px) {
+      .lightbox-nav { display: none; }
+    }
+    .hidden-input { display: none; }
+    .hidden { display: none !important; }
+    #selected-file { display: none; }
+
+    .textarea-wrap { position: relative; }
+    textarea {
+      width: 100%;
+      font-family: inherit;
+      font-size: 16px;
+      padding: 15px 15px 34px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      resize: vertical;
+      min-height: 108px;
+      background: var(--field);
+      color: var(--ink);
+      outline: none;
+      caret-color: var(--accent-orange);
+      transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+      line-height: 1.5;
+    }
+    textarea:hover { background: var(--field-hover); }
+    textarea:focus { border-color: var(--accent-orange); background: var(--field-hover); box-shadow: 0 0 0 4px var(--accent-soft); }
+    textarea:active { border-color: var(--accent-orange); background: var(--field-hover); }
+    textarea::placeholder { color: var(--faint); }
+    .char-count {
+      position: absolute;
+      right: 12px; bottom: 10px;
+      font-size: 11.5px;
+      color: var(--faint);
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .chip {
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 12px;
+      cursor: pointer;
+      transition: background 0.18s ease, transform 0.18s ease, color 0.18s ease;
+    }
+    .chip:hover { background: var(--field); color: var(--ink); transform: translateY(-1px); }
+    .chip:active { transform: scale(0.97); }
+    .chip.green:hover { background: var(--income-soft); color: var(--income); border-color: #bcd9cf; }
+    .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .chip.green.active { background: var(--income); border-color: var(--income); color: #fff; }
+    /* Muted example chips under the separator */
+    .chip.subtle {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 11px;
+      color: var(--faint);
+      background: transparent;
+      border-style: dashed;
+    }
+    .chip.subtle:hover { color: var(--muted); background: var(--field); border-style: dashed; transform: none; }
+    .chip.subtle.green:hover { color: var(--income); background: var(--income-soft); border-color: #bcd9cf; }
+    .chip.subtle.active { background: var(--ink); color: #fff; border-color: var(--ink); border-style: solid; }
+    /* Pinterest-style hairline separator with tiny label */
+    .chips-sep {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 2px 10px;
+    }
+    .chips-sep span { flex: 1; height: 1px; background: var(--line); }
+    .chips-sep em {
+      font-style: normal;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+    .chips.examples { margin-top: 0; }
+
+    #submit-btn {
+      width: 100%;
+      padding: 15px 16px;
+      font-family: inherit;
+      font-size: 15.5px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 14px 26px -14px rgba(230, 0, 35, 0.6);
+      transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    #submit-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    #submit-btn:active { background: var(--accent-pressed); transform: scale(0.985); }
+    #submit-btn:disabled { background: #d9d4d1; color: #8d888a; box-shadow: none; cursor: not-allowed; transform: none; }
+
+    #status { margin-top: 14px; font-size: 14px; font-weight: 600; line-height: 1.45; border-radius: var(--radius-md); }
+    #status:empty { display: none; }
+    #status.success, #status.error, #status.processing {
+      padding: 13px 14px;
+      border: 1px solid;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    #status.success { color: var(--ok-ink); background: var(--ok-bg); border-color: rgba(13,122,95,0.18); }
+    #status.error { color: var(--err-ink); background: var(--err-bg); border-color: rgba(180,35,42,0.16); }
+    #status.processing { color: var(--muted); background: var(--field); border-color: var(--line); }
+    .status-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: currentColor; }
+
+    .spinner { width: 17px; height: 17px; flex: none; margin-top: 1px; border: 2px solid rgba(0,0,0,0.14); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .skeleton-bar { height: 10px; border-radius: 999px; background: linear-gradient(90deg, #e5e0dd 25%, #f3f0ee 50%, #e5e0dd 75%); background-size: 200% 100%; animation: shimmer 1.3s infinite; flex: 1; margin-top: 5px; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    .fineprint { margin: 14px 2px 0; font-size: 12.5px; color: var(--faint); line-height: 1.5; text-align: center; }
+
+    footer { width: 100%; max-width: 1040px; margin-top: 26px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--faint); }
+    .credit { width: 100%; max-width: 1040px; margin: auto auto 0; padding: 26px 0 env(safe-area-inset-bottom); text-align: center; font-size: 12.5px; color: var(--faint); }
+
+    /* ---- Frosted Liquid Glass overrides (main card, tabs, input areas) ---- */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: var(--shadow), var(--glass-hi);
+    }
+    .steps li, .type-card {
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+      box-shadow: var(--glass-hi);
+    }
+    .tip {
+      background: var(--card);
+      border: 1px dashed var(--line);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .upload-zone, textarea {
+      background: var(--field);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      box-shadow: var(--glass-hi);
+    }
+    .upload-zone:hover, textarea:hover { background: var(--field-hover); }
+    .textarea-wrap textarea:focus, .textarea-wrap textarea:active {
+      border-color: var(--accent-orange);
+      background: var(--field-hover);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    .trow-note:focus { border-color: var(--accent-orange); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .eyebrow { border-color: var(--glass-border); }
+
+    /* Pill-shaped segmented tab selector */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      margin-bottom: 18px;
+      border-radius: 999px;
+      background: var(--field);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(20px) saturate(170%);
+      -webkit-backdrop-filter: blur(20px) saturate(170%);
+      box-shadow: var(--glass-hi);
+    }
+    .tab {
+      flex: 1 1 0;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--muted);
+      background: transparent;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .tab:hover { color: var(--ink); background: var(--field-hover); }
+    .tab.active {
+      color: #fff;
+      background: var(--accent-grad);
+      box-shadow: 0 8px 22px -8px rgba(255, 106, 0, 0.65), inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+    .tab:focus-visible, .theme-toggle:focus-visible, #settings-btn:focus-visible, .menu-item:focus-visible, .trow-thumb:focus-visible,
+    .trow-remove:focus-visible, #add-row-btn:focus-visible, #table-submit-btn:focus-visible,
+    .trow-note:focus-visible, .trow-type:focus-visible {
+      outline: 3px solid rgba(255,106,0,0.45);
+      outline-offset: 2px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Table Layout tab */
+    #table-rows { display: grid; gap: 10px; margin-bottom: 12px; }
+    .trow {
+      display: grid;
+      grid-template-columns: 56px 1fr 118px auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border-radius: var(--radius-md);
+      background: var(--field);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      box-shadow: var(--glass-hi);
+    }
+    .trow-thumb {
+      width: 56px; height: 56px;
+      border-radius: 12px;
+      border: 1px dashed var(--line);
+      background: var(--card);
+      color: var(--muted);
+      cursor: pointer;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      position: relative;
+      flex: none;
+    }
+    .trow-thumb.has-img { border-style: solid; border-color: var(--glass-border); }
+    .trow-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .trow-note {
+      width: 100%;
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+      background: var(--card);
+      color: var(--ink);
+      outline: none;
+    }
+    .trow-note::placeholder { color: var(--faint); }
+    .trow-type {
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+      background: var(--card);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .trow-remove {
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--glass-border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .trow-remove:hover { background: var(--accent-soft); color: var(--accent); border-color: rgba(230,0,35,0.4); }
+    .table-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+    #add-row-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--ink);
+      background: var(--card);
+      border: 1px dashed var(--line);
+      border-radius: 999px;
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    #add-row-btn:hover { background: var(--field-hover); }
+    #table-submit-btn {
+      width: 100%;
+      padding: 15px 16px;
+      font-family: inherit;
+      font-size: 15.5px;
+      font-weight: 800;
+      color: #fff;
+      background: var(--accent-grad);
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 14px 26px -14px rgba(255, 106, 0, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+    #table-submit-btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    #table-submit-btn:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; transform: none; }
+    @media (max-width: 560px) {
+      .trow { grid-template-columns: 52px 1fr 1fr; grid-template-rows: auto auto; }
+      .trow-thumb { grid-row: 1 / 2; grid-column: 1 / 2; }
+      .trow-note { grid-row: 1 / 2; grid-column: 2 / 4; min-width: 0; }
+      .trow-type { grid-row: 2 / 3; grid-column: 1 / 3; width: 100%; min-width: 0; }
+      .trow-remove { grid-row: 2 / 3; grid-column: 3 / 4; justify-self: stretch; text-align: center; }
+    }
+
+    /* Tablet + mobile: single column, input-first hierarchy.
+       Primary task (form card) on top; supporting explainer below the fold. */
+    @media (max-width: 920px) {
+      body { padding: 18px 14px 0; }
+      .shell { grid-template-columns: 1fr; gap: 18px; }
+      .shell > .card { order: -1; padding: 20px; border-radius: 24px; }
+      #history-card { padding: 20px; border-radius: 24px; }
+      .hero { order: 0; padding: 16px 2px 0; border-top: 1px solid var(--line); }
+      h1 { font-size: clamp(22px, 6vw, 28px); margin-bottom: 8px; }
+      .lede { max-width: 60ch; margin-bottom: 12px; font-size: 14px; }
+      .eyebrow { margin-bottom: 10px; }
+      .steps, .tip, .hero-compact-note { display: none !important; }
+      .type-row { margin-bottom: 0; }
+      .card-head { margin-bottom: 14px; }
+      .topbar { margin-bottom: 16px; }
+      .topbar-right { flex-wrap: wrap; justify-content: flex-end; }
+    }
+    .hero-compact-note { display: none; font-size: 13.5px; color: var(--muted); margin: 0 0 4px; }
+
+    @media (max-width: 480px) {
+      body { padding: 14px 12px 0; }
+      .pill { display: none; }
+      .topbar { gap: 10px; }
+      .brand { flex: 1 1 auto; gap: 10px; }
+      .brand-mark { width: 34px; height: 34px; font-size: 18px; }
+      .brand-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand-sub { display: none; }
+      .topbar-right { flex: none; display: flex; align-items: center; gap: 8px; }
+      #theme-toggle, #settings-btn { width: 34px; height: 34px; font-size: 15px; }
+      #settings-menu { min-width: 190px; }
+      .upload-actions { width: 100%; }
+      .btn-choice { flex: 1 1 0; justify-content: center; }
+      .type-card { min-width: 100%; }
+      /* Submit buttons stay in-flow so the flush footer credit is never covered. */
+      .fineprint { margin-bottom: 8px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      html { scroll-behavior: auto; }
+    }
+
+    /* Selected chip contrast — both themes (dark default inverts to light pill) */
+    [data-theme="dark"] .chip.active, [data-theme="dark"] .chip.subtle.active {
+      background: #faf7f8; border-color: #faf7f8; color: #161214;
+    }
+    [data-theme="light"] .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    [data-theme="light"] .chip.green.active { background: var(--income); border-color: var(--income); color: #fff; }
+
+    /* Collapsible intro panel — hidden state spans full width */
+    body.hero-hidden .shell { grid-template-columns: 1fr; max-width: 720px; margin-left: auto; margin-right: auto; }
+    body.hero-hidden .hero { display: none; }
+    html.hero-hidden-pre body .hero { display: none; }
+    html.hero-hidden-pre body .shell { grid-template-columns: 1fr; max-width: 720px; margin-left: auto; margin-right: auto; }
+
+    /* Glass follow-ups for leftover solid surfaces */
+    .btn-choice, .upload-icon {      background: var(--card);
+      border-color: var(--glass-border);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: var(--ink);
+    }
+    .upload-title { color: var(--ink); }
+    /* ---- PIN lock + history (Frosted Liquid Glass) ---- */
+    #lock-screen, #pin-modal, #api-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(13, 10, 12, 0.62);
+      backdrop-filter: blur(22px) saturate(160%);
+      -webkit-backdrop-filter: blur(22px) saturate(160%);
+    }
+    [data-theme="light"] #lock-screen, [data-theme="light"] #pin-modal, [data-theme="light"] #api-modal {
+      background: rgba(246, 245, 242, 0.66);
+    }
+    .lock-card {
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: var(--shadow), var(--glass-hi);
+      border-radius: var(--radius-xl);
+      padding: 30px 26px 24px;
+    }
+    .lock-card .brand-mark { margin: 0 auto 14px; width: 48px; height: 48px; font-size: 26px; }
+    .lock-card h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.02em; }
+    .lock-card p { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+    .pin-input {
+      width: 100%;
+      font-family: inherit;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.5em;
+      text-indent: 0.5em;
+      text-align: center;
+      padding: 14px 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--glass-border);
+      background: var(--field);
+      color: var(--ink);
+      outline: none;
+      font-variant-numeric: tabular-nums;
+    }
+    .pin-input:focus { border-color: var(--accent-orange); box-shadow: 0 0 0 4px rgba(255,106,0,0.18); }
+    .pin-field { margin-bottom: 12px; text-align: left; }
+    .pin-field label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 0 2px 6px; }
+    .pin-field .pin-input { font-size: 20px; letter-spacing: 0.35em; }
+    #pin-submit, #pin-change-save, #api-save {
+      width: 100%;
+      margin-top: 6px;
+      padding: 14px 16px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 800;
+      color: #fff;
+      background: var(--accent-grad);
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 14px 26px -14px rgba(255, 106, 0, 0.65);
+    }
+    #pin-submit:disabled, #api-save:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
+    #pin-change-cancel {
+      width: 100%;
+      margin-top: 10px;
+      padding: 12px 16px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    #pin-error, #pin-change-error, #api-error { min-height: 20px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--err-ink); }
+    .api-input { font-size: 14px !important; letter-spacing: normal !important; text-indent: 0 !important; text-align: left !important; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #api-cancel {
+      width: 100%;
+      margin-top: 10px;
+      padding: 12px 16px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    /* History */
+    .history-card { width: 100%; max-width: 1040px; margin: 18px auto 0; }
+    /* PIN-first: app content stays hidden until a valid 12h session unlocks it */
+    body.locked .shell, body.locked #history-card, body.locked footer, body.locked .credit { display: none; }
+    .history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .history-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+    .history-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    #history-list { display: grid; gap: 8px; margin-bottom: 12px; }
+    #history-list:empty { display: none; }
+    .hist-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--field);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-hi);
+      font-size: 13.5px;
+    }
+    .hist-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .hist-merchant { font-weight: 800; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hist-badge { flex: none; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+    .hist-badge.expense { color: var(--accent); background: var(--accent-soft); }
+    .hist-badge.income { color: var(--income); background: var(--income-soft); }
+    .hist-amount { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .hist-amount.neg { color: var(--accent); }
+    .hist-sub { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hist-meta { grid-column: 1 / -1; color: var(--faint); font-size: 11.5px; }
+    .history-foot { display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-foot .btn-choice { flex: 1 1 0; justify-content: center; }
+    @media (max-width: 560px) {
+      .lock-card { padding: 24px 18px 20px; }
+      .history-head { flex-direction: column; }
+    }
+    .date-badge {
+      background: var(--field);
+      border-color: var(--glass-border);
+      color: var(--muted);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+
+<body class="locked">
+  <div class="bg" aria-hidden="true"></div>
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">C</div>
+      <div>
+        <div class="brand-name">Cashflow Log</div>
+        <div class="brand-sub">Expense + income &rarr; Sheets</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <div class="settings-wrap">
+        <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
+          <button type="button" class="menu-item" id="hero-toggle" role="menuitem" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="menu-label">Show intro</span></button>
+          <div class="menu-sep" aria-hidden="true"></div>
+          <button type="button" class="menu-item hidden" id="pin-change-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="menu-label">Change PIN</span></button>
+          <button type="button" class="menu-item hidden" id="api-key-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span class="menu-label">Set API key</span></button>
+          <button type="button" class="menu-item danger hidden" id="pin-logout-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="menu-label">Log out</span></button>
+        </div>
+      </div>
+      <div class="pill"><span class="dot"></span>Private &middot; Gemini &middot; Sheets</div>
+    </div>
+  </div>
+
+  <div class="shell">
+    <!-- Reference: Pinterest "Minimal Finance App UI" / "Expense Tracker UI" —
+         soft neutral bg, white rounded cards, pill CTA, left editorial + right form. -->
+    <section class="hero" aria-label="About">
+      <div class="eyebrow">Receipt &rarr; Sheet in seconds</div>
+      <h1>Log cashflow <span class="thin">without the spreadsheet chore.</span></h1>
+      <p class="lede">Snap a receipt, invoice, payslip or transfer proof — or just type what happened. Gemini extracts date, merchant, amount and category.</p>
+      <p class="hero-compact-note">Snap a receipt or describe income / expense below.</p>
+
+      <ul class="steps">
+        <li><div class="step-n">1</div><div><b>Attach or type</b><span>Photos optional — attach several receipts at once. A short note like “Gaji bulanan 5jt” works.</span></div></li>
+        <li><div class="step-n">2</div><div><b>Gemini structures each photo</b><span>Date, merchant, items, Expense vs Income per receipt. Missing date &rarr; today.</span></div></li>
+        <li><div class="step-n">3</div><div><b>Saved to the month sheet</b><span>Rows land in “MMMM yyyy” under Date · Merchant · Amount · Type.</span></div></li>
+      </ul>
+
+      <div class="type-row">
+        <div class="type-card">
+          <div class="type-ico out">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div><b>Expense</b><span>Bills, groceries, rent</span></div>
+        </div>
+        <div class="type-card">
+          <div class="type-ico in">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+          </div>
+          <div><b>Income</b><span>Salary, clients, sales</span></div>
+        </div>
+      </div>
+
+      <div class="tip"><b>Tip:</b> no date on the receipt? Leave it out — it is logged under today automatically.</div>
+    </section>
+
+    <main class="card" aria-label="Log entry form">
+      <div class="card-head">
+        <div>
+          <h2>New entry</h2>
+          <p>Photo optional. Note optional. One of them required.</p>
+        </div>
+        <div class="date-badge" id="today-badge">Today</div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Entry mode">
+        <button type="button" class="tab active" id="tabbtn-standard" role="tab" aria-selected="true" aria-controls="tab-standard">Standard</button>
+        <button type="button" class="tab" id="tabbtn-table" role="tab" aria-selected="false" aria-controls="tab-table">Table Layout</button>
+      </div>
+
+      <div id="tab-standard" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-standard">
+      <form id="expense-form" novalidate>
+        <div class="form-group">
+          <label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label>
+          <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-labelledby="upload-label" aria-describedby="drop-hint">
+            <div id="upload-placeholder" class="upload-placeholder">
+              <div class="upload-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="22" height="22">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.105-.782.16-1.185.16h-.14a1.5 1.5 0 00-1.5 1.5V16.5a1.5 1.5 0 001.5 1.5h15.25a1.5 1.5 0 001.5-1.5V8.89a1.5 1.5 0 00-1.5-1.5h-.14c-.403 0-.806-.055-1.185-.16a2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                </svg>
+              </div>
+              <div class="upload-title">Drag receipts here, or choose</div>
+              <div class="upload-subtitle" id="drop-hint">Snapped on phone? Use Camera. From files? Use Gallery — you can pick several.</div>
+              <div class="upload-actions">
+                <button type="button" class="btn-choice" id="camera-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Camera
+                </button>
+                <button type="button" class="btn-choice" id="gallery-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  Gallery
+                </button>
+              </div>
+            </div>
+
+            <div id="preview-wrap" class="preview-wrap hidden" aria-live="polite">
+              <div id="preview-grid" class="preview-grid"></div>
+              <div class="preview-bar">
+                <span class="count" id="preview-count">0 photos</span>
+                <span>
+                  <button type="button" class="add-more" id="add-more-btn">Add more</button>
+                  <button type="button" class="add-more" id="remove-all-btn">Clear</button>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <input type="file" id="cameraInput" class="hidden-input" accept="image/*" capture="environment" multiple>
+          <input type="file" id="galleryInput" class="hidden-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/*" multiple>
+          <div id="selected-file"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="label" for="note">Note / description <span class="opt" id="counter">0 / 1000</span></label>
+          <div class="textarea-wrap">
+            <textarea id="note" maxlength="1000" placeholder='Applies to all photos, e.g. "first photo is e-wallet top-up, third is paying food for my friend"'></textarea>
+            <div class="char-count" aria-hidden="true"></div>
+          </div>
+          <div class="chips" aria-label="Templates">
+            <button type="button" class="chip" data-text="For lunch and dinner">Day meal</button>
+            <button type="button" class="chip" data-text="Expense for work. To be reimburse">Work</button>
+            <button type="button" class="chip" data-text="For my dog, Isabella. To be reimburse by my friend">Bella</button>
+            <button type="button" class="chip" data-text="Weekly groceries">Weekly</button>
+            <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
+          </div>
+          <div class="chips-sep" aria-hidden="true"><span></span><em>Ex</em><span></span></div>
+          <div class="chips examples" aria-label="Examples">
+            <button type="button" class="chip subtle" data-text="Alfamart groceries 85rb, some for work">Groceries</button>
+            <button type="button" class="chip subtle green" data-text="Gaji bulanan 5jt masuk hari ini">Salary in</button>
+            <button type="button" class="chip subtle green" data-text="Payment received from client 1.5jt">Client paid</button>
+          </div>
+        </div>
+
+        <button type="submit" id="submit-btn">
+          <svg id="submit-ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span id="submit-label">Log entry</span>
+        </button>
+      </form>
+      </div>
+
+      <div id="tab-table" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-table">
+        <div class="form-group">
+          <label class="label">Rows — photo optional <span class="opt" id="table-count-label">0 rows</span></label>
+          <div id="table-rows" aria-live="polite"></div>
+          <div class="table-actions">
+            <button type="button" id="add-row-btn">+ Add Row</button>
+          </div>
+        </div>
+        <button type="button" id="table-submit-btn">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span id="table-submit-label">Submit Batch</span>
+        </button>
+        <p class="fineprint">Each row = optional photo + its own note + forced Expense/Income. Empty rows are ignored. All filled rows are sent in ONE Gemini request.</p>
+      </div>
+
+      <div id="status" role="status" aria-live="polite"></div>
+      <p class="fineprint">Each photo is logged as its own receipt — discounts/fees share that receipt's category. One note applies to all photos; mention “first photo… third photo…” to describe them individually.</p>
+    </main>
+  </div>
+
+  <footer>
+    <span>Cashflow Logger · Apps Script + Gemini + Sheets</span>
+    <span id="foot-date"></span>
+  </footer>
+
+  <section id="history-card" class="card history-card hidden" aria-label="Recent logs">
+    <div class="history-head">
+      <div>
+        <h2>Recent logs</h2>
+        <p id="history-sub">Newest first, across all month sheets.</p>
+      </div>
+      <button type="button" class="theme-toggle" id="history-refresh" aria-label="Refresh recent logs">Refresh</button>
+    </div>
+    <div id="history-list" aria-live="polite"></div>
+    <div class="history-foot">
+      <button type="button" class="btn-choice" id="history-load">Show recent 10</button>
+      <button type="button" class="btn-choice hidden" id="history-more">Show 10 more</button>
+    </div>
+  </section>
+
+  <div class="credit">Made by @berliandro</div>
+
+  <!-- Fullscreen photo viewer -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+    <div class="lightbox-top">
+      <span id="lightbox-counter">1 / 1</span>
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close viewer">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="lightbox-stage">
+      <button type="button" class="lightbox-nav" id="lightbox-prev" aria-label="Previous photo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <img id="lightbox-img" src="" alt="Receipt full view">
+      <button type="button" class="lightbox-nav" id="lightbox-next" aria-label="Next photo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+    <button type="button" class="lightbox-delete" id="lightbox-delete">Remove this photo</button>
+  </div>
+
+  <div id="lock-screen" role="dialog" aria-modal="true" aria-label="PIN lock">
+    <div class="lock-card">
+      <div class="brand-mark">C</div>
+      <h2 id="lock-title">Enter PIN</h2>
+      <p id="lock-sub">Enter your 6-digit PIN to continue.</p>
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••" aria-label="6-digit PIN">
+      <button type="button" id="pin-submit">Unlock</button>
+      <div id="pin-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Change PIN">
+    <div class="lock-card">
+      <h2>Change PIN</h2>
+      <p>Verified on Google's server — the PIN is never checked on this device.</p>
+      <div class="pin-field"><label for="pin-old">Current PIN</label><input id="pin-old" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <div class="pin-field"><label for="pin-new">New 6-digit PIN</label><input id="pin-new" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <div class="pin-field"><label for="pin-new2">Confirm new PIN</label><input id="pin-new2" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <button type="button" id="pin-change-save">Save new PIN</button>
+      <button type="button" id="pin-change-cancel">Cancel</button>
+      <div id="pin-change-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="api-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Gemini API key">
+    <div class="lock-card">
+      <h2>Add Gemini API key</h2>
+      <p>No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.</p>
+      <div class="pin-field"><label for="api-key-input">Gemini API key</label><input id="api-key-input" class="pin-input api-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste key (AIza…)"></div>
+      <button type="button" id="api-save">Save API key</button>
+      <button type="button" id="api-cancel">Later</button>
+      <div id="api-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <script>
+    var form = document.getElementById('expense-form');
+    var statusEl = document.getElementById('status');
+    var submitBtn = document.getElementById('submit-btn');
+    var submitLabel = document.getElementById('submit-label');
+    var cameraBtn = document.getElementById('camera-btn');
+    var galleryBtn = document.getElementById('gallery-btn');
+    var cameraInput = document.getElementById('cameraInput');
+    var galleryInput = document.getElementById('galleryInput');
+    var uploadPlaceholder = document.getElementById('upload-placeholder');
+    var uploadZone = document.getElementById('upload-zone');
+    var previewWrap = document.getElementById('preview-wrap');
+    var previewGrid = document.getElementById('preview-grid');
+    var previewCount = document.getElementById('preview-count');
+    var addMoreBtn = document.getElementById('add-more-btn');
+    var removeAllBtn = document.getElementById('remove-all-btn');
+    var photoCountLabel = document.getElementById('photo-count-label');
+    var noteEl = document.getElementById('note');
+    var counterEl = document.getElementById('counter');
+    var activeChip = null;
+    var savedNote = '';
+    var selectedFiles = [];
+    var thumbUrls = [];
+    var MAX_PHOTOS = 10;
+    // 12h server session token: kept in memory + localStorage, sent with every
+    // sensitive call. The raw PIN is never stored. All checks run server-side.
+    var sessionToken = null;
+    function cfSaveSession(token, expiresAt) {
+      sessionToken = token;
+      try { localStorage.setItem('cf-session', JSON.stringify({ t: token, e: expiresAt })); } catch (e) {}
+    }
+    function cfLoadSession() {
+      try {
+        var raw = localStorage.getItem('cf-session');
+        if (!raw) return null;
+        var o = JSON.parse(raw);
+        if (!o || !o.t) return null;
+        if (o.e && o.e <= Date.now()) { try { localStorage.removeItem('cf-session'); } catch (e2) {} return null; }
+        return o;
+      } catch (e) { return null; }
+    }
+    function cfClearSession() {
+      sessionToken = null;
+      try { localStorage.removeItem('cf-session'); } catch (e) {}
+    }
+    function cfIsAuthError(err) {
+      var m = String((err && err.message) || err || '');
+      return /Session expired|Unauthorized|log in again/i.test(m);
+    }
+    function cfIsMissingKeyError(err) {
+      var m = String((err && err.message) || err || '');
+      return /API key is not set|Gemini API key|API key.*missing/i.test(m);
+    }
+    function cfNoteAuthExpired() {
+      cfClearSession();
+      try { window.dispatchEvent(new CustomEvent('cf:auth-expired')); } catch (e) {}
+    }
+
+    try {
+      var now = new Date();
+      var fmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      document.getElementById('today-badge').textContent = fmt.format(now);
+      document.getElementById('foot-date').textContent = fmt.format(now) + ' · ' + now.getFullYear();
+    } catch (e) {}
+
+    function updateCounter() {
+      var n = noteEl.value.length;
+      counterEl.textContent = n + ' / 1000';
+    }
+    noteEl.addEventListener('input', updateCounter);
+    updateCounter();
+
+    document.querySelectorAll('.chip').forEach(function (chip) {
+      chip.setAttribute('aria-pressed', 'false');
+      chip.addEventListener('click', function () {
+        var t = chip.getAttribute('data-text') || '';
+        if (activeChip === chip) {
+          // Toggle off: restore text that was there before the template
+          noteEl.value = savedNote;
+          chip.classList.remove('active');
+          chip.setAttribute('aria-pressed', 'false');
+          activeChip = null;
+          savedNote = '';
+        } else {
+          // First activation stashes current text; switching templates keeps the original stash
+          if (!activeChip) savedNote = noteEl.value;
+          if (activeChip && activeChip !== chip) {
+            activeChip.classList.remove('active');
+            activeChip.setAttribute('aria-pressed', 'false');
+          }
+          noteEl.value = t;
+          chip.classList.add('active');
+          chip.setAttribute('aria-pressed', 'true');
+          activeChip = chip;
+        }
+        if (noteEl.value.length > 1000) noteEl.value = noteEl.value.slice(0, 1000);
+        updateCounter();
+        noteEl.focus();
+      });
+    });
+
+    function clearChipState() {
+      if (activeChip) {
+        activeChip.classList.remove('active');
+        activeChip.setAttribute('aria-pressed', 'false');
+      }
+      activeChip = null;
+      savedNote = '';
+    }
+
+    function openPicker(input) { input.click(); }
+    cameraBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(cameraInput); });
+    galleryBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+    addMoreBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+    removeAllBtn.addEventListener('click', function (e) { e.stopPropagation(); clearPreview(); });
+    uploadZone.addEventListener('click', function (e) {
+      if (e.target.closest('.thumb-remove') || e.target.closest('.btn-choice') || e.target.closest('.add-more')) return;
+      if (selectedFiles.length > 0) return;
+      openPicker(galleryInput);
+    });
+    uploadZone.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(galleryInput); }
+    });
+
+    // Drag & drop (desktop) - accepts multiple files
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      uploadZone.addEventListener(ev, function (e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      uploadZone.addEventListener(ev, function (e) { e.preventDefault(); uploadZone.classList.remove('dragover'); });
+    });
+    uploadZone.addEventListener('drop', function (e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || files.length === 0) return;
+      addFiles(files);
+    });
+
+    cameraInput.addEventListener('change', function () {
+      if (cameraInput.files.length > 0) addFiles(cameraInput.files);
+      cameraInput.value = '';
+    });
+
+    galleryInput.addEventListener('change', function () {
+      if (galleryInput.files.length > 0) addFiles(galleryInput.files);
+      galleryInput.value = '';
+    });
+
+    function addFiles(fileList) {
+      var added = 0;
+      for (var i = 0; i < fileList.length; i++) {
+        if (selectedFiles.length >= MAX_PHOTOS) break;
+        var f = fileList[i];
+        if (!f.type || f.type.indexOf('image/') !== 0) continue;
+        selectedFiles.push(f);
+        added++;
+      }
+      if (selectedFiles.length >= MAX_PHOTOS) {
+        setStatus('Maximum ' + MAX_PHOTOS + ' photos per submission.', 'error');
+        setTimeout(function () { if (statusEl.className === 'error') { statusEl.textContent = ''; statusEl.className = ''; } }, 2500);
+      }
+      if (added > 0) renderPreviews();
+    }
+
+    function renderPreviews() {
+      // Revoke old object URLs
+      thumbUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+      thumbUrls = [];
+      previewGrid.innerHTML = '';
+      if (selectedFiles.length === 0) {
+        previewWrap.classList.add('hidden');
+        uploadPlaceholder.classList.remove('hidden');
+        photoCountLabel.textContent = 'JPG · PNG · WEBP · HEIC';
+        return;
+      }
+      selectedFiles.forEach(function (file, idx) {
+        var url = URL.createObjectURL(file);
+        thumbUrls.push(url);
+        var thumb = document.createElement('button');
+        thumb.type = 'button';
+        thumb.className = 'preview-thumb';
+        thumb.setAttribute('aria-label', 'View photo ' + (idx + 1));
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Receipt ' + (idx + 1);
+        var num = document.createElement('span');
+        num.className = 'thumb-num';
+        num.textContent = idx + 1;
+        var expand = document.createElement('span');
+        expand.className = 'thumb-expand';
+        expand.setAttribute('aria-hidden', 'true');
+        expand.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>';
+        var rm = document.createElement('span');
+        rm.className = 'thumb-remove';
+        rm.setAttribute('role', 'button');
+        rm.setAttribute('aria-label', 'Remove photo ' + (idx + 1));
+        rm.setAttribute('tabindex', '0');
+        rm.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>';
+        rm.addEventListener('click', function (e) {
+          e.stopPropagation();
+          selectedFiles.splice(idx, 1);
+          renderPreviews();
+        });
+        rm.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); selectedFiles.splice(idx, 1); renderPreviews(); }
+        });
+        thumb.appendChild(img);
+        thumb.appendChild(num);
+        thumb.appendChild(expand);
+        thumb.appendChild(rm);
+        thumb.addEventListener('click', function () { openLightbox(idx); });
+        previewGrid.appendChild(thumb);
+      });
+      if (selectedFiles.length < MAX_PHOTOS) {
+        var addTile = document.createElement('button');
+        addTile.type = 'button';
+        addTile.className = 'add-tile';
+        addTile.setAttribute('aria-label', 'Add more photos');
+        addTile.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span>';
+        addTile.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+        previewGrid.appendChild(addTile);
+      }
+      var label = selectedFiles.length + (selectedFiles.length === 1 ? ' photo' : ' photos');
+      previewCount.textContent = label;
+      photoCountLabel.textContent = label;
+      previewWrap.classList.remove('hidden');
+      uploadPlaceholder.classList.add('hidden');
+    }
+
+    function clearPreview() {
+      cameraInput.value = '';
+      galleryInput.value = '';
+      selectedFiles = [];
+      closeLightbox();
+      renderPreviews();
+    }
+
+    /* Fullscreen viewer */
+    var lightbox = document.getElementById('lightbox');
+    var lightboxImg = document.getElementById('lightbox-img');
+    var lightboxCounter = document.getElementById('lightbox-counter');
+    var lightboxPrev = document.getElementById('lightbox-prev');
+    var lightboxNext = document.getElementById('lightbox-next');
+    var lightboxDelete = document.getElementById('lightbox-delete');
+    var lbIndex = 0;
+    var touchStartX = null;
+
+    function openLightbox(i) {
+      if (!selectedFiles.length) return;
+      lbIndex = Math.max(0, Math.min(i, selectedFiles.length - 1));
+      showLbPhoto();
+      lightbox.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      document.getElementById('lightbox-close').focus();
+    }
+    function showLbPhoto() {
+      // Revoke previous viewer URL (grid thumbs keep their own)
+      if (lightboxImg.src && lightboxImg.src.indexOf('blob:') === 0) {
+        try { URL.revokeObjectURL(lightboxImg.src); } catch (e) {}
+      }
+      lightboxImg.src = URL.createObjectURL(selectedFiles[lbIndex]);
+      lightboxImg.alt = 'Receipt ' + (lbIndex + 1) + ' full view';
+      lightboxCounter.textContent = (lbIndex + 1) + ' / ' + selectedFiles.length;
+      lightboxPrev.disabled = lbIndex === 0;
+      lightboxNext.disabled = lbIndex === selectedFiles.length - 1;
+      lightboxDelete.textContent = 'Remove photo ' + (lbIndex + 1);
+    }
+    function closeLightbox() {
+      if (!lightbox.classList.contains('open')) return;
+      lightbox.classList.remove('open');
+      document.body.style.overflow = '';
+      if (lightboxImg.src && lightboxImg.src.indexOf('blob:') === 0) {
+        try { URL.revokeObjectURL(lightboxImg.src); } catch (e) {}
+      }
+      lightboxImg.src = '';
+    }
+    function stepLightbox(d) {
+      var n = lbIndex + d;
+      if (n < 0 || n >= selectedFiles.length) return;
+      lbIndex = n;
+      showLbPhoto();
+    }
+    document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+    lightboxPrev.addEventListener('click', function () { stepLightbox(-1); });
+    lightboxNext.addEventListener('click', function () { stepLightbox(1); });
+    lightboxDelete.addEventListener('click', function () {
+      selectedFiles.splice(lbIndex, 1);
+      if (!selectedFiles.length) { closeLightbox(); renderPreviews(); return; }
+      if (lbIndex >= selectedFiles.length) lbIndex = selectedFiles.length - 1;
+      showLbPhoto();
+      renderPreviews();
+    });
+    lightbox.addEventListener('click', function (e) {
+      if (e.target === lightbox) closeLightbox();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (!lightbox.classList.contains('open')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') stepLightbox(-1);
+      else if (e.key === 'ArrowRight') stepLightbox(1);
+    });
+    lightboxImg.addEventListener('touchstart', function (e) {
+      touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    lightboxImg.addEventListener('touchend', function (e) {
+      if (touchStartX === null) return;
+      var dx = e.changedTouches[0].clientX - touchStartX;
+      touchStartX = null;
+      if (Math.abs(dx) > 48) stepLightbox(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      var noteText = noteEl.value.trim();
+
+      if (selectedFiles.length === 0 && !noteText) {
+        setStatus('Add a photo or a description first.', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitLabel.textContent = 'Saving…';
+      if (selectedFiles.length > 1) {
+        setStatus('Reading ' + selectedFiles.length + ' receipts in one pass…', '');
+      } else {
+        setStatus('Processing…', '');
+      }
+
+      if (selectedFiles.length > 0) {
+        var files = selectedFiles.slice();
+        var images = new Array(files.length);
+        var pending = files.length;
+        var failed = false;
+        files.forEach(function (file, idx) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            if (failed) return;
+            images[idx] = { data: reader.result.split(',')[1], mimeType: file.type };
+            pending--;
+            if (pending === 0) submitExpenses(images, noteText);
+          };
+          reader.onerror = function () {
+            if (failed) return;
+            failed = true;
+            submitBtn.disabled = false;
+            submitLabel.textContent = 'Log entry';
+            setStatus('Could not read photo ' + (idx + 1) + '. Try again.', 'error');
+          };
+          reader.readAsDataURL(file);
+        });
+      } else {
+        submitExpenses([], noteText);
+      }
+    });
+
+    function submitExpenses(images, noteText) {
+      if (window.google && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(onSuccess)
+          .withFailureHandler(onFailure)
+          .processExpenses(images, noteText, sessionToken);
+      } else {
+        // Local preview (outside Apps Script): simulate success so layout can be reviewed
+        var n = images ? images.length : 0;
+        setTimeout(function () { onSuccess(n > 1 ? 'Logged ' + n + ' receipts (preview)' : 'Income logged: Demo Client, 1 item(s), total Rp1.500.000 (preview)'); }, 900);
+      }
+    }
+
+    function onSuccess(summary) {
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Log entry';
+      var isIncome = /^income/i.test(summary || '');
+      setStatus(summary, isIncome ? 'success income' : 'success');
+      form.reset();
+      clearChipState();
+      updateCounter();
+      clearPreview();
+    }
+
+    function onFailure(err) {
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Log entry';
+      if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+        setStatus('Session expired - please log in again.', 'error');
+        try { cfNoteAuthExpired(); } catch (e) {}
+        return;
+      }
+      if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
+        setStatus('Gemini API key is missing - please add it.', 'error');
+        try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
+        return;
+      }
+      setStatus('Error: ' + (err && err.message ? err.message : err), 'error');
+    }
+
+    function setStatus(text, cls) {
+      statusEl.className = '';
+      if (cls === '' && text) {
+        statusEl.className = 'processing';
+        statusEl.innerHTML = '';
+        var sp = document.createElement('div');
+        sp.className = 'spinner';
+        sp.setAttribute('aria-hidden', 'true');
+        var sk = document.createElement('div');
+        sk.className = 'skeleton-bar';
+        sk.setAttribute('aria-hidden', 'true');
+        var lb = document.createElement('span');
+        lb.style.flex = 'none';
+        lb.textContent = text;
+        statusEl.appendChild(sp);
+        statusEl.appendChild(sk);
+        statusEl.appendChild(lb);
+      } else if (text) {
+        statusEl.textContent = '';
+        statusEl.className = cls || '';
+        var d = document.createElement('span');
+        d.className = 'status-dot';
+        d.setAttribute('aria-hidden', 'true');
+        var s = document.createElement('span');
+        s.textContent = text;
+        statusEl.appendChild(d);
+        statusEl.appendChild(s);
+      } else {
+        statusEl.textContent = '';
+        statusEl.className = '';
+      }
+    }
+
+    /* Theme toggle — dark default, persists (icon-only moon/sun SVG) */
+    (function initTheme() {
+      var btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      var MOON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+      var SUN = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+      function paint() {
+        var t = document.documentElement.dataset.theme || 'dark';
+        btn.innerHTML = (t === 'dark' ? MOON : SUN);
+        btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+      }
+      paint();
+      btn.addEventListener('click', function () {
+        var cur = document.documentElement.dataset.theme || 'dark';
+        var next = (cur === 'dark') ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('cf-theme', next); } catch (e) {}
+        paint();
+      });
+    })();
+
+    /* Hero intro panel toggle — local instant paint + cloud persist */
+    (function initHeroToggle() {
+      var btn = document.getElementById('hero-toggle');
+      if (!btn) return;
+      function paint(hidden) {
+        document.body.classList.toggle('hero-hidden', !!hidden);
+        document.documentElement.classList.remove('hero-hidden-pre');
+        var label = btn.querySelector('.menu-label');
+        var text = hidden ? 'Show intro' : 'Hide intro';
+        if (label) label.textContent = text;
+        else btn.textContent = text;
+        btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+      }
+      var localHidden = false;
+      try { localHidden = localStorage.getItem('cf-hero-hidden') === '1'; } catch (e) {}
+      paint(localHidden);
+      // Cloud truth (UserProperties) wins when it arrives.
+      try {
+        if (window.google && google.script && google.script.run) {
+          google.script.run.withSuccessHandler(function (hidden) {
+            var h = !!hidden;
+            try { localStorage.setItem('cf-hero-hidden', h ? '1' : '0'); } catch (e) {}
+            paint(h);
+          }).getHeroHidden();
+        }
+      } catch (e) {}
+      btn.addEventListener('click', function () {
+        var next = !document.body.classList.contains('hero-hidden');
+        try { localStorage.setItem('cf-hero-hidden', next ? '1' : '0'); } catch (e) {}
+        paint(next);
+        try {
+          if (window.google && google.script && google.script.run) {
+            google.script.run.setHeroHidden(next);
+          }
+        } catch (e) {}
+      });
+    })();
+
+    /* Settings popup — consolidates Show intro / Change PIN / Set API key / Log out */
+    (function initSettings() {
+      var btn = document.getElementById('settings-btn');
+      var menu = document.getElementById('settings-menu');
+      if (!btn || !menu) return;
+      function isOpen() { return !menu.classList.contains('hidden'); }
+      function open() {
+        menu.classList.remove('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+      function close() {
+        menu.classList.add('hidden');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (isOpen()) close();
+        else open();
+      });
+      menu.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('click', function () { if (isOpen()) close(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && isOpen()) { close(); try { btn.focus(); } catch (e2) {} }
+      });
+      // Close the popup after choosing an item; the item's own handler still runs.
+      menu.querySelectorAll('.menu-item').forEach(function (item) {
+        item.addEventListener('click', function () { close(); });
+      });
+      window.addEventListener('cf:close-settings', close);
+    })();
+
+    /* Pill tabs */
+    (function initTabs() {
+      var btnS = document.getElementById('tabbtn-standard');
+      var btnT = document.getElementById('tabbtn-table');
+      var panelS = document.getElementById('tab-standard');
+      var panelT = document.getElementById('tab-table');
+      if (!btnS || !btnT) return;
+      function show(which) {
+        var isStd = (which === 'standard');
+        btnS.classList.toggle('active', isStd);
+        btnT.classList.toggle('active', !isStd);
+        btnS.setAttribute('aria-selected', isStd ? 'true' : 'false');
+        btnT.setAttribute('aria-selected', !isStd ? 'true' : 'false');
+        panelS.classList.toggle('active', isStd);
+        panelT.classList.toggle('active', !isStd);
+      }
+      btnS.addEventListener('click', function () { show('standard'); });
+      btnT.addEventListener('click', function () { show('table'); });
+    })();
+
+    /* Table Layout tab — dynamic rows, ONE Gemini call via processTableBatch */
+    (function initTableTab() {
+      var rowsEl = document.getElementById('table-rows');
+      var addBtn = document.getElementById('add-row-btn');
+      var submitBtnT = document.getElementById('table-submit-btn');
+      var submitLabelT = document.getElementById('table-submit-label');
+      var countLabel = document.getElementById('table-count-label');
+      if (!rowsEl || !addBtn || !submitBtnT) return;
+      var MAX_ROWS = 10;
+
+      function updateCount() {
+        var n = rowsEl.querySelectorAll('.trow').length;
+        if (countLabel) countLabel.textContent = n + (n === 1 ? ' row' : ' rows');
+      }
+
+      function makeThumbPlaceholder() {
+        return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+      }
+
+      function addRow() {
+        var existing = rowsEl.querySelectorAll('.trow').length;
+        if (existing >= MAX_ROWS) {
+          setStatus('Maximum ' + MAX_ROWS + ' rows per batch.', 'error');
+          return;
+        }
+        var row = document.createElement('div');
+        row.className = 'trow';
+        row._file = null;
+        row._previewUrl = null;
+
+        var thumb = document.createElement('button');
+        thumb.type = 'button';
+        thumb.className = 'trow-thumb';
+        thumb.setAttribute('aria-label', 'Upload photo for this row');
+        thumb.innerHTML = makeThumbPlaceholder();
+
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,.jpg,.jpeg,.png,.webp,.heic,.heif';
+        fileInput.style.display = 'none';
+
+        var note = document.createElement('input');
+        note.type = 'text';
+        note.className = 'trow-note';
+        note.maxLength = 500;
+        note.placeholder = 'Note for this receipt…';
+
+        var typeSel = document.createElement('select');
+        typeSel.className = 'trow-type';
+        typeSel.setAttribute('aria-label', 'Transaction type');
+        var optE = document.createElement('option');
+        optE.value = 'Expense'; optE.textContent = 'Expense';
+        var optI = document.createElement('option');
+        optI.value = 'Income'; optI.textContent = 'Income';
+        typeSel.appendChild(optE); typeSel.appendChild(optI);
+        typeSel.value = 'Expense';
+
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'trow-remove';
+        rm.textContent = 'Remove';
+
+        thumb.addEventListener('click', function () { fileInput.click(); });
+        fileInput.addEventListener('change', function () {
+          var f = fileInput.files && fileInput.files[0];
+          fileInput.value = '';
+          if (!f) return;
+          if (!f.type || f.type.indexOf('image/') !== 0) {
+            setStatus('Row needs an image file.', 'error');
+            return;
+          }
+          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
+          row._file = f;
+          row._previewUrl = URL.createObjectURL(f);
+          thumb.innerHTML = '';
+          var img = document.createElement('img');
+          img.src = row._previewUrl;
+          img.alt = 'Row receipt';
+          thumb.appendChild(img);
+          thumb.classList.add('has-img');
+        });
+        rm.addEventListener('click', function () {
+          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
+          row.remove();
+          updateCount();
+        });
+
+        row.appendChild(thumb);
+        row.appendChild(note);
+        row.appendChild(typeSel);
+        row.appendChild(rm);
+        row.appendChild(fileInput);
+        rowsEl.appendChild(row);
+        updateCount();
+      }
+
+      addBtn.addEventListener('click', addRow);
+      // Start with one row so the layout is visible
+      if (rowsEl.querySelectorAll('.trow').length === 0) addRow();
+
+      submitBtnT.addEventListener('click', function () {
+        var domRows = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow'));
+        // Ignore completely empty rows (no photo AND no note) so 10 open
+        // rows with only 5 filled submits just those 5.
+        var filled = domRows.filter(function (row) {
+          var noteVal = row.querySelector('.trow-note').value.trim();
+          return !!row._file || noteVal !== '';
+        });
+        if (filled.length === 0) {
+          setStatus('Add at least one filled row (photo or note) first.', 'error');
+          return;
+        }
+        submitBtnT.disabled = true;
+        if (submitLabelT) submitLabelT.textContent = 'Saving…';
+        setStatus('Reading ' + filled.length + ' row(s) in one pass…', '');
+
+        var payload = new Array(filled.length);
+        var pending = 0;
+        var failed = false;
+        filled.forEach(function (row, idx) {
+          var noteVal = row.querySelector('.trow-note').value.trim();
+          var typeVal = row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense';
+          if (!row._file) {
+            // Text-only row: no async read needed.
+            payload[idx] = { imageBase64: '', mimeType: '', note: noteVal, type: typeVal };
+            return;
+          }
+          pending++;
+          var origNum = domRows.indexOf(row) + 1;
+          var reader = new FileReader();
+          reader.onload = function () {
+            if (failed) return;
+            payload[idx] = {
+              imageBase64: reader.result.split(',')[1],
+              mimeType: row._file.type || 'image/jpeg',
+              note: noteVal,
+              type: typeVal
+            };
+            pending--;
+            if (pending === 0) sendTableBatch(payload);
+          };
+          reader.onerror = function () {
+            if (failed) return;
+            failed = true;
+            submitBtnT.disabled = false;
+            if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
+            setStatus('Could not read photo in row ' + origNum + '. Try again.', 'error');
+          };
+          reader.readAsDataURL(row._file);
+        });
+        if (pending === 0) sendTableBatch(payload);
+      });
+
+      function sendTableBatch(payload) {
+        if (window.google && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(function (summary) {
+              submitBtnT.disabled = false;
+              if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
+              var isIncome = /^income/i.test(summary || '');
+              setStatus(summary, isIncome ? 'success income' : 'success');
+              // Reset to one empty row
+              rowsEl.innerHTML = '';
+              addRow();
+            })
+            .withFailureHandler(function (err) {
+              submitBtnT.disabled = false;
+              if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+                setStatus('Session expired - please log in again.', 'error');
+                try { cfNoteAuthExpired(); } catch (e) {}
+                return;
+              }
+              if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
+                setStatus('Gemini API key is missing - please add it.', 'error');
+                try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
+                return;
+              }
+              setStatus('Error: ' + (err && err.message ? err.message : err), 'error');
+            })
+            .processTableBatch(payload, sessionToken);
+        } else {
+          setTimeout(function () {
+            submitBtnT.disabled = false;
+            if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
+            setStatus('Logged ' + payload.length + ' rows (preview) — ' + payload.map(function (r, i) { return 'Row ' + (i + 1) + ': ' + r.type; }).join('; '), 'success');
+          }, 900);
+        }
+      }
+    })();
+
+    /* PIN-first gate + 12h server sessions. Raw PIN never stored; only the
+       session token (memory + localStorage) is sent; all checks server-side. */
+    (function initAuthHistory() {
+      var lockEl = document.getElementById('lock-screen');
+      var lockTitle = document.getElementById('lock-title');
+      var lockSub = document.getElementById('lock-sub');
+      var pinInput = document.getElementById('pin-input');
+      var pinSubmit = document.getElementById('pin-submit');
+      var pinError = document.getElementById('pin-error');
+      var changeBtn = document.getElementById('pin-change-btn');
+      var logoutBtn = document.getElementById('pin-logout-btn');
+      var modal = document.getElementById('pin-modal');
+      var apiBtn = document.getElementById('api-key-btn');
+      var apiModal = document.getElementById('api-modal');
+      var apiInput = document.getElementById('api-key-input');
+      var apiSave = document.getElementById('api-save');
+      var apiCancel = document.getElementById('api-cancel');
+      var apiError = document.getElementById('api-error');
+      var histCard = document.getElementById('history-card');
+      var histList = document.getElementById('history-list');
+      var histLoad = document.getElementById('history-load');
+      var histMore = document.getElementById('history-more');
+      var histRefresh = document.getElementById('history-refresh');
+      var histSub = document.getElementById('history-sub');
+      if (!lockEl || !pinInput || !pinSubmit) return;
+      var mode = 'login'; // login | setup-new | setup-confirm
+      var firstPin = '';
+      var pinBusy = false;
+      var histOffset = 0;
+      var histLimit = 10;
+      var hasBackend = !!(window.google && google.script && google.script.run);
+
+      function setLockedUI(locked) {
+        try { document.body.classList.toggle('locked', !!locked); } catch (e) {}
+        if (locked) { lockEl.classList.remove('hidden'); }
+        else { lockEl.classList.add('hidden'); }
+        [changeBtn, apiBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
+        try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
+        if (histCard) histCard.classList.toggle('hidden', !!locked);
+      }
+      function setError(msg) { if (pinError) pinError.textContent = msg || ''; }
+      function paintMode(msg) {
+        if (mode === 'setup-new') {
+          lockTitle.textContent = 'Set up a 6-digit PIN';
+          lockSub.textContent = 'First run — choose a 6-digit PIN. It is stored on Google\'s server, never on this device.';
+          pinSubmit.textContent = 'Continue';
+        } else if (mode === 'setup-confirm') {
+          lockTitle.textContent = 'Confirm your PIN';
+          lockSub.textContent = 'Enter the same 6 digits again.';
+          pinSubmit.textContent = 'Save PIN';
+        } else {
+          lockTitle.textContent = 'Enter PIN';
+          lockSub.textContent = 'Enter your 6-digit PIN to continue.';
+          pinSubmit.textContent = 'Unlock';
+        }
+        setError(msg || '');
+        pinInput.value = '';
+        if (!lockEl.classList.contains('hidden')) {
+          try { pinInput.focus(); } catch (e) {}
+        }
+      }
+      function onUnlocked() { setLockedUI(false); checkGeminiKey(); }
+      function lockToLogin(msg) {
+        mode = 'login';
+        firstPin = '';
+        try { if (typeof closeApiModal === 'function') closeApiModal(); } catch (e) {}
+        setLockedUI(true);
+        paintMode(msg || '');
+      }
+      window.addEventListener('cf:auth-expired', function (e) {
+        var m = (e && e.detail) || 'Session expired - please log in again.';
+        lockToLogin(m);
+      });
+      function valid6(v) { return /^\d{6}$/.test(v || ''); }
+      function submitPin() {
+        var v = (pinInput.value || '').trim();
+        if (!valid6(v)) { setError('PIN must be exactly 6 digits.'); return; }
+        if (pinBusy) return;
+        if (!hasBackend) { try { cfSaveSession('preview', Date.now() + 43200000); } catch (e) {} onUnlocked(); return; }
+        pinBusy = true;
+        pinSubmit.disabled = true;
+        setError('');
+        if (mode === 'setup-new') {
+          firstPin = v;
+          mode = 'setup-confirm';
+          pinBusy = false;
+          pinSubmit.disabled = false;
+          paintMode();
+          return;
+        }
+        if (mode === 'setup-confirm') {
+          if (v !== firstPin) {
+            pinBusy = false;
+            pinSubmit.disabled = false;
+            firstPin = '';
+            mode = 'setup-new';
+            paintMode('PINs do not match — try again.');
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(function (sess) {
+              pinBusy = false;
+              pinSubmit.disabled = false;
+              firstPin = '';
+              if (sess && sess.token) {
+                try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+                onUnlocked();
+              } else {
+                setError('Could not create session - try again.');
+              }
+            })
+            .withFailureHandler(function (err) {
+              pinBusy = false;
+              pinSubmit.disabled = false;
+              setError('Could not save PIN: ' + (err && err.message ? err.message : err));
+            })
+            .setupPin(v);
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function (sess) {
+            pinBusy = false;
+            pinSubmit.disabled = false;
+            if (sess && sess.token) {
+              try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+              onUnlocked();
+            } else {
+              setError('Wrong PIN — try again.');
+              pinInput.value = '';
+              try { pinInput.focus(); } catch (e) {}
+            }
+          })
+          .withFailureHandler(function (err) {
+            pinBusy = false;
+            pinSubmit.disabled = false;
+            setError('Error: ' + (err && err.message ? err.message : err));
+          })
+          .login(v);
+      }
+      pinInput.addEventListener('input', function () {
+        pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 6);
+        setError('');
+        if (pinInput.value.length === 6) { setTimeout(function () { if (pinInput.value.length === 6 && !lockEl.classList.contains('hidden')) submitPin(); }, 250); }
+      });
+      pinInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPin(); });
+      pinSubmit.addEventListener('click', submitPin);
+
+      // Change PIN modal (session + old PIN required server-side)
+      function openModal() {
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        var e2 = document.getElementById('pin-change-error');
+        if (e2) e2.textContent = '';
+        ['pin-old', 'pin-new', 'pin-new2'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+        try { var f = document.getElementById('pin-old'); if (f) f.focus(); } catch (e) {}
+      }
+      function closeModal() { if (modal) modal.classList.add('hidden'); }
+      if (changeBtn) changeBtn.addEventListener('click', openModal);
+      var cancelBtn = document.getElementById('pin-change-cancel');
+      if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+      if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+      var saveBtn = document.getElementById('pin-change-save');
+      if (saveBtn) saveBtn.addEventListener('click', function () {
+        var oldP = (document.getElementById('pin-old').value || '').trim();
+        var newP = (document.getElementById('pin-new').value || '').trim();
+        var newP2 = (document.getElementById('pin-new2').value || '').trim();
+        var errEl = document.getElementById('pin-change-error');
+        function fail(m) { if (errEl) errEl.textContent = m; }
+        if (!valid6(oldP) || !valid6(newP)) { fail('All PINs must be exactly 6 digits.'); return; }
+        if (newP !== newP2) { fail('New PINs do not match.'); return; }
+        if (!hasBackend) { try { cfSaveSession(newP, Date.now() + 43200000); } catch (e) {} closeModal(); return; }
+        saveBtn.disabled = true;
+        google.script.run
+          .withSuccessHandler(function (sess) {
+            saveBtn.disabled = false;
+            if (sess && sess.token) {
+              try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+            }
+            closeModal();
+            try { setStatus('PIN changed. All other sessions revoked.', 'success'); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            saveBtn.disabled = false;
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            fail('Error: ' + (err && err.message ? err.message : err));
+          })
+          .changePin(oldP, newP, sessionToken);
+      });
+
+      // Gemini API key prompt: after every PIN unlock (fresh setup or existing
+      // PIN login), ask for the key when none is stored server-side.
+      function openApiModal(msg) {
+        if (!apiModal) return;
+        if (apiError) apiError.textContent = msg || '';
+        if (apiInput) apiInput.value = '';
+        apiModal.classList.remove('hidden');
+        try { if (apiInput) apiInput.focus(); } catch (e) {}
+      }
+      function closeApiModal() { if (apiModal) apiModal.classList.add('hidden'); }
+      function setApiKeyLabel(has) {
+        if (!apiBtn) return;
+        var label = apiBtn.querySelector('.menu-label');
+        var text = has ? 'Change API key' : 'Set API key';
+        if (label) label.textContent = text;
+        else apiBtn.textContent = text;
+      }
+      function checkGeminiKey() {
+        if (!hasBackend) return;
+        if (!sessionToken) return;
+        try {
+          google.script.run
+            .withSuccessHandler(function (has) {
+              setApiKeyLabel(!!has);
+              if (!has) openApiModal('');
+            })
+            .withFailureHandler(function (err) {
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+                try { cfNoteAuthExpired(); } catch (e) {}
+                return;
+              }
+              // Non-auth errors (e.g. transient) should not block the app.
+            })
+            .hasGeminiKey(sessionToken);
+        } catch (e) {}
+      }
+      window.addEventListener('cf:missing-key', function () { openApiModal(''); });
+      if (apiBtn) apiBtn.addEventListener('click', function () { openApiModal(''); });
+      if (apiCancel) apiCancel.addEventListener('click', closeApiModal);
+      if (apiModal) apiModal.addEventListener('click', function (e) { if (e.target === apiModal) closeApiModal(); });
+      if (apiInput) apiInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (apiSave) apiSave.click(); } });
+      if (apiSave) apiSave.addEventListener('click', function () {
+        var k = (apiInput && apiInput.value ? apiInput.value : '').trim();
+        if (!k) { if (apiError) apiError.textContent = 'Paste your Gemini API key first.'; return; }
+        if (!hasBackend) { closeApiModal(); return; }
+        apiSave.disabled = true;
+        if (apiError) apiError.textContent = '';
+        google.script.run
+          .withSuccessHandler(function () {
+            apiSave.disabled = false;
+            closeApiModal();
+            setApiKeyLabel(true);
+            try { setStatus('Gemini API key saved.', 'success'); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            apiSave.disabled = false;
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeApiModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            if (apiError) apiError.textContent = 'Error: ' + (err && err.message ? err.message : err);
+          })
+          .saveGeminiKey(k, sessionToken);
+      });
+
+      // Log out: destroy server session, drop local copy, back to PIN-first.
+      if (logoutBtn) logoutBtn.addEventListener('click', function () {
+        if (!hasBackend) { try { cfClearSession(); } catch (e) {} lockToLogin(''); return; }
+        var tok = null;
+        try { tok = sessionToken; } catch (e) {}
+        google.script.run
+          .withSuccessHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            lockToLogin('Logged out.');
+          })
+          .withFailureHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            lockToLogin('Logged out.');
+          })
+          .logout(tok);
+      });
+
+      // History (session-gated)
+      function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+      function fmtRp(n) { try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); } catch (e) { return 'Rp' + n; } }
+      function renderLogs(logs, append) {
+        if (!append) histList.innerHTML = '';
+        logs.forEach(function (lg) {
+          var item = document.createElement('div');
+          item.className = 'hist-item';
+          var isInc = String(lg.type || '').toLowerCase() === 'income';
+          var amt = Number(lg.amount || 0);
+          var desc = lg.description || lg.notes || lg.category || '';
+          item.innerHTML =
+            '<div class="hist-top"><span class="hist-merchant">' + esc(lg.merchant || 'Unknown') + '</span>' +
+            '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(lg.type || (amt < 0 ? 'Expense' : '')) + '</span></div>' +
+            '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(fmtRp(amt)) + '</div>' +
+            (desc ? '<div class="hist-sub">' + esc(desc) + '</div>' : '') +
+            '<div class="hist-meta">' + esc(lg.date || '') + ' · ' + esc(lg.sheet || '') + (lg.category ? ' · ' + esc(lg.category) : '') + '</div>';
+          histList.appendChild(item);
+        });
+      }
+      function fetchHistory(reset) {
+        if (reset) histOffset = 0;
+        if (!hasBackend) {
+          histSub.textContent = 'Preview mode — connect to Apps Script to load real logs.';
+          return;
+        }
+        if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
+        var btn = reset ? histLoad : histMore;
+        if (btn) { btn.disabled = true; }
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (btn) btn.disabled = false;
+            res = res || {};
+            var logs = res.logs || [];
+            renderLogs(logs, !reset);
+            histOffset += logs.length;
+            histSub.textContent = 'Showing ' + histOffset + ' of ' + (res.total || 0) + ' rows.';
+            if (res.hasMore) {
+              histMore.classList.remove('hidden');
+              histLoad.classList.add('hidden');
+            } else {
+              histMore.classList.add('hidden');
+              if (histOffset > 0) histLoad.classList.add('hidden');
+              if (histOffset === 0) histSub.textContent = 'No logged rows yet.';
+            }
+          })
+          .withFailureHandler(function (err) {
+            if (btn) btn.disabled = false;
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              try { cfNoteAuthExpired(); } catch (e) {}
+              try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
+              return;
+            }
+            try { setStatus('Error: ' + (err && err.message ? err.message : err), 'error'); } catch (e) {}
+          })
+          .getRecentLogs(sessionToken, reset ? 0 : histOffset, histLimit);
+      }
+      if (histLoad) histLoad.addEventListener('click', function () { fetchHistory(true); });
+      if (histMore) histMore.addEventListener('click', function () { fetchHistory(false); });
+      if (histRefresh) histRefresh.addEventListener('click', function () { fetchHistory(true); });
+
+      // Boot: PIN paints first (already visible). A stored unexpired token
+      // auto-loads the actual page; otherwise stay on the PIN screen.
+      setLockedUI(true);
+      if (!hasBackend) { try { cfSaveSession('preview', Date.now() + 43200000); } catch (e) {} onUnlocked(); return; }
+      var stored = null;
+      try { stored = cfLoadSession(); } catch (e) {}
+      if (stored && stored.t) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.valid) {
+              try { sessionToken = stored.t; } catch (e) {}
+              onUnlocked();
+            } else {
+              try { cfClearSession(); } catch (e) {}
+              bootPinMode();
+            }
+          })
+          .withFailureHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            bootPinMode();
+          })
+          .validateSession(stored.t);
+      } else {
+        bootPinMode();
+      }
+      function bootPinMode() {
+        google.script.run
+          .withSuccessHandler(function (setup) {
+            mode = setup ? 'login' : 'setup-new';
+            setLockedUI(true);
+            paintMode();
+          })
+          .withFailureHandler(function () {
+            mode = 'login';
+            setLockedUI(true);
+            paintMode();
+          })
+          .isPinSetup();
+      }
+    })();
+    </script>
+</body>
+</html>
