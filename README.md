@@ -23,9 +23,12 @@ sessions, recent-logs history.
   missing prerequisites automatically.
 - A Google account with access to Google Sheets + AI Studio
 - A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
-- A Google Sheet with a sheet named exactly `Template` whose row 1 contains:
-  `Date | Merchant | Description | Amount | Category | Spending Type | Type | Notes`
-  (column order is flexible; the sheet may stay hidden)
+- A Google Sheet (bound automatically when the script comes from a Sheet, or
+  set via Settings menu → Set Sheet). If no `Template` sheet exists, one is
+  created automatically on first log with headers:
+  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes`
+  (widths 100, 173, 100, 157, 127, 103, 207, 392), frozen header row, then
+  hidden. Monthly sheets (`MMMM yyyy`) are copied from that `Template`.
 
 ## Family install (Windows)
 
@@ -114,8 +117,8 @@ supported as a manual fallback.
   entry means no usable sheet was found. If bound to a Sheet it is used
   automatically; otherwise set it via Settings menu → Set Sheet (Sheet ID or
   full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then
-  reload the `/exec` URL and try again. The sheet must also contain a
-  `Template` sheet with the header row from Prerequisites.
+  reload the `/exec` URL and try again. A missing `Template` sheet is created
+  automatically with the header row from Prerequisites.
 - `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script
   Properties, or it was never saved via Settings menu → Set API key. Add it,
   then retry.

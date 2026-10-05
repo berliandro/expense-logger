@@ -12,10 +12,11 @@
  *      GEMINI_API_KEY  - from Google AI Studio
  *      SPREADSHEET_ID  - the ID from your sheet's URL
  *
- * 2. In your spreadsheet, create a sheet named exactly "Template" with a
- *    header row (row 1) containing these column names, in any order:
- *      Date | Merchant | Description | Amount | Category | Spending Type | Type | Notes
- *    You can hide this sheet — copyTo() still works on hidden sheets.
+ * 2. Template sheet "Template" is created automatically on first log if missing,
+ *    with header row:
+ *      Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes
+ *    It is then hidden — copyTo() still works on hidden sheets. Monthly sheets
+ *    are copied from it, so keep its formatting.
  *
  * 3. Deploy > New deployment > Web app.
  *      Execute as: Me (USER_DEPLOYING)
@@ -1008,6 +1009,22 @@ function sanitizeTransaction(txn) {
 
 // ---------- SHEET WRITING ----------
 
+var TEMPLATE_HEADERS = ['Date', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Merchant', 'Notes'];
+var TEMPLATE_WIDTHS = [100, 173, 100, 157, 127, 103, 207, 392];
+
+function getOrCreateTemplateSheet_(ss) {
+  var template = ss.getSheetByName(TEMPLATE_SHEET_NAME);
+  if (template) return template;
+  template = ss.insertSheet(TEMPLATE_SHEET_NAME);
+  template.getRange(1, 1, 1, TEMPLATE_HEADERS.length).setValues([TEMPLATE_HEADERS]);
+  for (var i = 0; i < TEMPLATE_WIDTHS.length; i++) {
+    try { template.setColumnWidth(i + 1, TEMPLATE_WIDTHS[i]); } catch (e) {}
+  }
+  try { template.setFrozenRows(1); } catch (e) {}
+  try { template.hideSheet(); } catch (e) {}
+  return template;
+}
+
 function getOrCreateMonthSheet(ss, transactionDateStr) {
   var date = transactionDateStr ? new Date(transactionDateStr) : new Date();
   if (isNaN(date.getTime())) date = new Date(); // fallback if Gemini gave an unparseable date
@@ -1016,10 +1033,7 @@ function getOrCreateMonthSheet(ss, transactionDateStr) {
   var sheet = ss.getSheetByName(sheetName);
 
   if (!sheet) {
-    var template = ss.getSheetByName(TEMPLATE_SHEET_NAME);
-    if (!template) {
-      throw new Error('Template sheet "' + TEMPLATE_SHEET_NAME + '" not found - create it first.');
-    }
+    var template = getOrCreateTemplateSheet_(ss);
     sheet = template.copyTo(ss);
     sheet.setName(sheetName);
     sheet.showSheet();
