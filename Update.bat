@@ -49,9 +49,14 @@ if errorlevel 1 (
 
 rem Run the temporary copy.
 rem The original Update.bat can now be renamed/replaced by Git safely.
-"%TEMP_SCRIPT%" --temp-updater "%~dp0"
+"!TEMP_SCRIPT!" --temp-updater "%~dp0"
 
-exit /b
+set "TEMP_EXIT_CODE=!ERRORLEVEL!"
+
+rem Clean up the temporary copy; the project folder keeps the real Update.bat.
+del /f /q "!TEMP_SCRIPT!" >nul 2>nul
+
+exit /b !TEMP_EXIT_CODE!
 
 
 rem ===============================================================
@@ -63,7 +68,14 @@ rem ===============================================================
 
 set "PROJECT_DIR=%~2"
 
-cd /d "%PROJECT_DIR%"
+if "!PROJECT_DIR!"=="" (
+    echo.
+    echo !cRed![ERROR]!cReset! Could not determine the project directory.
+    pause
+    exit /b 1
+)
+
+cd /d "!PROJECT_DIR!"
 
 if errorlevel 1 (
     echo.
@@ -229,11 +241,11 @@ rem ===============================================================
 rem  TRANSFER TO NEWLY DOWNLOADED UPDATE.BAT
 rem ===============================================================
 
-if not exist "%PROJECT_DIR%Update.bat" (
+if not exist "!PROJECT_DIR!Update.bat" (
     echo.
     echo !cRed![ERROR]!cReset! Update.bat was not found after updating.
     echo.
-    echo The repository may not have been renamed correctly.
+    echo The update may not have completed correctly.
     echo.
     pause
     exit /b 1
@@ -243,7 +255,7 @@ echo !cGreen![SUCCESS]!cReset! Updater is current.
 echo.
 
 rem Run the newly downloaded Update.bat.
-call "%PROJECT_DIR%Update.bat" --run-main
+call "!PROJECT_DIR!Update.bat" --run-main
 
 set "MAIN_EXIT_CODE=!ERRORLEVEL!"
 

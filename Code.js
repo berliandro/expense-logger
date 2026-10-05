@@ -18,8 +18,10 @@
  *    You can hide this sheet — copyTo() still works on hidden sheets.
  *
  * 3. Deploy > New deployment > Web app.
- *      Execute as: Me
- *      Who has access: Only myself
+ *      Execute as: Me (USER_DEPLOYING)
+ *      Who has access: Anyone (ANYONE_ANONYMOUS) — family members open the
+ *      /exec URL without needing editor access. The app's own 6-digit
+ *      PIN + 12h session check still gates all sensitive calls.
  *
  * 4. Open the resulting /exec URL. Bookmark it or add it to your phone's
  *    home screen so it behaves like a mini app icon.

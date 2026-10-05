@@ -6,9 +6,6 @@
 # OpenCode agent session state (local only)
 .opencode/
 
-# One-shot installer (self-destructs after running — never commit)
-Initial install.bat
-
 # Node / tooling
 node_modules/
 npm-debug.log*
