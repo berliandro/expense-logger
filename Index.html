@@ -1384,8 +1384,8 @@
 
   <div id="api-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Gemini API key">
     <div class="lock-card">
-      <h2>Add Gemini API key</h2>
-      <p>No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.</p>
+      <h2 id="api-title">Add Gemini API key</h2>
+      <p id="api-sub">No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.</p>
       <div class="pin-field"><label for="api-key-input">Gemini API key</label><input id="api-key-input" class="pin-input api-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste key (AIza…)"></div>
       <button type="button" id="api-save">Save API key</button>
       <button type="button" id="api-cancel">Later</button>
@@ -2317,8 +2317,21 @@
 
       // Gemini API key prompt: after every PIN unlock (fresh setup or existing
       // PIN login), ask for the key when none is stored server-side.
+      var apiHasKey = false;
+      function paintApiText() {
+        var title = document.getElementById('api-title');
+        var sub = document.getElementById('api-sub');
+        if (apiHasKey) {
+          if (title) title.textContent = 'Change Gemini API key';
+          if (sub) sub.textContent = 'A Gemini API key is already stored on the server. Paste a new key from Google AI Studio to replace it.';
+        } else {
+          if (title) title.textContent = 'Add Gemini API key';
+          if (sub) sub.textContent = 'No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.';
+        }
+      }
       function openApiModal(msg) {
         if (!apiModal) return;
+        paintApiText();
         if (apiError) apiError.textContent = msg || '';
         if (apiInput) apiInput.value = '';
         apiModal.classList.remove('hidden');
@@ -2327,8 +2340,9 @@
       function closeApiModal() { if (apiModal) apiModal.classList.add('hidden'); }
       function setApiKeyLabel(has) {
         if (!apiBtn) return;
+        apiHasKey = !!has;
         var label = apiBtn.querySelector('.menu-label');
-        var text = has ? 'Change API key' : 'Set API key';
+        var text = apiHasKey ? 'Change API key' : 'Set API key';
         if (label) label.textContent = text;
         else apiBtn.textContent = text;
       }
