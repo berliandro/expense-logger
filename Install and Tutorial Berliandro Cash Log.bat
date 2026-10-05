@@ -89,8 +89,10 @@ if not exist ".git" (
 
     rem Initial installation only (fresh folder, no local work to preserve):
     rem Make this folder match the GitHub project.
-    rem NOTE: The normal updater (Update.bat) must NOT use reset --hard;
-    rem it uses git pull --ff-only to avoid destroying local changes.
+    rem NOTE: Update.bat also syncs tracked files to GitHub with
+    rem git fetch + git reset --hard origin/main (family installs are
+    rem deployment clients). Ignored per-user files (.clasp.json,
+    rem .cashlogger-deployment-id) are untouched by that command.
     git reset --hard origin/main
 
     if errorlevel 1 (

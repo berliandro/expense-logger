@@ -54,10 +54,9 @@ Run `Update.bat` for later updates. It keeps the same Web App URL:
 
 ```text
 Update.bat
-→ temporary copy (so Git can safely replace Update.bat itself)
+→ temporary copy in %TEMP% (so Git can safely replace Update.bat itself)
 → git fetch origin main
-→ verify no local modifications (git diff checks)
-→ git pull --ff-only origin main (stops cleanly if it cannot fast-forward)
+→ git reset --hard origin/main (tracked files match GitHub exactly)
 → run the newly downloaded Update.bat
 → clasp push -f
 → clasp update-deployment {saved deployment ID}
@@ -68,8 +67,10 @@ Update.bat
   `.cashlogger-deployment-id` and updates that existing deployment. It does
   not create a new deployment on every run, so the `/exec` URL stays the
   same.
-- The normal update path never uses `git reset --hard`; it stops instead of
-  overwriting local changes.
+- Family installs are treated as deployment clients: `reset --hard` makes
+  tracked files match GitHub exactly. Commit any local source changes before
+  updating, or they will be overwritten. Ignored per-user files
+  (`.clasp.json`, `.cashlogger-deployment-id`) are untouched.
 - The updater checks for Git, clasp, `.git`, `.clasp.json`, and
   `.cashlogger-deployment-id`, and fails with a useful message when anything
   is missing.
