@@ -30,3 +30,6 @@ Thumbs.db
 *-credentials.json
 *service-account*.json
 secrets/
+
+# Per-user Web App deployment ID
+.cashlogger-deployment-id
