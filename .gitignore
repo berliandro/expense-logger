@@ -1,4 +1,5 @@
-# Clasp auth tokens (never commit — run `clasp login` locally instead)
+# Clasp configuration (never commit — generated locally per user)
+.clasp.json
 .clasprc.json
 **/.clasprc.json
 
