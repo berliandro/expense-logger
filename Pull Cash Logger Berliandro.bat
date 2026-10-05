@@ -2,45 +2,55 @@
 setlocal
 
 rem ===================================================================
-rem  STAGE 1: CLEANUP HANDOFF
-rem  If launched by an older version of this script, delete the old one
+rem  ROUTING LOGIC (Determines which stage is currently running)
 rem ===================================================================
-if "%~1"=="--cleanup" (
-    rem Wait 1 second to ensure the old script has completely closed its process
-    timeout /t 1 /nobreak >nul
-    del "old_pull.bat" 2>nul
-    goto :RunMainTask
-)
+if "%~1"=="--temp-updater" goto :TempUpdater
+if "%~1"=="--run-main" goto :MainTask
 
 rem ===================================================================
-rem  STAGE 2: RENAME AND UPDATE
+rem  STAGE 1: HANDOFF TO TEMP SCRIPT
 rem ===================================================================
 echo [INFO] Preparing for self-update...
-rem Rename the currently running script so Git can safely write the new one
-ren "%~nx0" "old_pull.bat"
+set "TEMP_SCRIPT=%TEMP%\cash_logger_updater.bat"
+
+rem Copy this currently running file to the Windows Temp folder
+copy /y "%~f0" "%TEMP_SCRIPT%" >nul
+
+rem Transfer execution to the Temp script (without using 'call').
+rem This permanently closes THIS file, releasing the Windows file lock,
+rem allowing Git to safely overwrite it without crashing.
+"%TEMP_SCRIPT%" --temp-updater "%~dp0"
+exit /b
+
+rem ===================================================================
+rem  STAGE 2: THE TEMP UPDATER (Runs safely from %TEMP%)
+rem ===================================================================
+:TempUpdater
+set "PROJECT_DIR=%~2"
+cd /d "%PROJECT_DIR%"
 
 echo [INFO] Downloading latest updates from GitHub...
 git fetch origin main
 git reset --hard origin/main
 
 if errorlevel 1 (
-    echo [ERROR] Update failed. Reverting to old script...
-    ren "old_pull.bat" "%~nx0"
+    echo [ERROR] Update failed. Check your internet connection.
     pause
     exit /b 1
 )
 
-rem Launch the newly downloaded script and pass the cleanup flag, then exit
-echo [INFO] Handoff to updated script...
-start "" "%~dp0Pull Cash Logger Berliandro.bat" --cleanup
-exit
-
-rem ===================================================================
-rem  STAGE 3: THE MAIN TASKS (This runs after the update is finished)
-rem ===================================================================
-:RunMainTask
-
 echo [SUCCESS] Script updated successfully!
+
+rem Transfer execution back to the newly downloaded main script!
+"%PROJECT_DIR%Pull Cash Logger Berliandro.bat" --run-main
+exit /b
+
+rem ===================================================================
+rem  STAGE 3: THE MAIN TASKS (Runs from the freshly updated file)
+rem ===================================================================
+:MainTask
+cd /d "%~dp0"
+
 echo [INFO] Pushing the latest code to your Google Sheet...
 call clasp push -f
 
