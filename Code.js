@@ -44,11 +44,9 @@
 const TEMPLATE_SHEET_NAME = 'Template';
 
 const GEMINI_MODELS = [
-  'gemini-3.6-flash',      // current general-purpose workhorse
-  'gemini-3.5-flash',      // previous-gen flash, still solid
-  'gemini-2.5-flash',      // stable, well-tested fallback
-  'gemini-3.1-flash-lite', // faster/cheaper, still free tier
-  'gemini-2.5-flash-lite'  // last resort - fastest, lowest tier
+  'gemini-flash-lite-latest', // top priority - tested 11/11 accurate, fastest
+  'gemini-3.5-flash',         // fallback
+  'gemini-3.6-flash'          // last fallback (often overloaded - 503s)
 ];
 
 const EXPENSE_CATEGORIES = [
