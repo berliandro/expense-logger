@@ -1,12 +1,28 @@
 # Cashflow Logger (expense-logger)
 
 Snap a receipt (or type a note) → Gemini structures it → rows land in Google
-Sheets. Frosted Liquid Glass UI, Standard + Table-batch tabs, PIN-first 12h
-sessions, recent-logs history.
+Sheets. Frosted Liquid Glass UI, Table Layout (default) + Standard tabs,
+two-phase receipt checking, PIN-first 12h sessions, recent-logs history.
 
 ## How it works
 
-- Frontend: `Index.html` (single page, dark default + light mode)
+- Frontend: `Index.html` (single page, dark default + light mode). **Table
+  Layout is the default tab** with unlimited rows: rows auto-grow one blank
+  at a time, and submissions run as sequential bounded batches.
+- Receipts are checked in **two phases**: Phase 1 reads each photo's printed
+  final total, Phase 2 extracts every line item, and each receipt's item sum
+  must match its own printed total exactly. Mismatches get one bounded repair
+  pass; unresolved rows stay in the app with their photos for review while
+  valid rows are still logged.
+- Optional toggles (both default OFF): **Force log with balancing line**
+  adds one clearly labeled `Missing/hidden item` or `Missing/hidden
+  discount` placeholder after a failed repair; **Auto-add missing discount**
+  adds only a negative `Missing/hidden discount` when items exceed a readable
+  printed total. Placeholders are always marked in Notes for review.
+- Every logged receipt gets a unique **Transaction ID** (`YYYYMMDD` + letter
+  sequence, e.g. `20261231AA`) shared by all its item rows. After a clean
+  report (zero unresolved rows), month sheets are ordered chronologically and
+  rows are sorted by Transaction ID via a separate call.
 - Backend: `Code.js` (Apps Script: serves the page, calls Gemini, writes sheets)
 - `appsscript.json`: timezone `Asia/Jakarta`, web app `USER_DEPLOYING` /
   `ANYONE_ANONYMOUS` (family members open the `/exec` URL without editor
@@ -26,9 +42,11 @@ sessions, recent-logs history.
 - A Google Sheet (bound automatically when the script comes from a Sheet, or
   set via Settings menu → Set Sheet). If no `Template` sheet exists, one is
   created automatically on first log with headers:
-  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes`
-  (widths 100, 173, 100, 157, 127, 103, 207, 392), frozen header row, then
-  hidden. Monthly sheets (`MMMM yyyy`) are copied from that `Template`.
+  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID`
+  (widths 100, 173, 100, 157, 127, 103, 207, 392, 130), frozen header row,
+  then hidden. Monthly sheets (`MMMM yyyy`) are copied from that `Template`,
+  gain the `Transaction ID` header automatically if missing, and are sorted
+  chronologically with rows ordered by Transaction ID after clean reports.
 
 ## Family install (Windows)
 

@@ -840,6 +840,56 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
+    /* Receipt reconciliation toggles (global submission settings) */
+    .recon-toggles {
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      background: var(--field);
+      padding: 12px 14px;
+      margin: 0 0 18px;
+      display: grid;
+      gap: 10px;
+    }
+    .recon-toggles legend {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 6px;
+    }
+    .recon-toggles .toggle {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      cursor: pointer;
+      font-size: 13.5px;
+    }
+    .recon-toggles .toggle input {
+      width: 18px; height: 18px;
+      margin-top: 2px;
+      flex: none;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .recon-toggles .toggle input:disabled { cursor: not-allowed; opacity: 0.5; }
+    .recon-toggles .toggle b { display: block; font-size: 13.5px; }
+    .recon-toggles .toggle i {
+      display: block;
+      font-style: normal;
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 2px;
+      line-height: 1.45;
+    }
+    .recon-progress {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0 2px 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .recon-progress:empty { display: none; }
+
     /* Table Layout tab */
     #table-rows { display: grid; gap: 10px; margin-bottom: 12px; }
     .trow {
@@ -906,6 +956,23 @@
       cursor: pointer;
     }
     .trow-remove:hover { background: var(--accent-soft); color: var(--accent); border-color: rgba(230,0,35,0.4); }
+    .trow-status {
+      grid-column: 1 / -1;
+      font-size: 12.5px;
+      line-height: 1.5;
+      border-radius: 10px;
+      padding: 8px 12px;
+    }
+    .trow-status:empty { display: none; }
+    .trow-status[data-kind="error"] { color: var(--err-ink); background: var(--err-bg); border: 1px solid rgba(180,35,42,0.16); }
+    .trow-status[data-kind="warning"] { color: var(--muted); background: var(--field); border: 1px solid var(--line); }
+    .trow-status[data-kind="adjusted"] { color: var(--ok-ink); background: var(--ok-bg); border: 1px solid rgba(13,122,95,0.25); }
+    .trow[data-state="logged"] { opacity: 0.55; }
+    .trow[data-state="review"] { border-color: rgba(230,0,35,0.45); }
+    .trow[data-state="adjusted"] { border-color: rgba(13,122,95,0.4); }
+    .row-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+    .row-actions:empty { display: none; }
+    .row-actions .btn-choice { font-size: 12.5px; padding: 8px 14px; }
     .table-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
     #add-row-btn {
       display: inline-flex;
@@ -1222,11 +1289,22 @@
       </div>
 
       <div class="tabs" role="tablist" aria-label="Entry mode">
-        <button type="button" class="tab active" id="tabbtn-standard" role="tab" aria-selected="true" aria-controls="tab-standard">Standard</button>
-        <button type="button" class="tab" id="tabbtn-table" role="tab" aria-selected="false" aria-controls="tab-table">Table Layout</button>
+        <button type="button" class="tab" id="tabbtn-standard" role="tab" aria-selected="false" aria-controls="tab-standard">Standard</button>
+        <button type="button" class="tab active" id="tabbtn-table" role="tab" aria-selected="true" aria-controls="tab-table">Table Layout</button>
       </div>
 
-      <div id="tab-standard" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-standard">
+      <fieldset class="recon-toggles" aria-label="Receipt reconciliation options">
+        <label class="toggle">
+          <input type="checkbox" id="toggle-force">
+          <span><b>Force log with balancing line</b><i>If a receipt still does not match after one retry, log it with a clearly labeled placeholder for the missing amount. Review these entries afterward.</i></span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-discount">
+          <span><b>Auto-add missing discount</b><i>If extracted items exceed the printed total, add a negative Missing/hidden discount line for the difference after one retry. It will be marked for review.</i></span>
+        </label>
+      </fieldset>
+
+      <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
       <form id="expense-form" novalidate>
         <div class="form-group">
           <label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label>
@@ -1278,15 +1356,8 @@
           <div class="chips" aria-label="Templates">
             <button type="button" class="chip" data-text="For lunch and dinner">Day meal</button>
             <button type="button" class="chip" data-text="Expense for work. To be reimburse">Work</button>
-            <button type="button" class="chip" data-text="For my dog, Isabella. To be reimburse by my friend">Bella</button>
             <button type="button" class="chip" data-text="Weekly groceries">Weekly</button>
             <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
-          </div>
-          <div class="chips-sep" aria-hidden="true"><span></span><em>Ex</em><span></span></div>
-          <div class="chips examples" aria-label="Examples">
-            <button type="button" class="chip subtle" data-text="Alfamart groceries 85rb, some for work">Groceries</button>
-            <button type="button" class="chip subtle green" data-text="Gaji bulanan 5jt masuk hari ini">Salary in</button>
-            <button type="button" class="chip subtle green" data-text="Payment received from client 1.5jt">Client paid</button>
           </div>
         </div>
 
@@ -1303,13 +1374,27 @@
           <div id="table-rows" aria-live="polite"></div>
           <div class="table-actions">
             <button type="button" id="add-row-btn">+ Add Row</button>
+            <button type="button" id="retry-rows-btn" class="hidden">Retry review rows</button>
           </div>
         </div>
+        <p class="recon-progress" id="table-progress" role="status" aria-live="polite"></p>
         <button type="button" id="table-submit-btn">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           <span id="table-submit-label">Submit Batch</span>
         </button>
-        <p class="fineprint">Each row = optional photo + its own note + forced Expense/Income. Empty rows are ignored. All filled rows are sent in ONE Gemini request.</p>
+        <p class="fineprint">Each row = optional photo + its own note + forced Expense/Income. Empty rows are ignored. Receipts are checked in two phases (printed total, then line items) across sequential batches, with one bounded repair pass for mismatches.</p>
+      </div>
+
+      <div class="lightbox" id="trow-lightbox" role="dialog" aria-modal="true" aria-label="Receipt viewer">
+        <div class="lightbox-top">
+          <span id="trow-lightbox-counter">Row receipt</span>
+          <button type="button" class="lightbox-close" id="trow-lightbox-close" aria-label="Close viewer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="lightbox-stage">
+          <img id="trow-lightbox-img" src="" alt="Receipt full view">
+        </div>
       </div>
 
       <div id="status" role="status" aria-live="polite"></div>
@@ -1428,7 +1513,8 @@
     var savedNote = '';
     var selectedFiles = [];
     var thumbUrls = [];
-    var MAX_PHOTOS = 10;
+    // No photo cap: Standard submissions run the same phased pipeline and
+    // adaptive batching as Table rows, so any number of photos is accepted.
     // 12h server session token: kept in memory + localStorage, sent with every
     // sensitive call. The raw PIN is never stored. All checks run server-side.
     var sessionToken = null;
@@ -1563,15 +1649,10 @@
     function addFiles(fileList) {
       var added = 0;
       for (var i = 0; i < fileList.length; i++) {
-        if (selectedFiles.length >= MAX_PHOTOS) break;
         var f = fileList[i];
         if (!f.type || f.type.indexOf('image/') !== 0) continue;
         selectedFiles.push(f);
         added++;
-      }
-      if (selectedFiles.length >= MAX_PHOTOS) {
-        setStatus('Maximum ' + MAX_PHOTOS + ' photos per submission.', 'error');
-        setTimeout(function () { if (statusEl.className === 'error') { statusEl.textContent = ''; statusEl.className = ''; } }, 2500);
       }
       if (added > 0) renderPreviews();
     }
@@ -1625,15 +1706,13 @@
         thumb.addEventListener('click', function () { openLightbox(idx); });
         previewGrid.appendChild(thumb);
       });
-      if (selectedFiles.length < MAX_PHOTOS) {
-        var addTile = document.createElement('button');
-        addTile.type = 'button';
-        addTile.className = 'add-tile';
-        addTile.setAttribute('aria-label', 'Add more photos');
-        addTile.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span>';
-        addTile.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
-        previewGrid.appendChild(addTile);
-      }
+      var addTile = document.createElement('button');
+      addTile.type = 'button';
+      addTile.className = 'add-tile';
+      addTile.setAttribute('aria-label', 'Add more photos');
+      addTile.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span>';
+      addTile.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+      previewGrid.appendChild(addTile);
       var label = selectedFiles.length + (selectedFiles.length === 1 ? ' photo' : ' photos');
       previewCount.textContent = label;
       photoCountLabel.textContent = label;
@@ -1769,11 +1848,46 @@
     });
 
     function submitExpenses(images, noteText) {
+      var rows = (images && images.length ? images : [null]).map(function (img, i) {
+        return {
+          row_id: cfUuid(), origNum: i + 1, note: noteText, type: null,
+          file: null, data: (img && img.data) || '', mimeType: (img && img.mimeType) || 'image/jpeg',
+          hasPhoto: !!(img && img.data)
+        };
+      });
       if (window.google && google.script && google.script.run) {
-        google.script.run
-          .withSuccessHandler(onSuccess)
-          .withFailureHandler(onFailure)
-          .processExpenses(images, noteText, sessionToken);
+        setStatus('Processing…', '');
+        cfEngineSubmit({
+          rows: rows,
+          sessionToken: sessionToken,
+          progress: function (t) { setStatus(t, ''); }
+        }).then(function (report) {
+          var counts = (report && report.summary) || {};
+          var doneN = (counts.logged || 0) + (counts.duplicates || 0);
+          var parts = [];
+          (report.rows || []).forEach(function (r) {
+            if (r.status === 'logged' || r.duplicate) return;
+            if (r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted') {
+              parts.push('Adjusted row (' + (r.transactionId || '?') + '): ' + (r.message || ''));
+            } else {
+              parts.push(r.message || 'Row needs review.');
+            }
+          });
+          var okN = (counts.logged || 0) + (counts.forceAdjusted || 0) + (counts.discountAdjusted || 0);
+          if (okN > 0) {
+            var msg = 'Logged ' + okN + ' receipt' + (okN === 1 ? '' : 's');
+            if (counts.forceAdjusted || counts.discountAdjusted) msg += ' (includes clearly marked placeholders - please verify)';
+            msg += '.';
+            if (parts.length) msg += ' ' + parts.join(' ');
+            onSuccess(msg);
+          } else {
+            onFailure({ message: parts.join(' ') || 'Nothing was logged.' });
+            return;
+          }
+          if (report.sortEligible) {
+            cfCall('sortCashflowSheets', [sessionToken]).then(function () {}, function () {});
+          }
+        }).catch(onFailure);
       } else {
         // Local preview (outside Apps Script): simulate success so layout can be reviewed
         var n = images ? images.length : 0;
@@ -1954,37 +2068,354 @@
       }
       btnS.addEventListener('click', function () { show('standard'); });
       btnT.addEventListener('click', function () { show('table'); });
+      show('table'); // Table Layout is the default workflow on first load
     })();
 
-    /* Table Layout tab — dynamic rows, ONE Gemini call via processTableBatch */
+    /* Shared two-phase submission engine (Table Layout + Standard image flows).
+       Sequential bounded server calls: plan -> Phase 1 batches -> Phase 2
+       batches -> triage -> one bounded repair -> commit -> (separate) sort.
+       Never concurrent; one Gemini generation request per batch per phase. */
+    function cfUuid() {
+      try {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      } catch (e) {}
+      return 'r-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+    }
+    function cfReadToggles() {
+      var f = document.getElementById('toggle-force');
+      var d = document.getElementById('toggle-discount');
+      var force = !!(f && f.checked);
+      return { forceLog: force, autoDiscount: !!(d && d.checked) && !force };
+    }
+    function cfFormatIDR(n) {
+      try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
+      catch (e) { return 'Rp' + n; }
+    }
+    function cfCall(fnName, args) {
+      return new Promise(function (resolve, reject) {
+        try {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(function (err) { reject(err); })
+            [fnName].apply(null, args);
+        } catch (e) { reject(e); }
+      });
+    }
+    function cfReadFileBase64(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          try { resolve(String(reader.result).split(',')[1] || ''); }
+          catch (e) { reject(e); }
+        };
+        reader.onerror = function () { reject(new Error('Could not read an attached photo.')); };
+        reader.readAsDataURL(file);
+      });
+    }
+    function cfAuthError(err) {
+      return (typeof cfIsAuthError === 'function' && cfIsAuthError(err));
+    }
+    function cfSizeError(err) {
+      return /exceed|too large|payload|budget/i.test(String((err && err.message) || err || ''));
+    }
+    // Sequential batch queue with size-triggered splitting: a job returning
+    // {split:true} is divided in half (max 3 levels) and retried, so an
+    // oversized batch shrinks instead of failing whole or looping forever.
+    // runOne(job) must swallow row-level failures itself (marking rows) and
+    // throw only for fatal/abort errors.
+    function cfRunBatchQueue(initialLists, runOne, progress) {
+      var queue = initialLists.map(function (rows) { return { rows: rows, depth: 0 }; });
+      var doneCount = 0;
+      function pump() {
+        if (!queue.length) return Promise.resolve();
+        var job = queue.shift();
+        return Promise.resolve().then(function () {
+          return runOne(job, job.rows.length > 1 && job.depth < 3);
+        }).then(function (res) {
+          doneCount++;
+          if (res && res.split && job.rows.length > 1 && job.depth < 3) {
+            var half = Math.ceil(job.rows.length / 2);
+            queue.unshift({ rows: job.rows.slice(half), depth: job.depth + 1 });
+            queue.unshift({ rows: job.rows.slice(0, half), depth: job.depth + 1 });
+            progress('Batch too large - split ' + job.rows.length + ' rows (' + half + ' + ' + (job.rows.length - half) + ') and retrying.');
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }
+    // opts.rows: [{row_id, origNum, note, type|null, file|data, mimeType, hasPhoto}]
+    // progress(text) for phase/batch feedback. Resolves a commit report.
+    function cfEngineSubmit(opts) {
+      var rows = opts.rows || [];
+      var token = opts.sessionToken;
+      var progress = opts.progress || function () {};
+      var submissionId = cfUuid();
+      var tg = cfReadToggles();
+      var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
+      var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
+      function needBackend() {
+        if (!(window.google && google.script && google.script.run)) throw new Error('backend-missing');
+      }
+      // 1. plan (metadata only - no image bytes cross yet)
+      chain = chain.then(function () {
+        needBackend();
+        var meta = rows.map(function (r) {
+          // imageBytes is the base64 length estimate (raw bytes x4/3): the
+          // server measures the encoded payload, and token budgets must see it.
+          return { row_id: r.row_id, origNum: r.origNum, note: r.note, type: r.type,
+                   hasPhoto: !!r.hasPhoto, imageBytes: r.file ? Math.ceil((r.file.size || 0) * 4 / 3) : String(r.data || '').length };
+        });
+        progress('Planning ' + meta.length + ' row(s)…');
+        return cfCall('planReceiptSubmission', [meta, token]);
+      }).then(function (plan) {
+        st.plan = plan;
+        // 2. Phase 1 batches (photo rows only; base64 read per batch only).
+        // imageBytes uses base64 length estimate (file bytes x4/3) because the
+        // server measures the encoded payload, not raw file bytes.
+        var p1jobs = (plan.batches || []).map(function (b) {
+          var ids = {};
+          b.rows.forEach(function (m) { if (m.hasPhoto) ids[m.row_id] = true; });
+          return rows.filter(function (r) { return ids[r.row_id]; });
+        }).filter(function (l) { return l.length; });
+        return cfRunBatchQueue(p1jobs, function (job, canSplit) {
+          var batchRows = job.rows;
+          progress('Phase 1: reading totals (' + batchRows.length + ' photo row(s))…');
+          var reads = batchRows.map(function (r) {
+            var getData = r.file ? cfReadFileBase64(r.file) : Promise.resolve(r.data || '');
+            return getData.then(function (b64) { return { r: r, b64: b64 }; });
+          });
+          return Promise.all(reads).then(function (got) {
+            var payload = got.map(function (g, k) {
+              return { row_id: g.r.row_id, photo_index: k + 1, data: g.b64, mimeType: g.r.mimeType || 'image/jpeg' };
+            });
+            return cfCall('runPhase1Batch', [submissionId, payload, token]).then(function (res) {
+              (res.results || []).forEach(function (one) { st.phase1ById[one.row_id] = one; });
+              progress('Phase 1: totals recorded for ' + (res.results || []).length + ' photo row(s).');
+              return {};
+            }).catch(function (err) {
+              if (cfAuthError(err)) throw err;
+              if (cfSizeError(err) && canSplit) return { split: true };
+              batchRows.forEach(function (r) {
+                st.failedById[r.row_id] = 'Total extraction failed for this batch: ' +
+                  ((err && err.message) || err) + ' Other batches continued.';
+              });
+              progress('Phase 1: a batch failed; continuing with the rest.');
+              return {};
+            });
+          });
+        }, progress);
+      }).then(function () {
+        // 3. Phase 2 batches (same plan; text rows included, photo rows carry manifest)
+        var batches = (st.plan && st.plan.batches) || [{ rows: rows.map(function (r) {
+          return { row_id: r.row_id, origNum: r.origNum, note: r.note, type: r.type,
+                   hasPhoto: !!r.hasPhoto, imageBytes: 0 };
+        }) }];
+        var p2jobs = batches.map(function (b) {
+          var ids = {};
+          b.rows.forEach(function (m) { ids[m.row_id] = true; });
+          // Rows whose Phase 1 batch already failed skip Phase 2; their
+          // captured cause travels to triage/commit via preError.
+          return rows.filter(function (r) { return ids[r.row_id] && !st.failedById[r.row_id]; });
+        }).filter(function (l) { return l.length; });
+        return cfRunBatchQueue(p2jobs, function (job, canSplit) {
+          var batchRows = job.rows;
+          progress('Phase 2: extracting lines (' + batchRows.length + ' row(s))…');
+            var reads = batchRows.map(function (r) {
+              if (!r.hasPhoto) return Promise.resolve(null);
+              if (st.failedById[r.row_id] || !st.phase1ById[r.row_id]) return Promise.resolve(null);
+              var getData = r.file ? cfReadFileBase64(r.file) : Promise.resolve(r.data || '');
+              return getData.then(function (b64) { return { data: b64, mimeType: r.mimeType || 'image/jpeg' }; });
+            });
+            return Promise.all(reads).then(function (datas) {
+              var payload = [];
+              batchRows.forEach(function (r, k) {
+                if (!r.hasPhoto) {
+                  payload.push({ row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                                 hasPhoto: false, data: '', mimeType: '' });
+                  return;
+                }
+                if (!datas[k] || !st.phase1ById[r.row_id]) {
+                  st.failedById[r.row_id] = 'No printed total was recorded for this photo - nothing from this row was appended.';
+                  return;
+                }
+                payload.push({ row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                               hasPhoto: true, data: datas[k].data, mimeType: datas[k].mimeType,
+                               phase1: st.phase1ById[r.row_id] });
+              });
+              if (!payload.length) return {};
+              return cfCall('runPhase2Batch', [submissionId, payload, token]).then(function (res) {
+                (res.ok || []).forEach(function (o) { st.okById[o.row_id] = o.txn; });
+                (res.failed || []).forEach(function (f) { st.failedById[f.row_id] = f.error; });
+                progress('Phase 2: lines recorded for ' + payload.length + ' row(s).');
+                return {};
+              }).catch(function (err) {
+                if (cfAuthError(err)) throw err;
+                if (cfSizeError(err) && canSplit) return { split: true };
+                payload.forEach(function (p) {
+                  st.failedById[p.row_id] = 'Line extraction failed for this batch: ' +
+                    ((err && err.message) || err) + ' Other batches continued.';
+                });
+                progress('Phase 2: a batch failed; continuing with the rest.');
+                return {};
+              });
+            });
+          }, progress);
+      }).then(function () {
+        // 4. triage (no writes) to find the single bounded repair set
+        var items = rows.map(function (r) {
+          if (st.failedById[r.row_id] && !st.okById[r.row_id]) {
+            return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                     hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
+                     txn: null, repaired: true, preError: st.failedById[r.row_id] };
+          }
+          return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                   hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
+                   txn: st.okById[r.row_id] || null, repaired: false };
+        });
+        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, items, token])
+          .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
+      }).then(function (tri) {
+        // 5. one bounded repair for eligible mismatches (grouped, budget-aware)
+        var byId = {};
+        tri.items.forEach(function (it) { byId[it.row_id] = it; });
+        var eligible = tri.verdicts.filter(function (v) { return v.repairEligible; });
+        if (!eligible.length) return { items: tri.items, repairedTxnById: {} };
+        progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
+        var rjobs = [];
+        for (var i = 0; i < eligible.length; i += 12) rjobs.push(eligible.slice(i, i + 12));
+        return cfRunBatchQueue(rjobs, function (job, canSplit) {
+          var g = job.rows;
+          var reads = g.map(function (v) {
+            var r = rows.filter(function (x) { return x.row_id === v.row_id; })[0];
+            var getData = (r && r.file) ? cfReadFileBase64(r.file) : Promise.resolve((r && r.data) || '');
+            return getData.then(function (b64) {
+              return { row_id: v.row_id, origNum: v.origNum, forcedType: r ? r.type : null,
+                       note: r ? r.note : '', hasPhoto: true, data: b64,
+                       mimeType: (r && r.mimeType) || 'image/jpeg',
+                       expectedTotal: v.expectedTotal, calculatedTotal: v.calculatedTotal, difference: v.difference };
+            });
+          });
+          return Promise.all(reads).then(function (payload) {
+            return cfCall('repairReceiptRows', [submissionId, payload, token]).then(function (res) {
+              (res.ok || []).forEach(function (o) { st.repairedTxnById[o.row_id] = o.txn; });
+              progress('Repair pass: re-checked ' + payload.length + ' row(s).');
+              return {};
+            }).catch(function (err) {
+              if (cfAuthError(err)) throw err;
+              if (cfSizeError(err) && canSplit) return { split: true };
+              progress('Repair pass: a group failed; keeping originals for review.');
+              return {};
+            });
+          });
+        }, progress).then(function () { return { items: tri.items, repairedTxnById: st.repairedTxnById }; });
+      }).then(function (pre) {
+        // 6. commit (server reconciles authoritatively, applies toggles, appends)
+        var finals = pre.items.map(function (it) {
+          var fixed = (it.row_id in pre.repairedTxnById) ? pre.repairedTxnById[it.row_id] : it.txn;
+          return { row_id: it.row_id, origNum: it.origNum, forcedType: it.forcedType, note: it.note,
+                   hasPhoto: it.hasPhoto, phase1: it.phase1, txn: fixed, repaired: (it.row_id in pre.repairedTxnById) || !!it.repaired,
+                   preError: it.preError || '' };
+        });
+        progress('Writing validated rows…');
+        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, finals, token]);
+      });
+      return chain;
+    }
+
+    /* Table Layout tab — dynamic rows, phased two-phase submission */
     (function initTableTab() {
       var rowsEl = document.getElementById('table-rows');
       var addBtn = document.getElementById('add-row-btn');
+      var retryBtn = document.getElementById('retry-rows-btn');
       var submitBtnT = document.getElementById('table-submit-btn');
       var submitLabelT = document.getElementById('table-submit-label');
       var countLabel = document.getElementById('table-count-label');
+      var progressEl = document.getElementById('table-progress');
+      var forceBox = document.getElementById('toggle-force');
+      var discountBox = document.getElementById('toggle-discount');
       if (!rowsEl || !addBtn || !submitBtnT) return;
-      var MAX_ROWS = 10;
+      var jobActive = false;
+      var pendingSort = false;
+
+      function setProgress(t) { if (progressEl) progressEl.textContent = t || ''; }
+      function syncToggleStates() {
+        if (!forceBox || !discountBox) return;
+        discountBox.disabled = forceBox.checked;
+        if (forceBox.checked) discountBox.checked = false;
+      }
+      if (forceBox) forceBox.addEventListener('change', syncToggleStates);
+      syncToggleStates();
 
       function updateCount() {
         var n = rowsEl.querySelectorAll('.trow').length;
         if (countLabel) countLabel.textContent = n + (n === 1 ? ' row' : ' rows');
       }
 
+      function rowIsFilled(row) {
+        var noteVal = row.querySelector('.trow-note').value.trim();
+        return !!row._file || noteVal !== '';
+      }
+
+      // Exactly one trailing blank row (unless locked mid-job).
+      function ensureTrailingBlank() {
+        if (jobActive) return;
+        var list = rowsEl.querySelectorAll('.trow');
+        var blanks = 0;
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (rowIsFilled(list[i])) break;
+          blanks++;
+        }
+        if (blanks === 0) addRow();
+        else if (blanks > 1) {
+          for (var k = 0; k < blanks - 1; k++) {
+            var r = list[list.length - 1 - k];
+            if (r && r._previewUrl) { try { URL.revokeObjectURL(r._previewUrl); } catch (e) {} }
+            if (r) r.remove();
+          }
+          updateCount();
+        }
+      }
+
       function makeThumbPlaceholder() {
         return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
       }
 
+      function openRowViewer(row) {
+        var lb = document.getElementById('trow-lightbox');
+        var img = document.getElementById('trow-lightbox-img');
+        var cap = document.getElementById('trow-lightbox-counter');
+        if (!lb || !img || !row._previewUrl) return;
+        img.src = row._previewUrl;
+        img.alt = 'Row ' + (row._origNum || '?') + ' receipt full view';
+        if (cap) cap.textContent = 'Row ' + (row._origNum || '?') + ' receipt';
+        lb.classList.add('open');
+        try { document.getElementById('trow-lightbox-close').focus(); } catch (e) {}
+        lb._returnFocus = document.activeElement;
+      }
+      function closeRowViewer() {
+        var lb = document.getElementById('trow-lightbox');
+        var img = document.getElementById('trow-lightbox-img');
+        if (!lb) return;
+        lb.classList.remove('open');
+        if (img) img.src = '';
+        try { if (lb._returnFocus && lb._returnFocus.focus) lb._returnFocus.focus(); } catch (e) {}
+      }
+
+      function setRowStatus(row, kind, text) {
+        var el = row.querySelector('.trow-status');
+        if (!el) return;
+        el.setAttribute('data-kind', kind || '');
+        el.textContent = text || '';
+      }
+
       function addRow() {
-        var existing = rowsEl.querySelectorAll('.trow').length;
-        if (existing >= MAX_ROWS) {
-          setStatus('Maximum ' + MAX_ROWS + ' rows per batch.', 'error');
-          return;
-        }
         var row = document.createElement('div');
         row.className = 'trow';
         row._file = null;
         row._previewUrl = null;
+        row._rowId = cfUuid();
+        row._origNum = rowsEl.querySelectorAll('.trow').length + 1;
 
         var thumb = document.createElement('button');
         thumb.type = 'button';
@@ -2018,7 +2449,49 @@
         rm.className = 'trow-remove';
         rm.textContent = 'Remove';
 
-        thumb.addEventListener('click', function () { fileInput.click(); });
+        var status = document.createElement('div');
+        status.className = 'trow-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+
+        var actions = document.createElement('div');
+        actions.className = 'row-actions';
+
+        function refreshThumb() {
+          if (row._previewUrl) {
+            thumb.innerHTML = '';
+            var img = document.createElement('img');
+            img.src = row._previewUrl;
+            img.alt = 'Row receipt';
+            thumb.appendChild(img);
+            thumb.classList.add('has-img');
+            thumb.setAttribute('aria-label', 'View receipt photo (opens large preview)');
+          } else {
+            thumb.innerHTML = makeThumbPlaceholder();
+            thumb.classList.remove('has-img');
+            thumb.setAttribute('aria-label', 'Upload photo for this row');
+          }
+        }
+
+        thumb.addEventListener('click', function () {
+          if (row._previewUrl) openRowViewer(row);
+          else fileInput.click();
+        });
+        thumb.addEventListener('keydown', function (e) {
+          if ((e.key === 'Enter' || e.key === ' ') && row._previewUrl) { e.preventDefault(); openRowViewer(row); }
+        });
+        function setFile(f) {
+          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
+          row._previewUrl = null;
+          row._file = null;
+          if (f) {
+            row._file = f;
+            try { row._previewUrl = URL.createObjectURL(f); } catch (e) { row._previewUrl = null; }
+          }
+          refreshThumb();
+          ensureTrailingBlank();
+          updateCount();
+        }
         fileInput.addEventListener('change', function () {
           var f = fileInput.files && fileInput.files[0];
           fileInput.value = '';
@@ -2027,129 +2500,319 @@
             setStatus('Row needs an image file.', 'error');
             return;
           }
-          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
-          row._file = f;
-          row._previewUrl = URL.createObjectURL(f);
-          thumb.innerHTML = '';
-          var img = document.createElement('img');
-          img.src = row._previewUrl;
-          img.alt = 'Row receipt';
-          thumb.appendChild(img);
-          thumb.classList.add('has-img');
+          setFile(f);
         });
+        note.addEventListener('input', function () { ensureTrailingBlank(); });
+        row._setFile = setFile;
         rm.addEventListener('click', function () {
+          if (jobActive) return;
           if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
           row.remove();
+          if (rowsEl.querySelectorAll('.trow').length === 0) addRow();
+          else ensureTrailingBlank();
           updateCount();
+          maybeSortAfterResolve();
         });
 
         row.appendChild(thumb);
         row.appendChild(note);
         row.appendChild(typeSel);
         row.appendChild(rm);
+        row.appendChild(status);
+        row.appendChild(actions);
         row.appendChild(fileInput);
         rowsEl.appendChild(row);
         updateCount();
       }
 
-      addBtn.addEventListener('click', addRow);
-      // Start with one row so the layout is visible
+      function setLocked(locked) {
+        jobActive = locked;
+        submitBtnT.disabled = locked;
+        addBtn.disabled = locked;
+        if (retryBtn) retryBtn.disabled = locked;
+        if (submitLabelT) submitLabelT.textContent = locked ? 'Working…' : 'Submit Batch';
+      }
+
+      addBtn.addEventListener('click', function () {
+        if (jobActive) return;
+        var list = rowsEl.querySelectorAll('.trow');
+        var last = list[list.length - 1];
+        if (last && !rowIsFilled(last)) {
+          try { last.querySelector('.trow-note').focus(); } catch (e) {}
+          return;
+        }
+        addRow();
+      });
+      // Start with one blank row so the layout is visible
       if (rowsEl.querySelectorAll('.trow').length === 0) addRow();
 
-      submitBtnT.addEventListener('click', function () {
+      // Table receipt viewer (preview only - replace/remove stay on the row)
+      (function initRowViewer() {
+        var lb = document.getElementById('trow-lightbox');
+        if (!lb) return;
+        document.getElementById('trow-lightbox-close').addEventListener('click', closeRowViewer);
+        lb.addEventListener('click', function (e) { if (e.target === lb) closeRowViewer(); });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && lb.classList.contains('open')) closeRowViewer();
+        });
+      })();
+
+      window.addEventListener('beforeunload', function (e) {
+        var reviewWithImages = false;
+        var list = rowsEl.querySelectorAll('.trow');
+        for (var i = 0; i < list.length; i++) {
+          if (list[i]._file && list[i].getAttribute('data-state') === 'review') { reviewWithImages = true; break; }
+        }
+        if (jobActive || reviewWithImages) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
+      function collectFilled() {
         var domRows = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow'));
-        // Ignore completely empty rows (no photo AND no note) so 10 open
-        // rows with only 5 filled submits just those 5.
-        var filled = domRows.filter(function (row) {
+        return domRows.filter(function (row) {
+          if (row.getAttribute('data-state') === 'logged') return false;
           var noteVal = row.querySelector('.trow-note').value.trim();
           return !!row._file || noteVal !== '';
+        }).map(function (row, i) {
+          row._submitNum = i + 1;
+          return {
+            el: row,
+            row_id: row._rowId,
+            origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null,
+            data: '',
+            mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
         });
-        if (filled.length === 0) {
+      }
+
+      function renderReport(report, rowsById) {
+        var counts = (report && report.summary) || {};
+        var loggedN = (counts.logged || 0) + (counts.duplicates || 0);
+        (report.rows || []).forEach(function (r) {
+          var dom = rowsById[r.row_id];
+          if (!dom) return;
+          var actions = dom.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+          if (r.status === 'logged' || r.duplicate) {
+            if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+            dom.remove();
+            return;
+          }
+          if (r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted') {
+            setRowStatus(dom, 'adjusted', (r.status === 'force-adjusted' ? 'Force-logged' : 'Discount-adjusted') +
+              (r.transactionId ? ' (' + r.transactionId + ')' : '') + (r.message ? ' — ' + r.message : ''));
+            dom.setAttribute('data-state', 'adjusted');
+            if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+            dom.remove();
+            return;
+          }
+          dom.setAttribute('data-state', 'review');
+          setRowStatus(dom, 'error', r.message || 'Needs review.');
+          if (actions) {
+            var replaceBtn = document.createElement('button');
+            replaceBtn.type = 'button';
+            replaceBtn.className = 'btn-choice';
+            replaceBtn.textContent = 'Replace photo';
+            replaceBtn.addEventListener('click', function () { if (dom._setFile && !jobActive) dom.querySelector('input[type="file"]').click(); });
+            actions.appendChild(replaceBtn);
+            var forceBoxOn = forceBox && forceBox.checked;
+            if (forceBoxOn) {
+              var forceBtn = document.createElement('button');
+              forceBtn.type = 'button';
+              forceBtn.className = 'btn-choice';
+              forceBtn.textContent = 'Force log this row';
+              forceBtn.addEventListener('click', function () { resubmitRows([dom]); });
+              actions.appendChild(forceBtn);
+            }
+            var discardBtn = document.createElement('button');
+            discardBtn.type = 'button';
+            discardBtn.className = 'btn-choice';
+            discardBtn.textContent = 'Discard row';
+            discardBtn.addEventListener('click', function () {
+              if (jobActive) return;
+              if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+              dom.remove();
+              ensureTrailingBlank();
+              updateCount();
+              updateRetryVisibility();
+              maybeSortAfterResolve();
+            });
+            actions.appendChild(discardBtn);
+          }
+        });
+        ensureTrailingBlank();
+        updateCount();
+        updateRetryVisibility();
+        // Deferred sort: committed rows stay unsorted while reviews remain.
+        // Sorting runs once the last review row is resolved or discarded.
+        if (!report.sortEligible && ((counts.logged || 0) + (counts.forceAdjusted || 0) + (counts.discountAdjusted || 0) > 0)) {
+          pendingSort = true;
+        }
+        var parts = [];
+        if (counts.logged) parts.push(counts.logged + ' logged');
+        if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' force-logged (verify receipts)');
+        if (counts.discountAdjusted) parts.push(counts.discountAdjusted + ' discount-adjusted (verify receipts)');
+        if (counts.review) parts.push(counts.review + ' left for review');
+        if (counts.errors) parts.push(counts.errors + ' failed');
+        var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
+        if (counts.forceAdjusted || counts.discountAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
+        setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
+        return loggedN;
+      }
+
+      function updateRetryVisibility() {
+        if (!retryBtn) return;
+        var hasReview = !!rowsEl.querySelector('.trow[data-state="review"]');
+        retryBtn.classList.toggle('hidden', !hasReview);
+      }
+
+      function maybeSort(report) {
+        if (!report || !report.sortEligible) return Promise.resolve(false);
+        return runSortCall();
+      }
+
+      function runSortCall() {
+        setProgress('Report shown. Sorting sheets…');
+        return cfCall('sortCashflowSheets', [sessionToken]).then(function (res) {
+          pendingSort = false;
+          var n = (res && res.sheets && res.sheets.length) || 0;
+          setStatus('Sheets sorted (' + n + ' month sheet(s)' +
+            ((res && res.rowsMoved) ? ', ' + res.rowsMoved + ' rows ordered' : '') + ').', 'success');
+          return true;
+        }).catch(function (err) {
+          if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return false; }
+          setStatus('Sorting skipped: ' + ((err && err.message) || err), 'error');
+          return false;
+        });
+      }
+
+      // Runs the deferred sort after the user resolves/discards the last
+      // review row. Only fires with zero review rows remaining, and only
+      // after a report was already rendered (pendingSort set above).
+      function maybeSortAfterResolve() {
+        if (jobActive || !pendingSort) return;
+        if (rowsEl.querySelector('.trow[data-state="review"]')) return;
+        runSortCall();
+      }
+
+      function runSubmission(filled, done) {
+        if (!filled.length) {
           setStatus('Add at least one filled row (photo or note) first.', 'error');
           return;
         }
-        submitBtnT.disabled = true;
-        if (submitLabelT) submitLabelT.textContent = 'Saving…';
-        setStatus('Reading ' + filled.length + ' row(s) in one pass…', '');
-
-        var payload = new Array(filled.length);
-        var pending = 0;
-        var failed = false;
-        filled.forEach(function (row, idx) {
-          var noteVal = row.querySelector('.trow-note').value.trim();
-          var typeVal = row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense';
-          if (!row._file) {
-            // Text-only row: no async read needed.
-            payload[idx] = { imageBase64: '', mimeType: '', note: noteVal, type: typeVal };
+        if (!(window.google && google.script && google.script.run)) {
+          // Local preview (outside Apps Script): simulate per-row success
+          setTimeout(function () {
+            filled.forEach(function (f) {
+              if (f.el._previewUrl) { try { URL.revokeObjectURL(f.el._previewUrl); } catch (e) {} }
+              f.el.remove();
+            });
+            ensureTrailingBlank();
+            updateCount();
+            updateRetryVisibility();
+            setProgress('');
+            setLocked(false);
+            setStatus('Logged ' + filled.length + ' rows (preview).', 'success');
+            if (done) done();
+          }, 900);
+          return;
+        }
+        setLocked(true);
+        setProgress('Starting…');
+        cfEngineSubmit({
+          rows: filled,
+          sessionToken: sessionToken,
+          progress: function (t) { setProgress(t); setStatus(t, ''); }
+        }).then(function (report) {
+          var rowsById = {};
+          filled.forEach(function (f) { rowsById[f.row_id] = f.el; });
+          renderReport(report, rowsById);
+          setProgress('');
+          setLocked(false);
+          return maybeSort(report);
+        }).then(function () { if (done) done(); })
+        .catch(function (err) {
+          setProgress('');
+          setLocked(false);
+          if (cfAuthError(err)) {
+            setStatus('Session expired - please log in again.', 'error');
+            try { cfNoteAuthExpired(); } catch (e) {}
             return;
           }
-          pending++;
-          var origNum = domRows.indexOf(row) + 1;
-          var reader = new FileReader();
-          reader.onload = function () {
-            if (failed) return;
-            payload[idx] = {
-              imageBase64: reader.result.split(',')[1],
-              mimeType: row._file.type || 'image/jpeg',
-              note: noteVal,
-              type: typeVal
-            };
-            pending--;
-            if (pending === 0) sendTableBatch(payload);
-          };
-          reader.onerror = function () {
-            if (failed) return;
-            failed = true;
-            submitBtnT.disabled = false;
-            if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
-            setStatus('Could not read photo in row ' + origNum + '. Try again.', 'error');
-          };
-          reader.readAsDataURL(row._file);
+          if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
+            setStatus('Gemini API key is missing - please add it.', 'error');
+            try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
+            return;
+          }
+          if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
+            setStatus('Google Sheet is not set - please add it.', 'error');
+            try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
+            return;
+          }
+          setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
         });
-        if (pending === 0) sendTableBatch(payload);
-      });
-
-      function sendTableBatch(payload) {
-        if (window.google && google.script && google.script.run) {
-          google.script.run
-            .withSuccessHandler(function (summary) {
-              submitBtnT.disabled = false;
-              if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
-              var isIncome = /^income/i.test(summary || '');
-              setStatus(summary, isIncome ? 'success income' : 'success');
-              // Reset to one empty row
-              rowsEl.innerHTML = '';
-              addRow();
-            })
-            .withFailureHandler(function (err) {
-              submitBtnT.disabled = false;
-              if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
-              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
-                setStatus('Session expired - please log in again.', 'error');
-                try { cfNoteAuthExpired(); } catch (e) {}
-                return;
-              }
-              if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
-                setStatus('Gemini API key is missing - please add it.', 'error');
-                try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
-                return;
-              }
-              if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
-                setStatus('Google Sheet is not set - please add it.', 'error');
-                try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
-                return;
-              }
-              setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
-            })
-            .processTableBatch(payload, sessionToken);
-        } else {
-          setTimeout(function () {
-            submitBtnT.disabled = false;
-            if (submitLabelT) submitLabelT.textContent = 'Submit Batch';
-            setStatus('Logged ' + payload.length + ' rows (preview) — ' + payload.map(function (r, i) { return 'Row ' + (i + 1) + ': ' + r.type; }).join('; '), 'success');
-          }, 900);
-        }
       }
+
+      function resubmitRows(doms) {
+        var filled = doms.map(function (row, i) {
+          return {
+            el: row, row_id: row._rowId, origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
+        }).filter(function (f) {
+          return f.hasPhoto || f.note !== '';
+        });
+        if (!filled.length) {
+          setStatus('Add a photo or note to the row first.', 'error');
+          return;
+        }
+        filled.forEach(function (f) {
+          f.el.removeAttribute('data-state');
+          setRowStatus(f.el, 'warning', 'Retrying…');
+          var actions = f.el.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+        });
+        runSubmission(filled);
+      }
+
+      submitBtnT.addEventListener('click', function () {
+        if (jobActive) return;
+        runSubmission(collectFilled());
+      });
+      if (retryBtn) retryBtn.addEventListener('click', function () {
+        if (jobActive) return;
+        var reviewDoms = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow[data-state="review"]'));
+        if (!reviewDoms.length) return;
+        var filled = reviewDoms.map(function (row, i) {
+          return {
+            el: row, row_id: row._rowId, origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
+        }).filter(function (f) { return f.hasPhoto || f.note !== ''; });
+        if (!filled.length) {
+          setStatus('Review rows are empty - edit a note/photo or discard them.', 'error');
+          return;
+        }
+        filled.forEach(function (f) {
+          f.el.removeAttribute('data-state');
+          setRowStatus(f.el, 'warning', 'Retrying…');
+          var actions = f.el.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+        });
+        runSubmission(filled);
+      });
     })();
 
     /* PIN-first gate + 12h server sessions. Raw PIN never stored; only the
@@ -2561,7 +3224,7 @@
             '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(lg.type || (amt < 0 ? 'Expense' : '')) + '</span></div>' +
             '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(fmtRp(amt)) + '</div>' +
             (desc ? '<div class="hist-sub">' + esc(desc) + '</div>' : '') +
-            '<div class="hist-meta">' + esc(lg.date || '') + ' · ' + esc(lg.sheet || '') + (lg.category ? ' · ' + esc(lg.category) : '') + '</div>';
+            '<div class="hist-meta">' + esc(lg.date || '') + ' · ' + esc(lg.sheet || '') + (lg.category ? ' · ' + esc(lg.category) : '') + (lg.transactionId ? ' · ' + esc(lg.transactionId) : '') + '</div>';
           histList.appendChild(item);
         });
       }

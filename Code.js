@@ -83,8 +83,9 @@ const TRANSACTION_SCHEMA = {
   required: ['transaction_date', 'merchant', 'transaction_type', 'items']
 };
 
-// Batch wrapper: one Gemini request for N photos returns N transactions in
-// order. Single request = single hit against the per-day request quota.
+// Batch wrapper: one Gemini request for one batch returns N transactions in
+// order. Each batch is one hit against the per-day request quota; large
+// submissions run sequential phased batches (see the pipeline below).
 const BATCH_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -100,8 +101,295 @@ const BATCH_SCHEMA = {
 // Keep the old name as an alias so any existing caller still works.
 const EXPENSE_SCHEMA = TRANSACTION_SCHEMA;
 
+// ---------- TWO-PHASE RECEIPT PIPELINE (shared core) ----------
+
+// Shared instruction fragment for every receipt task prompt. Phase prompts
+// add a short task block on top of this instead of duplicating the rules.
+var PROMPT_CORE =
+  'You are extracting structured cashflow data (expense or income) from receipt images, ' +
+  'invoices, proofs of transfer, payslips, or a text message describing money spent or money received. ' +
+  'Amounts are in Indonesian Rupiah as plain numbers (no "Rp", dots, or commas). If the receipt currency ' +
+  'is clearly not IDR or the conversion basis is unclear, say so in notes/flags rather than comparing raw numbers. ' +
+  'For EXPENSE items: classify each into exactly one category and exactly one spending type ' +
+  '(Need, Want, Work, or Investment) - never invent a category or spending type not in the list. ' +
+  'For INCOME items: set category to "Income" (unless savings interest or investment returns, which may use ' +
+  '"Investment / Savings"), keep regular income amounts positive, record discount/deduction lines ' +
+  '(diskon, potongan, voucher, promo, cashback, withheld fees) as negative amounts, and OMIT spending_type entirely. ' +
+  'ACCOUNTING RULES - follow exactly: transcribe only additive charge and deduction lines ' +
+  '(items with quantities/line totals, tax, service charge, delivery/platform fee, bag fee, tip, rounding, ' +
+  'genuine discounts/deductions as NEGATIVE amounts). Intermediate subtotals are checkpoints, never additional ' +
+  'charges - do NOT add a subtotal to the underlying item prices. Never count informational values as charges: ' +
+  'subtotal lines, original crossed-out prices, savings displays, amount tendered, change returned, loyalty points, ' +
+  'future cashback, prior balances, or payment-summary duplicates. Distinguish unit price from extended line total ' +
+  '(quantity x unit). Do not extract the same fee/discount twice when it appears in multiple sections. ' +
+  'Never invent an item, price, discount, or balancing adjustment. If the visible line list looks incomplete, ' +
+  'cropped, or illegible, flag it instead of guessing.';
+
+// ---------- Model budget profiles (documented, conservative) ----------
+//
+// Verified 2026-10-11 against official Gemini docs: gemini-3.6-flash =
+// 1,048,576 input / 65,536 output tokens; per-item media_resolution is an
+// Interactions-API-only feature (Gemini 3), NOT available on the v1beta
+// generateContent + inline_data path this app uses - so no resolution flag
+// is hard-coded here (default image tokenisation applies; blurry photos are
+// still flagged by the model). Other profiles below are conservative
+// engineering estimates, NOT official figures. The planner always budgets
+// against the SMALLEST profile in the fallback chain so any model fits.
+var MODEL_PROFILES = {
+  'gemini-flash-lite-latest': { maxInputTokens: 500000, maxOutputTokens: 32000, label: 'flash-lite' },
+  'gemini-3.5-flash':         { maxInputTokens: 500000, maxOutputTokens: 32000, label: 'flash-3.5' },
+  'gemini-3.6-flash':         { maxInputTokens: 1048576, maxOutputTokens: 65536, label: 'flash-3.6' }
+};
+var DEFAULT_MODEL_PROFILE = { maxInputTokens: 200000, maxOutputTokens: 16000, label: 'unknown-conservative' };
+
+function modelProfile_(name) {
+  var p = MODEL_PROFILES[name];
+  if (p) return p;
+  return DEFAULT_MODEL_PROFILE;
+}
+function chainBudget_() {
+  var inTok = Infinity, outTok = Infinity;
+  for (var i = 0; i < GEMINI_MODELS.length; i++) {
+    var p = modelProfile_(GEMINI_MODELS[i]);
+    if (p.maxInputTokens < inTok) inTok = p.maxInputTokens;
+    if (p.maxOutputTokens < outTok) outTok = p.maxOutputTokens;
+  }
+  return { maxInputTokens: inTok, maxOutputTokens: outTok };
+}
+
+// Conservative batch-planning budgets. These are engineering safety margins,
+// not official vendor limits (verified 2026-10-12 from the official Apps
+// Script quotas page: script runtime 6 min/execution, UrlFetch POST 50 MB;
+// google.script.run / UrlFetch payloads are kept far below any ceiling).
+var BATCH_LIMITS = {
+  maxPhotosPerBatch: 12,
+  maxRowsPerBatch: 25,
+  maxPayloadBytes: 10 * 1024 * 1024,
+  inputTokenMargin: 0.25,    // use at most 25% of smallest chain input budget
+  outputTokenMargin: 0.5,    // use at most 50% of smallest chain output budget
+  noteCharsPerToken: 4,
+  photoTokens: 1500,         // conservative image estimate; NOT derived from byte size
+  rowOverheadTokens: 400,    // per-row framing + manifest share
+  fixedOverheadTokens: 8000, // core prompt + schema + task framing
+  manifestTokensPerPhoto: 150,
+  outputTokensPerPhotoRow: 2000,
+  outputTokensPerTextRow: 1200
+};
+
+// Rolling token-usage feedback (Script Properties, operational only).
+var USAGE_STATS_KEY = 'CF_USAGE_JSON';
+function getUsageFactors_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(USAGE_STATS_KEY);
+    if (raw) { var o = JSON.parse(raw); if (o && typeof o === 'object') return o; }
+  } catch (e) {}
+  return {};
+}
+function updateUsageFactors_(usageList) {
+  try {
+    var st = getUsageFactors_();
+    var n = Number(st.samples || 0), sum = Number(st.photoTokenSum || 0), c = 0;
+    for (var i = 0; i < (usageList || []).length; i++) {
+      var u = usageList[i] || {};
+      if (u.photoCount > 0 && u.inputTokens > 0) { sum += u.inputTokens / u.photoCount; c++; }
+    }
+    if (!c) return;
+    st.samples = n + c; st.photoTokenSum = sum;
+    st.avgPhotoTokens = Math.round(sum / (n + c));
+    PropertiesService.getScriptProperties().setProperty(USAGE_STATS_KEY, JSON.stringify(st));
+  } catch (e) {}
+}
+function effectivePhotoTokens_() {
+  var st = getUsageFactors_();
+  var obs = Number(st.avgPhotoTokens || 0);
+  // Only ever raise the estimate from observed data, never relax it.
+  return obs > BATCH_LIMITS.photoTokens ? obs : BATCH_LIMITS.photoTokens;
+}
+
+// Adaptive batch planner (pure: no services, fully unit-testable).
+// rowsMeta: [{row_id, origNum, note, type, hasPhoto, imageBytes}]
+// Returns {batches: [{rows: [rowMeta...], estInputTokens, estOutputTokens, estPayloadBytes, photoCount}], totals}
+// Splits on token/payload/runtime estimates, never on fixed row counts.
+function planReceiptBatches_(rowsMeta, opt) {
+  opt = opt || {};
+  var budget = chainBudget_();
+  var inCap = Math.floor(budget.maxInputTokens * BATCH_LIMITS.inputTokenMargin);
+  var outCap = Math.floor(budget.maxOutputTokens * BATCH_LIMITS.outputTokenMargin);
+  var photoTok = opt.photoTokens || effectivePhotoTokens_();
+  var maxPhotos = opt.maxPhotosPerBatch || BATCH_LIMITS.maxPhotosPerBatch;
+  var maxRows = opt.maxRowsPerBatch || BATCH_LIMITS.maxRowsPerBatch;
+  var maxBytes = opt.maxPayloadBytes || BATCH_LIMITS.maxPayloadBytes;
+  var batches = [];
+  var cur = null;
+  function fresh() {
+    return { rows: [], inTok: BATCH_LIMITS.fixedOverheadTokens, outTok: 0, bytes: 0, photos: 0 };
+  }
+  function fits(b, m) {
+    var noteTok = Math.ceil(String(m.note || '').length / BATCH_LIMITS.noteCharsPerToken);
+    var addIn = BATCH_LIMITS.rowOverheadTokens + noteTok + (m.hasPhoto ? photoTok + BATCH_LIMITS.manifestTokensPerPhoto : 0);
+    var addOut = m.hasPhoto ? BATCH_LIMITS.outputTokensPerPhotoRow : BATCH_LIMITS.outputTokensPerTextRow;
+    if (b.rows.length + 1 > maxRows) return false;
+    if (b.photos + (m.hasPhoto ? 1 : 0) > maxPhotos) return false;
+    if (b.bytes + (Number(m.imageBytes || 0)) > maxBytes) return false;
+    if (b.inTok + addIn > inCap) return false;
+    if (b.outTok + addOut > outCap) return false;
+    return true;
+  }
+  function push(b, m) {
+    var noteTok = Math.ceil(String(m.note || '').length / BATCH_LIMITS.noteCharsPerToken);
+    b.rows.push(m);
+    b.inTok += BATCH_LIMITS.rowOverheadTokens + noteTok + (m.hasPhoto ? photoTok + BATCH_LIMITS.manifestTokensPerPhoto : 0);
+    b.outTok += m.hasPhoto ? BATCH_LIMITS.outputTokensPerPhotoRow : BATCH_LIMITS.outputTokensPerTextRow;
+    b.bytes += Number(m.imageBytes || 0);
+    if (m.hasPhoto) b.photos++;
+  }
+  for (var i = 0; i < rowsMeta.length; i++) {
+    var m = rowsMeta[i];
+    if (!cur) cur = fresh();
+    if (cur.rows.length > 0 && !fits(cur, m)) {
+      batches.push(cur);
+      cur = fresh();
+    }
+    push(cur, m);
+  }
+  if (cur && cur.rows.length) batches.push(cur);
+  return {
+    batches: batches.map(function (b, bi) {
+      return {
+        batch_id: bi,
+        photoCount: b.photos,
+        rowCount: b.rows.length,
+        estInputTokens: b.inTok,
+        estOutputTokens: b.outTok,
+        estPayloadBytes: b.bytes,
+        rows: b.rows.map(function (m) {
+          return { row_id: m.row_id, origNum: m.origNum, note: m.note, type: m.type,
+                   hasPhoto: !!m.hasPhoto, imageBytes: Number(m.imageBytes || 0) };
+        })
+      };
+    }),
+    totals: { rows: rowsMeta.length, photos: rowsMeta.filter(function (m) { return m.hasPhoto; }).length }
+  };
+}
+
+// ---------- Phase schemas (row-identified, status-flagged) ----------
+
+var PHASE1_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    results: {
+      type: 'ARRAY',
+      description: 'One result per input photo, in any order (matched by row_id).',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          row_id: { type: 'STRING', description: 'Stable input row identifier, copied exactly.' },
+          photo_index: { type: 'NUMBER', description: '1-based input photo number.' },
+          total_amount: { type: 'NUMBER', description: 'Printed final total in IDR, plain integer. 0 when not reliably readable.' },
+          total_label: { type: 'STRING', description: 'Printed label found (e.g. TOTAL BAYAR), empty if none.' },
+          total_status: { type: 'STRING', enum: ['found', 'uncertain', 'not_visible'],
+            description: 'found = clearly readable final total; uncertain = ambiguous/blurry; not_visible = total area missing.' },
+          image_quality: { type: 'STRING', enum: ['clear', 'blurry', 'partially_obscured', 'incomplete'] },
+          review_reason: { type: 'STRING', description: 'Concise reason when uncertain or unusable, else empty.' }
+        },
+        required: ['row_id', 'photo_index', 'total_amount', 'total_status', 'image_quality']
+      }
+    }
+  },
+  required: ['results']
+};
+
+var PHASE2_TXN_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    row_id: { type: 'STRING', description: 'Stable input row identifier, copied exactly.' },
+    transaction_date: { type: 'STRING', description: 'YYYY-MM-DD, or today date given in prompt when unclear.' },
+    merchant: { type: 'STRING', description: 'Store, payee, or income source.' },
+    transaction_type: {
+      type: 'STRING', enum: ['Expense', 'Income'],
+      description: 'Income for money in, Expense for money out. Caller may override per row.'
+    },
+    line_list_complete: { type: 'STRING', enum: ['complete', 'possibly_incomplete', 'illegible'],
+      description: 'Whether every visible charged line was transcribed.' },
+    extraction_notes: { type: 'STRING', description: 'Concise flags (hidden items, duplicates avoided, ambiguous lines), else empty.' },
+    items: TRANSACTION_SCHEMA.properties.items
+  },
+  required: ['row_id', 'transaction_date', 'merchant', 'transaction_type', 'line_list_complete', 'items']
+};
+
+var PHASE2_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    transactions: {
+      type: 'ARRAY',
+      description: 'Exactly one transaction per input row, matched by row_id (order not trusted).',
+      items: PHASE2_TXN_SCHEMA
+    }
+  },
+  required: ['transactions']
+};
+
+// ---------- Phase task prompts (short; rules live in PROMPT_CORE) ----------
+
+function buildPhase1Prompt(rows) {
+  var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var base =
+    'TASK: For each attached receipt photo, report ONLY its printed final payable/charged total. ' +
+    'Today is ' + todayStr + '. Do not extract items, categories, or dates. Do not sum visible items. ' +
+    'Final-total labels include TOTAL, TOTAL BAYAR, GRAND TOTAL, AMOUNT PAID, TOTAL PAYMENT and local equivalents. ' +
+    'Ignore subtotal, pre-discount/original amounts, amount tendered, change returned, savings displays, loyalty ' +
+    'points, future cashback, prior balances, and unrelated amounts. If several totals look plausible, mark ' +
+    'total_status "uncertain" and explain in review_reason. Never guess: blurry, cropped, obscured, or missing ' +
+    'total areas get total_status "uncertain" or "not_visible" with total_amount 0 and a review_reason. ' +
+    'Return one result per photo. Photos in order: ';
+  for (var i = 0; i < rows.length; i++) {
+    base += 'Photo ' + (i + 1) + ' = row_id "' + rows[i].row_id + '". ';
+  }
+  return base;
+}
+
+function buildPhase2Prompt(rows) {
+  var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var base = PROMPT_CORE +
+    ' Today\'s date is ' + todayStr + '. Missing/unclear dates fall back to today (' + todayStr + ') in YYYY-MM-DD. ' +
+    'TASK: Return exactly one transaction per input row below, each carrying its row_id. ' +
+    'Text-only rows (no photo): build the transaction from the note; no printed total exists. ' +
+    'Photo rows: transcribe every visible charged line for that photo; the EXPECTED TOTAL shown is a validation ' +
+    'target only - never invent a balancing line, item, price, or discount to reach it. If the receipt shows a ' +
+    'single final total with no itemized breakdown, use one clearly described receipt-level line; do NOT use that ' +
+    'fallback when an item list is visible but partly hidden, cropped, or unreadable - flag possibly_incomplete instead. ' +
+    'Rows: ';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var forced = (r.forcedType === 'Income') ? 'Income' : ((r.forcedType === 'Expense') ? 'Expense' : null);
+    base += 'Row "' + r.row_id + '"' + (r.hasPhoto ? ' (Photo ' + r.photoNo + ')' : ' (text-only, no photo)') +
+      ': transaction_type MUST be "' + (forced || 'as classified') + '"' +
+      (r.note ? ' with note context: "' + String(r.note).slice(0, 500) + '"' : ' (no note)') +
+      (r.hasPhoto && r.phase1 ? ' EXPECTED TOTAL ' + r.phase1.total_amount + ' (status ' + r.phase1.total_status + ').' : '. ');
+  }
+  return base;
+}
+
+function buildRepairPrompt(rows) {
+  var base = PROMPT_CORE +
+    'TASK: REPAIR PASS. Each row below was already extracted once but its signed item sum does not match the ' +
+    'printed EXPECTED TOTAL. Re-examine the SAME photo carefully for: hidden/missed fees, items, taxes, or discounts; ' +
+    'wrong digits or signs; quantity x unit-price mistakes; the same line extracted twice; subtotal mistaken for an ' +
+    'item. The difference shown is (expected - calculated). It is FORBIDDEN to invent a balancing amount, item, ' +
+    'price, or discount to force a match - return only lines actually visible, or flag possibly_incomplete/illegible. ' +
+    'Rows: ';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    base += 'Row "' + r.row_id + '" (Photo ' + r.photoNo + '): EXPECTED TOTAL ' + r.expectedTotal +
+      ', previously calculated ' + r.calculatedTotal + ' (difference ' + r.difference + ')' +
+      (r.note ? ' note: "' + String(r.note).slice(0, 300) + '"' : '') + '. ';
+  }
+  return base;
+}
+
 // photoCount: 0 = text-only, 1 = single receipt photo, >1 = batched
-// multi-photo submission (ONE Gemini request for all photos).
+// multi-photo submission. Legacy single-shot builder (kept for the
+// text-only path and compatibility); phased photo flows use the builders above.
 // Per-photo rule always holds: each photo is its own transaction with ONE
 // category - fees, tax, service charges and discounts share the receipt's
 // main category. E.g. a discount on a food receipt is a food expense.
@@ -295,58 +583,162 @@ function processExpense(imageBase64, mimeType, noteText, sessionToken) {
 }
 
 // Multi-photo entry point: images is an array of {data, mimeType}.
-// ONE Gemini request handles all photos (batch) - a single hit against the
-// per-day request quota. Each photo still comes back as its own transaction
-// (one category per photo - discounts/fees/tax share the main category),
-// with the shared note routed per photo (see buildPrompt).
-// Empty array = text-only submission.
-function processExpenses(images, noteText, sessionToken) {
+// Image receipts run the same two-phase reconcile/commit pipeline as Table
+// rows (Phase 1 totals, Phase 2 lines, one repair, toggle policy); text-only
+// submissions keep the direct path. opts: {forceLog, autoDiscount} (both off
+// by default). Returns the classic summary string; throws when nothing could
+// be logged. Kept for backward compatibility - the web UI drives the phased
+// ops directly for large submissions.
+function processExpenses(images, noteText, sessionToken, opts) {
   requireSession_(sessionToken);
   images = images || [];
   noteText = noteText || '';
+  var toggles = { forceLog: !!(opts && opts.forceLog), autoDiscount: !!(opts && opts.autoDiscount) };
+  var submissionId = Utilities.getUuid();
 
-  var ss = getSpreadsheet_();
-
-  // Text-only: the note IS the source data.
+  // Text-only: the note IS the source data (no Phase 1, no invented total).
   if (images.length === 0) {
     var promptText = buildPrompt(noteText, 0);
     var txn = sanitizeTransaction(callGemini(promptText, noteText, [], TRANSACTION_SCHEMA));
-    var sheet = getOrCreateMonthSheet(ss, txn.transaction_date);
-    appendTransactionRows(sheet, txn, '');
-    return formatSummary(txn);
+    var report = commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog, autoDiscount: toggles.autoDiscount },
+      [{ row_id: Utilities.getUuid(), origNum: 1, forcedType: null, note: '',
+         hasPhoto: false, phase1: null, txn: txn, repaired: false }], sessionToken);
+    return summarizeReport_(report, 'receipt');
   }
 
-  // Batched: single Gemini call for all photos.
-  var batchPrompt = buildPrompt(noteText, images.length);
-  var batchResult = callGemini(batchPrompt, '', images, BATCH_SCHEMA);
-  var txns = (batchResult && batchResult.transactions) || [];
-  if (!Array.isArray(txns) || txns.length === 0) {
-    throw new Error('Gemini returned no transactions - nothing to log.');
-  }
-
-  var summaries = [];
-  var grandTotal = 0;
-  for (var i = 0; i < txns.length; i++) {
-    var photoTxn = sanitizeTransaction(txns[i]);
-    var photoSheet = getOrCreateMonthSheet(ss, photoTxn.transaction_date);
-    // Same shared note recorded on every receipt's rows.
-    appendTransactionRows(photoSheet, photoTxn, noteText);
-    var photoTotal = photoTxn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
-    grandTotal += photoTotal;
-    summaries.push('Photo ' + (i + 1) + ': ' + photoTxn.transaction_type + ' ' +
-      photoTxn.merchant + ' (' + photoTxn.items.length + ' item(s), Rp' + photoTotal.toLocaleString('id-ID') + ')');
-  }
-
-  if (summaries.length === 1) return formatSummaryFromParts(summaries[0]);
-  return 'Logged ' + summaries.length + ' receipts, total Rp' + grandTotal.toLocaleString('id-ID') + ' — ' + summaries.join('; ');
+  var defs = images.map(function (img, i) {
+    return { forcedType: null, note: noteText, data: (img || {}).data || '',
+             mimeType: (img || {}).mimeType || 'image/jpeg', hasPhoto: true, origNum: i + 1 };
+  });
+  var report2 = processRowsPipeline_(defs, toggles, sessionToken, submissionId);
+  return summarizeReport_(report2, 'receipt');
 }
 
-// ---------- TABLE BATCH (Tab 2: per-row note + forced type, ONE Gemini call) ----------
+// Shared single-execution pipeline for the compatibility wrappers.
+// defs: [{forcedType|null, note, data, mimeType, hasPhoto, origNum}]
+function processRowsPipeline_(defs, toggles, sessionToken, submissionId) {
+  var rows = defs.map(function (d, i) {
+    return { row_id: Utilities.getUuid(), origNum: d.origNum || (i + 1),
+             forcedType: d.forcedType || null, note: String(d.note || ''),
+             hasPhoto: !!d.hasPhoto, data: d.data || '', mimeType: d.mimeType || 'image/jpeg' };
+  });
+  // Phase 1 in bounded photo chunks (photo rows only).
+  var phase1ById = {};
+  var photoRows = rows.filter(function (r) { return r.hasPhoto && r.data; });
+  if (photoRows.length !== rows.filter(function (r) { return r.hasPhoto; }).length) {
+    throw new Error('A photo row is missing its image data - resubmit with the images attached.');
+  }
+  var perChunk = BATCH_LIMITS.maxPhotosPerBatch;
+  for (var c = 0; c < photoRows.length; c += perChunk) {
+    var chunk = photoRows.slice(c, c + perChunk).map(function (r, k) {
+      return { row_id: r.row_id, photo_index: k + 1, data: r.data, mimeType: r.mimeType };
+    });
+    var p1 = runPhase1Batch(submissionId, chunk, sessionToken);
+    for (var q = 0; q < p1.results.length; q++) phase1ById[p1.results[q].row_id] = p1.results[q];
+  }
+  // Phase 2 in the same chunks (stable mapping via row_id).
+  var okAll = [], failedAll = [];
+  var allPhoto = photoRows.length > 0;
+  var p2rows = rows.map(function (r) {
+    return { row_id: r.row_id, origNum: r.origNum, forcedType: r.forcedType, note: r.note,
+             hasPhoto: r.hasPhoto, data: r.data, mimeType: r.mimeType,
+             phase1: r.hasPhoto ? (phase1ById[r.row_id] || null) : null };
+  });
+  var textRows = p2rows.filter(function (r) { return !r.hasPhoto; });
+  if (textRows.length) {
+    var tr = runPhase2Batch(submissionId, textRows, sessionToken);
+    okAll = okAll.concat(tr.ok); failedAll = failedAll.concat(tr.failed);
+  }
+  for (var d = 0; d < photoRows.length; d += perChunk) {
+    var ids = {};
+    for (var e = d; e < Math.min(d + perChunk, photoRows.length); e++) ids[photoRows[e].row_id] = true;
+    var chunk2 = p2rows.filter(function (r) { return ids[r.row_id]; });
+    if (!chunk2.length) continue;
+    var pr = runPhase2Batch(submissionId, chunk2, sessionToken);
+    okAll = okAll.concat(pr.ok); failedAll = failedAll.concat(pr.failed);
+  }
+  // Triage + one bounded repair for eligible mismatches.
+  var finals = [];
+  var repairRows = [];
+  var failedById = {};
+  for (var f = 0; f < failedAll.length; f++) failedById[failedAll[f].row_id] = failedAll[f].error;
+  var okById = {};
+  for (var o = 0; o < okAll.length; o++) okById[okAll[o].row_id] = okAll[o].txn;
+  for (var m = 0; m < rows.length; m++) {
+    var meta = rows[m];
+    if (failedById[meta.row_id]) {
+      finals.push({ row_id: meta.row_id, origNum: meta.origNum, forcedType: meta.forcedType,
+        note: meta.note, hasPhoto: meta.hasPhoto, phase1: meta.hasPhoto ? (phase1ById[meta.row_id] || null) : null,
+        txn: null, repaired: true, preError: failedById[meta.row_id] });
+      continue;
+    }
+    var tri = triageRow_({ row_id: meta.row_id, origNum: meta.origNum, forcedType: meta.forcedType,
+      note: meta.note, hasPhoto: meta.hasPhoto, phase1: meta.hasPhoto ? (phase1ById[meta.row_id] || null) : null,
+      txn: okById[meta.row_id], repaired: false }, toggles);
+    if (tri.status === 'mismatch' && tri.repairEligible) {
+      var calc = tri.rec.calculatedTotal;
+      repairRows.push({ row_id: meta.row_id, origNum: meta.origNum, forcedType: meta.forcedType,
+        note: meta.note, hasPhoto: true, data: meta.data, mimeType: meta.mimeType,
+        expectedTotal: tri.rec.expectedTotal, calculatedTotal: calc, difference: tri.rec.difference });
+    } else {
+      finals.push({ row_id: meta.row_id, origNum: meta.origNum, forcedType: meta.forcedType,
+        note: meta.note, hasPhoto: meta.hasPhoto, phase1: meta.hasPhoto ? (phase1ById[meta.row_id] || null) : null,
+        txn: tri.txn, repaired: false });
+    }
+  }
+  if (repairRows.length) {
+    for (var rc = 0; rc < repairRows.length; rc += perChunk) {
+      var rchunk = repairRows.slice(rc, rc + perChunk);
+      var rep = repairReceiptRows(submissionId, rchunk, sessionToken);
+      var repById = {};
+      for (var ro = 0; ro < rep.ok.length; ro++) repById[rep.ok[ro].row_id] = rep.ok[ro].txn;
+      for (var rm = 0; rm < rchunk.length; rm++) {
+        var rmeta = rchunk[rm];
+        finals.push({ row_id: rmeta.row_id, origNum: rmeta.origNum, forcedType: rmeta.forcedType,
+          note: rmeta.note, hasPhoto: true, phase1: phase1ById[rmeta.row_id] || null,
+          txn: repById[rmeta.row_id] || null, repaired: true });
+      }
+    }
+  }
+  // Failed Phase 2 rows (no txn at all) were already queued as repaired:true with null txn.
+  return commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog,
+    autoDiscount: toggles.autoDiscount }, finals, sessionToken);
+}
+
+// Classic summary strings from a commit report. unit is 'receipt' or 'row'.
+// Throws when nothing was committed, so old callers keep their contract.
+function summarizeReport_(report, unit) {
+  var rows = (report && report.rows) || [];
+  var done = rows.filter(function (r) {
+    return r.status === 'logged' || r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted';
+  });
+  var pending = rows.filter(function (r) { return r.status === 'review' || r.status === 'error'; });
+  if (!done.length) {
+    var first = pending.length ? pending[0].message : 'nothing to log.';
+    throw new Error(first);
+  }
+  var plural = done.length === 1 ? '' : 's';
+  var grand = done.reduce(function (s, r) { return s + Number(r.total || 0); }, 0);
+  var bits = done.map(function (r) {
+    var label = (unit === 'receipt' ? 'Photo ' : 'Row ') + (r.origNum || '?');
+    if (r.duplicate) return label + ': already logged (' + (r.transactionId || '?') + ')';
+    var mark = r.status === 'logged' ? '' : ' [' + r.status + ']';
+    return label + ': ' + (r.type || '') + ' ' + (r.merchant || 'Unknown') +
+      ' (' + (r.itemCount || 0) + ' item(s), Rp' + Number(r.total || 0).toLocaleString('id-ID') + ')' + mark;
+  });
+  var head = done.length === 1 && !pending.length && !done[0].duplicate
+    ? bits[0]
+    : 'Logged ' + done.length + ' ' + unit + plural + ', total Rp' + grand.toLocaleString('id-ID') + ' — ' + bits.join('; ');
+  if (pending.length) {
+    head += ' | ' + pending.length + ' ' + unit + (pending.length === 1 ? '' : 's') +
+      ' need review: ' + pending.map(function (r) { return r.message; }).join(' | ');
+  }
+  return head;
+}
+
+// ---------- TABLE BATCH prompt (legacy single-shot builder, kept for compatibility) ----------
 
 // rows: [{imageBase64, mimeType, note, type}] from the Table Layout tab.
-// Each row is one receipt photo with its own note and forced Expense|Income.
-// CRITICAL QUOTA RULE: the entire array is processed in exactly ONE single
-// call to callGemini - never one call per row.
 function buildTableBatchPrompt(rows) {
   var todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   // Rows may mix photo rows and text-only rows. Assign sequential photo numbers
@@ -402,14 +794,15 @@ function buildTableBatchPrompt(rows) {
   return base;
 }
 
-function processTableBatch(rows, sessionToken) {
+// Compatibility wrapper: routes through the shared two-phase pipeline
+// (Phase 1 totals, Phase 2 lines, one repair, toggle policy, commit).
+// Large submissions must use the phased server ops directly instead of this
+// single execution.
+function processTableBatch(rows, sessionToken, opts) {
   requireSession_(sessionToken);
   rows = rows || [];
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error('Add at least one filled row (photo or note) first.');
-  }
-  if (rows.length > 10) {
-    throw new Error('Maximum 10 rows per batch.');
   }
   // Ignore completely empty rows (no photo AND no note) so a form with
   // e.g. 10 open rows but only 5 filled logs just those 5.
@@ -422,52 +815,26 @@ function processTableBatch(rows, sessionToken) {
   if (nonEmpty.length === 0) {
     throw new Error('Add at least one filled row (photo or note) first.');
   }
-  // Normalize. Text-only rows (note, no photo) are allowed.
-  var cleanRows = nonEmpty.map(function (r) {
+  // Compatibility single-shot path for small batches. The Table Layout UI
+  // drives the phased ops directly (unbounded); oversized single calls are
+  // rejected with guidance instead of risking one giant execution.
+  if (nonEmpty.length > BATCH_LIMITS.maxRowsPerBatch) {
+    throw new Error('Too many rows for a single request - submit from Table Layout, which sends phased batches automatically.');
+  }
+  var toggles = { forceLog: !!(opts && opts.forceLog), autoDiscount: !!(opts && opts.autoDiscount) };
+  var defs = nonEmpty.map(function (r, i) {
     r = r || {};
-    var type = (r.type === 'Income') ? 'Income' : 'Expense';
-    var note = String(r.note || '').slice(0, 1000);
-    var data = r.imageBase64 || r.data || '';
-    var mimeType = r.mimeType || 'image/jpeg';
-    return { type: type, note: note, data: data, mimeType: mimeType };
+    return {
+      forcedType: (r.type === 'Income') ? 'Income' : 'Expense',
+      note: String(r.note || '').slice(0, 1000),
+      data: r.imageBase64 || r.data || '',
+      mimeType: r.mimeType || 'image/jpeg',
+      hasPhoto: !!(r.imageBase64 || r.data),
+      origNum: i + 1
+    };
   });
-
-  // Only rows with photos contribute image parts; text-only rows are
-  // described purely by the prompt. Photo order follows row order.
-  var images = [];
-  for (var q = 0; q < cleanRows.length; q++) {
-    if (cleanRows[q].data) images.push({ data: cleanRows[q].data, mimeType: cleanRows[q].mimeType });
-  }
-  var prompt = buildTableBatchPrompt(cleanRows);
-
-  // SINGLE Gemini call for the whole batch - quota protection.
-  var batchResult = callGemini(prompt, '', images, BATCH_SCHEMA);
-  var txns = (batchResult && batchResult.transactions) || [];
-  if (!Array.isArray(txns) || txns.length === 0) {
-    throw new Error('Gemini returned no transactions - nothing to log.');
-  }
-  if (txns.length !== cleanRows.length) {
-    throw new Error('Gemini returned ' + txns.length + ' transactions for ' + cleanRows.length + ' rows - please try again.');
-  }
-
-  var ss = getSpreadsheet_();
-  var summaries = [];
-  var grandTotal = 0;
-  for (var i = 0; i < txns.length; i++) {
-    var txn = txns[i] || {};
-    // Enforce the user's per-row type selection over Gemini classification.
-    txn.transaction_type = cleanRows[i].type;
-    txn = sanitizeTransaction(txn);
-    var sheet = getOrCreateMonthSheet(ss, txn.transaction_date);
-    appendTransactionRows(sheet, txn, cleanRows[i].note);
-    var total = txn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
-    grandTotal += total;
-    summaries.push('Row ' + (i + 1) + ': ' + txn.transaction_type + ' ' +
-      txn.merchant + ' (' + txn.items.length + ' item(s), Rp' + total.toLocaleString('id-ID') + ')');
-  }
-
-  if (summaries.length === 1) return formatSummaryFromParts(summaries[0]);
-  return 'Logged ' + summaries.length + ' rows, total Rp' + grandTotal.toLocaleString('id-ID') + ' — ' + summaries.join('; ');
+  var report = processRowsPipeline_(defs, toggles, sessionToken, Utilities.getUuid());
+  return summarizeReport_(report, 'row');
 }
 
 function formatSummary(txn) {
@@ -812,13 +1179,14 @@ function getRecentLogs(sessionToken, offset, limit) {
   for (var s = 0; s < sheets.length; s++) {
     var sheet = sheets[s];
     if (sheet.getName() === TEMPLATE_SHEET_NAME) continue;
+    if (sheet.getName() === LEDGER_SHEET_NAME || sheet.getName().indexOf('_CF_') === 0) continue;
     var values = sheet.getDataRange().getValues();
     if (!values || values.length < 2) continue;
     var headers = values[0].map(function (h) { return String(h || '').trim().toLowerCase(); });
     function col(name) { return headers.indexOf(name); }
     var cDate = col('date'), cMerch = col('merchant'), cDesc = col('description'),
         cAmt = col('amount'), cCat = col('category'), cSpend = col('spending type'),
-        cType = col('type'), cNotes = col('notes');
+        cType = col('type'), cNotes = col('notes'), cTxnId = col('transaction id');
     for (var r = 1; r < values.length; r++) {
       var row = values[r];
       var empty = true;
@@ -852,7 +1220,8 @@ function getRecentLogs(sessionToken, offset, limit) {
         category: cCat >= 0 ? String(row[cCat] || '') : '',
         spendingType: cSpend >= 0 ? String(row[cSpend] || '') : '',
         type: cType >= 0 ? String(row[cType] || '') : '',
-        notes: cNotes >= 0 ? String(row[cNotes] || '') : ''
+        notes: cNotes >= 0 ? String(row[cNotes] || '') : '',
+        transactionId: cTxnId >= 0 ? String(row[cTxnId] || '') : ''
       });
     }
   }
@@ -863,7 +1232,8 @@ function getRecentLogs(sessionToken, offset, limit) {
     return {
       sheet: e.sheet, date: e.date, merchant: e.merchant,
       description: e.description, amount: e.amount, category: e.category,
-      spendingType: e.spendingType, type: e.type, notes: e.notes
+      spendingType: e.spendingType, type: e.type, notes: e.notes,
+      transactionId: e.transactionId || ''
     };
   });
   return { total: total, offset: offset, limit: limit, hasMore: (offset + limit) < total, logs: page };
@@ -872,11 +1242,6 @@ function getRecentLogs(sessionToken, offset, limit) {
 // ---------- GEMINI (with model fallback) ----------
 
 function callGemini(promptText, sourceText, images, schema) {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-  if (!apiKey) {
-    throw new Error('Gemini API key is not set - please add it when prompted.');
-  }
-
   var parts = [{ text: promptText }];
   if (sourceText) {
     parts.push({ text: 'Message text: ' + sourceText });
@@ -890,6 +1255,19 @@ function callGemini(promptText, sourceText, images, schema) {
       parts.push({ text: 'Photo ' + (j + 1) + ' of ' + images.length + ':' });
     }
     parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+  }
+
+  return callGeminiRaw_(parts, schema).data;
+}
+
+// Raw generation call with model fallback. Returns {data, model, usage} where
+// usage is the response usageMetadata when the API provides it (used to
+// improve batch estimates; never used to alter row mapping).
+// Throws the same aggregated/fast-fail errors callGemini() always produced.
+function callGeminiRaw_(parts, schema) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) {
+    throw new Error('Gemini API key is not set - please add it when prompted.');
   }
 
   var payload = {
@@ -925,7 +1303,9 @@ function callGemini(promptText, sourceText, images, schema) {
         if (i > 0) {
           console.log('Gemini: fell back to model "' + model + '" after ' + i + ' failure(s)');
         }
-        return txn;
+        var usage = null;
+        try { usage = data.usageMetadata || null; } catch (e) {}
+        return { data: txn, model: model, usage: usage };
       } catch (parseErr) {
         // Got a 200 but couldn't parse it as the expected JSON shape - try the next model
         errors.push(model + ': got 200 but response was unparseable (' + parseErr.message + ')');
@@ -944,6 +1324,276 @@ function callGemini(promptText, sourceText, images, schema) {
   }
 
   throw new Error('All Gemini models failed:\n' + errors.join('\n'));
+}
+
+// ---------- TWO-PHASE ORCHESTRATION OPS (bounded server calls) ----------
+//
+// The web app drives submissions as sequential bounded google.script.run
+// calls: plan -> Phase 1 batches -> Phase 2 batches -> (repair) ->
+// reconcile/commit -> (separate) sort. No single execution runs the whole
+// submission, and Gemini calls are strictly sequential (never concurrent).
+
+function validateRowMeta_(m) {
+  m = m || {};
+  var rowId = String(m.row_id || '').trim();
+  if (!rowId) throw new Error('Row is missing its stable row_id.');
+  var type = m.type === 'Income' ? 'Income' : (m.type === 'Expense' ? 'Expense' : null);
+  return {
+    row_id: rowId,
+    origNum: Math.max(1, Number(m.origNum || 0) || 0),
+    note: String(m.note || '').slice(0, 1000),
+    type: type,
+    hasPhoto: !!m.hasPhoto,
+    imageBytes: Math.max(0, Number(m.imageBytes || 0) || 0)
+  };
+}
+
+// Server-side batch plan for a frozen row snapshot. Stateless and pure
+// apart from reading stored usage factors for estimate tuning.
+function planReceiptSubmission(rowsMeta, sessionToken) {
+  requireSession_(sessionToken);
+  rowsMeta = rowsMeta || [];
+  if (!Array.isArray(rowsMeta) || rowsMeta.length === 0) {
+    throw new Error('Add at least one filled row (photo or note) first.');
+  }
+  var cleaned = rowsMeta.map(validateRowMeta_);
+  var plan = planReceiptBatches_(cleaned);
+  return {
+    batches: plan.batches,
+    totals: plan.totals,
+    budgets: {
+      maxPhotosPerBatch: BATCH_LIMITS.maxPhotosPerBatch,
+      maxRowsPerBatch: BATCH_LIMITS.maxRowsPerBatch,
+      maxPayloadBytes: BATCH_LIMITS.maxPayloadBytes
+    }
+  };
+}
+
+function checkBatchBytes_(rows, limit) {
+  var bytes = 0;
+  for (var i = 0; i < rows.length; i++) bytes += String((rows[i] || {}).data || '').length;
+  if (bytes > limit) {
+    throw new Error('Batch payload (' + bytes + ' chars) exceeds the ' + limit +
+      ' safety budget - split into smaller batches and retry.');
+  }
+  return bytes;
+}
+
+function labelPhotoParts_(rows) {
+  var parts = [];
+  var photoNo = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].data) continue;
+    photoNo++;
+    rows[i].photoNo = photoNo;
+    parts.push({ text: 'Photo ' + photoNo + ' (row_id="' + rows[i].row_id + '"):' });
+    parts.push({ inline_data: { mime_type: rows[i].mimeType || 'image/jpeg', data: rows[i].data } });
+  }
+  return parts;
+}
+
+// Phase 1: printed-total extraction only. rows: [{row_id, photo_index, data, mimeType}]
+// Performs NO sheet writes. Returns per-photo results keyed by row_id.
+function runPhase1Batch(submissionId, rows, sessionToken) {
+  requireSession_(sessionToken);
+  String(submissionId || '');
+  rows = rows || [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('Phase 1 batch has no photo rows.');
+  }
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i] || !rows[i].row_id || !rows[i].data) {
+      throw new Error('Phase 1 row ' + (i + 1) + ' is missing row_id or image data.');
+    }
+  }
+  checkBatchBytes_(rows, BATCH_LIMITS.maxPayloadBytes);
+  var promptRows = rows.map(function (r, i) { return { row_id: r.row_id, photo_index: i + 1 }; });
+  var parts = [{ text: buildPhase1Prompt(promptRows) }].concat(labelPhotoParts_(rows));
+  var raw;
+  try {
+    raw = callGeminiRaw_(parts, PHASE1_SCHEMA);
+  } catch (e) {
+    throw new Error('Phase 1 total extraction failed: ' + (e && e.message ? e.message : e));
+  }
+  var list = raw.data && raw.data.results;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new Error('Phase 1 returned no usable results - nothing was written.');
+  }
+  var want = {};
+  for (var k = 0; k < rows.length; k++) want[rows[k].row_id] = true;
+  var seen = {};
+  var results = [];
+  for (var j = 0; j < list.length; j++) {
+    var r = list[j] || {};
+    var id = String(r.row_id || '');
+    if (!id || !want[id] || seen[id]) continue; // ignore unknown/duplicate rows
+    seen[id] = true;
+    results.push(sanitizePhase1Result_(r, id));
+  }
+  var missing = [];
+  for (var m = 0; m < rows.length; m++) {
+    if (!seen[rows[m].row_id]) missing.push(rows[m].row_id);
+  }
+  if (missing.length) {
+    throw new Error('Phase 1 response is missing results for ' + missing.length +
+      ' photo row(s) - nothing was written. Retry the batch.');
+  }
+  updateUsageFactors_([{ inputTokens: raw.usage && raw.usage.promptTokenCount, photoCount: rows.length }]);
+  return { results: results, model: raw.model, usage: raw.usage || null };
+}
+
+var PHASE1_STATUS = ['found', 'uncertain', 'not_visible'];
+var PHASE1_QUALITY = ['clear', 'blurry', 'partially_obscured', 'incomplete'];
+
+function sanitizePhase1Result_(r, id) {
+  var amt = Number(r.total_amount);
+  var status = PHASE1_STATUS.indexOf(r.total_status) >= 0 ? r.total_status : 'uncertain';
+  var quality = PHASE1_QUALITY.indexOf(r.image_quality) >= 0 ? r.image_quality : 'incomplete';
+  var review = String(r.review_reason || '').slice(0, 300);
+  if (!isFinite(amt) || amt < 0) {
+    amt = 0;
+    if (status === 'found') {
+      status = 'uncertain';
+      review = review || 'Unreadable total amount returned; flagged instead of guessed.';
+    }
+  } else {
+    amt = Math.round(amt);
+  }
+  if (status !== 'found' && !review) review = 'Total ' + status.replace('_', ' ') + '; needs review.';
+  return {
+    row_id: id,
+    photo_index: Math.max(1, Number(r.photo_index || 0) || 0),
+    total_amount: amt,
+    total_label: String(r.total_label || '').slice(0, 120),
+    total_status: status,
+    image_quality: quality,
+    review_reason: review
+  };
+}
+
+// Phase 2: full line-item extraction with Phase 1 manifest. Performs NO writes.
+// rows: [{row_id, origNum, forcedType|null, note, hasPhoto, data?, mimeType?, phase1|null}]
+// Returns {ok: [{row_id, txn}], failed: [{row_id, error}]} - one bad row never
+// fails its batch siblings.
+function runPhase2Batch(submissionId, rows, sessionToken) {
+  requireSession_(sessionToken);
+  String(submissionId || '');
+  rows = rows || [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('Phase 2 batch has no rows.');
+  }
+  var withPhotos = 0, qi;
+  for (qi = 0; qi < rows.length; qi++) {
+    if (!rows[qi] || !rows[qi].row_id) throw new Error('Phase 2 row ' + (qi + 1) + ' is missing row_id.');
+    if (rows[qi].hasPhoto && !rows[qi].data) {
+      throw new Error('Phase 2 photo row is missing image data - resubmit the batch with its images.');
+    }
+    if (rows[qi].hasPhoto) withPhotos++;
+  }
+  var photoRows = rows.filter(function (r) { return r.hasPhoto; });
+  checkBatchBytes_(photoRows, BATCH_LIMITS.maxPayloadBytes);
+  // Stable photo numbering shared by prompt labels and image parts.
+  var photoNo = 0, pi;
+  for (pi = 0; pi < rows.length; pi++) {
+    if (rows[pi].hasPhoto) { photoNo++; rows[pi].photoNo = photoNo; }
+  }
+  var parts = [{ text: buildPhase2Prompt(rows) }].concat(labelPhotoParts_(photoRows));
+  var raw;
+  try {
+    raw = callGeminiRaw_(parts, PHASE2_SCHEMA);
+  } catch (e) {
+    throw new Error('Phase 2 extraction failed: ' + (e && e.message ? e.message : e));
+  }
+  var list = raw.data && raw.data.transactions;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new Error('Phase 2 returned no usable transactions - nothing was written.');
+  }
+  var want = {};
+  for (var k = 0; k < rows.length; k++) want[rows[k].row_id] = true;
+  var byId = {};
+  for (var j = 0; j < list.length; j++) {
+    var t = list[j] || {};
+    var id = String(t.row_id || '');
+    if (!id || !want[id] || byId[id]) continue;
+    byId[id] = t;
+  }
+  var ok = [], failed = [];
+  for (var m = 0; m < rows.length; m++) {
+    var meta = rows[m];
+    var got = byId[meta.row_id];
+    if (!got) {
+      failed.push({ row_id: meta.row_id, error: 'The AI response has no transaction for this row - nothing from this row was appended.' });
+      continue;
+    }
+    try {
+      if (meta.forcedType === 'Income' || meta.forcedType === 'Expense') got.transaction_type = meta.forcedType;
+      var txn = sanitizeTransaction(JSON.parse(JSON.stringify(got)));
+      ok.push({ row_id: meta.row_id, txn: txn });
+    } catch (e) {
+      failed.push({ row_id: meta.row_id, error: e && e.message ? e.message : String(e) });
+    }
+  }
+  updateUsageFactors_([{ inputTokens: raw.usage && raw.usage.promptTokenCount, photoCount: withPhotos }]);
+  return { ok: ok, failed: failed, model: raw.model, usage: raw.usage || null };
+}
+
+// Bounded repair: exactly one re-examination per eligible row. Same shape as
+// Phase 2 but with repair instructions; caller groups eligible rows with the
+// normal batch budget. Performs NO writes.
+function repairReceiptRows(submissionId, rows, sessionToken) {
+  requireSession_(sessionToken);
+  String(submissionId || '');
+  rows = rows || [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('Repair batch has no rows.');
+  }
+  var qi;
+  for (qi = 0; qi < rows.length; qi++) {
+    var r = rows[qi] || {};
+    if (!r.row_id || !r.data) throw new Error('Repair row ' + (qi + 1) + ' needs row_id, image, and totals.');
+    if (!isFinite(Number(r.expectedTotal)) || !isFinite(Number(r.calculatedTotal))) {
+      throw new Error('Repair row needs finite expected/calculated totals.');
+    }
+  }
+  checkBatchBytes_(rows, BATCH_LIMITS.maxPayloadBytes);
+  var photoNo = 0, pi;
+  for (pi = 0; pi < rows.length; pi++) { photoNo++; rows[pi].photoNo = photoNo; }
+  var parts = [{ text: buildRepairPrompt(rows) }].concat(labelPhotoParts_(rows));
+  var raw;
+  try {
+    raw = callGeminiRaw_(parts, PHASE2_SCHEMA);
+  } catch (e) {
+    throw new Error('Repair attempt failed: ' + (e && e.message ? e.message : e));
+  }
+  var list = raw.data && raw.data.transactions;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new Error('Repair attempt returned no usable transactions - originals are kept for review.');
+  }
+  var want = {};
+  for (var k = 0; k < rows.length; k++) want[rows[k].row_id] = true;
+  var byId = {};
+  for (var j = 0; j < list.length; j++) {
+    var t = list[j] || {};
+    var id = String(t.row_id || '');
+    if (!id || !want[id] || byId[id]) continue;
+    byId[id] = t;
+  }
+  var ok = [], failed = [];
+  for (var m = 0; m < rows.length; m++) {
+    var meta = rows[m];
+    var got = byId[meta.row_id];
+    if (!got) {
+      failed.push({ row_id: meta.row_id, error: 'Repair returned nothing for this row - original extraction kept for review.' });
+      continue;
+    }
+    try {
+      if (meta.forcedType === 'Income' || meta.forcedType === 'Expense') got.transaction_type = meta.forcedType;
+      ok.push({ row_id: meta.row_id, txn: sanitizeTransaction(JSON.parse(JSON.stringify(got))) });
+    } catch (e) {
+      failed.push({ row_id: meta.row_id, error: e && e.message ? e.message : String(e) });
+    }
+  }
+  return { ok: ok, failed: failed, model: raw.model, usage: raw.usage || null };
 }
 
 // ---------- SANITIZE (server-side guarantees) ----------
@@ -1005,10 +1655,136 @@ function sanitizeTransaction(txn) {
   return txn;
 }
 
+// ---------- RECONCILIATION + TOGGLE POLICY (pure, unit-testable) ----------
+
+function idr_(n) {
+  try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
+  catch (e) { return 'Rp' + n; }
+}
+
+// Server-side row verdict. Never trusts batch totals - strictly per row.
+// verdicts: ok | mismatch | uncertain | not_applicable | invalid
+function reconcileRow_(phase1, txn, opts) {
+  opts = opts || {};
+  var hasPhoto = !!opts.hasPhoto;
+  if (!hasPhoto) return { verdict: 'not_applicable', expectedTotal: null, calculatedTotal: null, difference: null, message: '' };
+  if (!phase1) {
+    return { verdict: 'invalid', expectedTotal: null, calculatedTotal: null, difference: null,
+             message: 'No Phase 1 total was recorded for this photo - nothing from this row was appended.' };
+  }
+  var items = (txn && txn.items) || [];
+  var calc = 0;
+  for (var i = 0; i < items.length; i++) {
+    var a = Number(items[i] && items[i].amount);
+    if (!isFinite(a)) {
+      return { verdict: 'invalid', expectedTotal: null, calculatedTotal: null, difference: null,
+               message: 'An extracted amount is not a valid number - nothing from this row was appended.' };
+    }
+    calc += a;
+  }
+  calc = Math.round(calc);
+  var status = phase1.total_status;
+  var expected = Math.round(Number(phase1.total_amount));
+  if (status !== 'found' || !isFinite(expected)) {
+    var why = phase1.review_reason ||
+      (status === 'not_visible' ? 'The receipt total area is not visible.' : 'The receipt total could not be read reliably.');
+    return { verdict: 'uncertain', expectedTotal: null, calculatedTotal: calc, difference: null,
+             message: why + ' Upload a clearer photo showing the full item list and final total.' };
+  }
+  var diff = expected - calc;
+  var complete = String((txn && txn.line_list_complete) || 'complete');
+  var flags = String((txn && txn.extraction_notes) || '').slice(0, 200);
+  if (diff === 0 && complete === 'complete') {
+    return { verdict: 'ok', expectedTotal: expected, calculatedTotal: calc, difference: 0, message: '' };
+  }
+  if (diff === 0) {
+    return { verdict: 'uncertain', expectedTotal: expected, calculatedTotal: calc, difference: 0,
+             message: 'Totals match (' + idr_(expected) + ') but the line list may be incomplete' +
+               (flags ? ': ' + flags : '.') + ' Expand the item list and verify before logging.' };
+  }
+  if (diff > 0) {
+    return { verdict: 'mismatch', expectedTotal: expected, calculatedTotal: calc, difference: diff,
+             message: 'Some items may be missing or hidden. Extracted total is ' + idr_(diff) +
+               ' below the printed total (' + idr_(calc) + ' vs ' + idr_(expected) + '). Expand the item list and upload the full receipt.' };
+  }
+  return { verdict: 'mismatch', expectedTotal: expected, calculatedTotal: calc, difference: diff,
+           message: 'Extracted items exceed the printed total by ' + idr_(-diff) +
+             ' (' + idr_(calc) + ' vs ' + idr_(expected) + '). A discount may be missing, or an amount may be duplicated/read incorrectly.' };
+}
+
+function dominantCategory_(txn) {
+  var items = (txn && txn.items) || [];
+  var counts = {}, best = '', bestN = 0, oi;
+  for (oi = 0; oi < items.length; oi++) {
+    var c = items[oi].category || '';
+    counts[c] = (counts[c] || 0) + 1;
+    if (counts[c] > bestN) { bestN = counts[c]; best = c; }
+  }
+  if (!best || EXPENSE_CATEGORIES.indexOf(best) < 0) best = (txn.transaction_type === 'Income') ? 'Income' : 'Others';
+  return best;
+}
+
+function dominantSpendingType_(txn) {
+  var items = (txn && txn.items) || [];
+  var counts = {}, best = '', bestN = 0, oi;
+  for (oi = 0; oi < items.length; oi++) {
+    var s = items[oi].spending_type || '';
+    if (!s || SPENDING_TYPES.indexOf(s) < 0) continue;
+    counts[s] = (counts[s] || 0) + 1;
+    if (counts[s] > bestN) { bestN = counts[s]; best = s; }
+  }
+  return best || 'Need';
+}
+
+// Applies Force Log / Auto-discount AFTER the bounded repair attempt.
+// Only ever synthesizes for verdict 'mismatch' with a reliable (found)
+// Phase 1 total - never for uncertain/unreadable totals, invalid rows, or
+// text-only rows. Returns {txn, applied, note} with applied in
+// none|force-item|force-discount|auto-discount.
+function applyTogglePolicy_(txn, rec, toggles) {
+  toggles = toggles || {};
+  var forceLog = !!toggles.forceLog;
+  var autoDiscount = !!toggles.autoDiscount && !forceLog; // Force ON disables discount
+  if (!rec || rec.verdict !== 'mismatch') return { txn: txn, applied: 'none', note: '' };
+  var diff = rec.difference;
+  if (!isFinite(diff) || diff === 0) return { txn: txn, applied: 'none', note: '' };
+  var isIncome = txn.transaction_type === 'Income';
+  var complete = String(txn.line_list_complete || 'complete') === 'complete';
+
+  function syntheticLine_(name, amount) {
+    return {
+      description: name,
+      amount: amount,
+      category: dominantCategory_(txn),
+      spending_type: isIncome ? '' : dominantSpendingType_(txn)
+    };
+  }
+
+  if (forceLog) {
+    var out = JSON.parse(JSON.stringify(txn));
+    if (diff > 0) {
+      out.items.push(syntheticLine_('Missing/hidden item', diff));
+      return { txn: out, applied: 'force-item',
+               note: 'FORCED RECONCILIATION: synthetic missing/hidden line of ' + idr_(diff) + '; verify receipt.' };
+    }
+    out.items.push(syntheticLine_('Missing/hidden discount', diff));
+    return { txn: out, applied: 'force-discount',
+             note: 'FORCED RECONCILIATION: synthetic missing/hidden discount of ' + idr_(diff) + '; verify receipt.' };
+  }
+  // Auto-discount: over-total AND materially complete extraction only.
+  if (autoDiscount && diff < 0 && complete) {
+    var out2 = JSON.parse(JSON.stringify(txn));
+    out2.items.push(syntheticLine_('Missing/hidden discount', diff));
+    return { txn: out2, applied: 'auto-discount',
+             note: 'AUTO DISCOUNT: synthetic missing/hidden discount of ' + idr_(diff) + '; verify receipt.' };
+  }
+  return { txn: txn, applied: 'none', note: '' };
+}
+
 // ---------- SHEET WRITING ----------
 
-var TEMPLATE_HEADERS = ['Date', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Merchant', 'Notes'];
-var TEMPLATE_WIDTHS = [100, 173, 100, 157, 127, 103, 207, 392];
+var TEMPLATE_HEADERS = ['Date', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Merchant', 'Notes', 'Transaction ID'];
+var TEMPLATE_WIDTHS = [100, 173, 100, 157, 127, 103, 207, 392, 130];
 
 function getOrCreateTemplateSheet_(ss) {
   var template = ss.getSheetByName(TEMPLATE_SHEET_NAME);
@@ -1021,6 +1797,163 @@ function getOrCreateTemplateSheet_(ss) {
   try { template.setFrozenRows(1); } catch (e) {}
   try { template.hideSheet(); } catch (e) {}
   return template;
+}
+
+// ---------- TRANSACTION IDS (date-prefixed, per receipt) ----------
+
+var TXN_ID_HEADER = 'Transaction ID';
+var LEDGER_SHEET_NAME = '_CF_Submissions';
+var LEDGER_HEADERS = ['Submission ID', 'Row ID', 'Transaction ID', 'Status', 'Updated At'];
+
+// 0->AA ... 25->AZ, 26->BA ... 675->ZZ, 676->AAA (extends, never duplicates).
+function seqToLetters_(n) {
+  n = Math.max(0, Math.floor(Number(n) || 0)) + 26; // offset reserves AA..ZZ range first
+  var s = '';
+  while (true) {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+    if (n < 0) break;
+  }
+  return s;
+}
+
+// Inverse of seqToLetters_; null unless exact uppercase-letter format.
+function lettersToSeq_(s) {
+  s = String(s || '');
+  if (!/^[A-Z]{2,}$/.test(s)) return null;
+  var v = 0;
+  for (var i = 0; i < s.length; i++) v = v * 26 + (s.charCodeAt(i) - 64);
+  return v - 27;
+}
+
+// Full ID compare: date part, then suffix as a base-26 number (mixed lengths OK).
+// Malformed/blank IDs sort after valid ones, stably.
+function compareTxnIds_(a, b) {
+  var ma = String(a || '').match(/^(\d{8})([A-Z]{2,})$/);
+  var mb = String(b || '').match(/^(\d{8})([A-Z]{2,})$/);
+  if (ma && mb) {
+    if (ma[1] !== mb[1]) return ma[1] < mb[1] ? -1 : 1;
+    var sa = lettersToSeq_(ma[2]), sb = lettersToSeq_(mb[2]);
+    return sa < sb ? -1 : (sa > sb ? 1 : 0);
+  }
+  if (ma) return -1;
+  if (mb) return 1;
+  return 0;
+}
+
+function isMonthSheetName_(name) {
+  return /^(January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/.test(String(name || ''));
+}
+
+function normHeader_(h) { return String(h == null ? '' : h).trim().toLowerCase(); }
+
+function colByName_(headers, name) {
+  var want = normHeader_(name);
+  for (var i = 0; i < headers.length; i++) {
+    if (normHeader_(headers[i]) === want) return i + 1; // 1-based
+  }
+  return 0;
+}
+
+// Idempotent header migration: adds Transaction ID to Template + legacy
+// month sheets without moving or overwriting anything. Returns sheet names touched.
+function ensureTransactionIdColumn_(ss) {
+  var touched = [];
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    var name = sh.getName();
+    if (name === LEDGER_SHEET_NAME) continue;
+    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name)) continue;
+    var lastCol = sh.getLastColumn();
+    if (lastCol < 1) continue;
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    if (colByName_(headers, TXN_ID_HEADER) > 0) continue;
+    sh.getRange(1, lastCol + 1).setValue(TXN_ID_HEADER);
+    try { sh.setColumnWidth(lastCol + 1, 130); } catch (e) {}
+    touched.push(name);
+  }
+  return touched;
+}
+
+// Hidden operational ledger: idempotency metadata ONLY (no images/keys/notes).
+function ledgerSheet_(ss) {
+  var sh = ss.getSheetByName(LEDGER_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(LEDGER_SHEET_NAME);
+    sh.getRange(1, 1, 1, LEDGER_HEADERS.length).setValues([LEDGER_HEADERS]);
+    try { sh.hideSheet(); } catch (e) {}
+  }
+  return sh;
+}
+
+function ledgerRead_(ss) {
+  var map = {};
+  var sh = ss.getSheetByName(LEDGER_SHEET_NAME);
+  if (!sh) return map;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return map;
+  var vals = sh.getRange(2, 1, lastRow - 1, LEDGER_HEADERS.length).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var key = String(vals[i][0] || '') + '|' + String(vals[i][1] || '');
+    if (key !== '|') map[key] = { transactionId: String(vals[i][2] || ''), status: String(vals[i][3] || '') };
+  }
+  return map;
+}
+
+function ledgerWrite_(ss, entries) {
+  if (!entries || !entries.length) return;
+  var sh = ledgerSheet_(ss);
+  var start = sh.getLastRow() + 1;
+  var vals = entries.map(function (e) {
+    return [e.submissionId, e.rowId, e.transactionId, e.status, new Date()];
+  });
+  sh.getRange(start, 1, vals.length, LEDGER_HEADERS.length).setValues(vals);
+}
+
+// Scans month sheets + ledger once per commit for existing IDs.
+// Returns {dateStr: maxSeq}. Malformed IDs are ignored for sequencing.
+function collectExistingIdSeq_(ss) {
+  var maxSeq = {};
+  function feed(id) {
+    var m = String(id || '').match(/^(\d{8})([A-Z]{2,})$/);
+    if (!m) return;
+    var seq = lettersToSeq_(m[2]);
+    if (seq == null) return;
+    if (maxSeq[m[1]] == null || seq > maxSeq[m[1]]) maxSeq[m[1]] = seq;
+  }
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    var name = sh.getName();
+    if (name === TEMPLATE_SHEET_NAME || name === LEDGER_SHEET_NAME) continue;
+    if (!isMonthSheetName_(name)) continue;
+    var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) continue;
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c = colByName_(headers, TXN_ID_HEADER);
+    if (!c) continue;
+    var vals = sh.getRange(2, c, lastRow - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) feed(vals[i][0]);
+  }
+  var led = ss.getSheetByName(LEDGER_SHEET_NAME);
+  if (led && led.getLastRow() >= 2) {
+    var lv = led.getRange(2, 3, led.getLastRow() - 1, 1).getValues();
+    for (var j = 0; j < lv.length; j++) feed(lv[j][0]);
+  }
+  return maxSeq;
+}
+
+// Assigns one ID per receipt date in order. Caller must hold the script lock.
+// dateStrs are validated YYYY-MM-DD; sequence keys are dashless YYYYMMDD.
+function allocateTransactionIds_(ss, dateStrs) {
+  var maxSeq = collectExistingIdSeq_(ss);
+  return dateStrs.map(function (ds) {
+    var key = String(ds).replace(/-/g, '');
+    var next = (maxSeq[key] == null ? -1 : maxSeq[key]) + 1;
+    maxSeq[key] = next;
+    return key + seqToLetters_(next);
+  });
 }
 
 function getOrCreateMonthSheet(ss, transactionDateStr) {
@@ -1060,10 +1993,237 @@ function appendTransactionRows(sheet, txn, sheetNote) {
     setIfColumnExists(sheet, rowNum, colIndex, 'spending type', item.spending_type || '');
     setIfColumnExists(sheet, rowNum, colIndex, 'type', txn.transaction_type);
     setIfColumnExists(sheet, rowNum, colIndex, 'notes', sheetNote || '');
+    setIfColumnExists(sheet, rowNum, colIndex, 'transaction id', txn.transactionId || '');
   });
 }
 
 function setIfColumnExists(sheet, row, colIndex, headerKey, value) {
   var col = colIndex[headerKey];
   if (col) sheet.getRange(row, col).setValue(value);
+}
+
+function setIfColumnExists(sheet, row, colIndex, headerKey, value) {
+  var col = colIndex[headerKey];
+  if (col) sheet.getRange(row, col).setValue(value);
+}
+
+// ---------- COMMIT (reconcile + policy + idempotent append) ----------
+
+// Server-truth triage of one final row. No writes, no IDs.
+function triageRow_(it, toggles) {
+  it = it || {};
+  var rowId = String(it.row_id || '');
+  var origNum = Math.max(1, Number(it.origNum || 0) || 0);
+  if (!rowId) {
+    return { row_id: '', origNum: origNum, txn: null, rec: null, status: 'error',
+             message: 'Row is missing its stable ID - nothing from this row was appended.', repairEligible: false };
+  }
+  // A failure captured earlier in the pipeline (e.g. its Phase 1 batch
+  // failed) travels with the row so the original cause is reported.
+  if (it.preError && !(it.txn)) {
+    return { row_id: rowId, origNum: origNum, txn: null, rec: null, status: 'error',
+             message: 'Row ' + origNum + ': ' + it.preError, repairEligible: false };
+  }
+  var raw = it.txn || {};
+  try {
+    if (it.forcedType === 'Income' || it.forcedType === 'Expense') raw.transaction_type = it.forcedType;
+    var txn = sanitizeTransaction(JSON.parse(JSON.stringify(raw)));
+    var rec = reconcileRow_(it.phase1 || null, txn, { hasPhoto: !!it.hasPhoto });
+    if (rec.verdict === 'ok' || rec.verdict === 'not_applicable') {
+      return { row_id: rowId, origNum: origNum, txn: txn, rec: rec, status: 'verified',
+               message: '', repairEligible: false };
+    }
+    if (rec.verdict === 'mismatch') {
+      return { row_id: rowId, origNum: origNum, txn: txn, rec: rec, status: 'mismatch',
+               message: 'Row ' + origNum + ': ' + rec.message, repairEligible: !it.repaired };
+    }
+    return { row_id: rowId, origNum: origNum, txn: txn, rec: rec, status: 'review',
+             message: 'Row ' + origNum + ': ' + rec.message, repairEligible: false };
+  } catch (e) {
+    return { row_id: rowId, origNum: origNum, txn: null, rec: null, status: 'error',
+             message: 'Row ' + origNum + ': ' + (e && e.message ? e.message : e), repairEligible: false };
+  }
+}
+
+// Triage without writes, so the client can run bounded repairs first.
+function reconcileReceiptRows(submission, items, sessionToken) {
+  requireSession_(sessionToken);
+  submission = submission || {};
+  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount };
+  items = items || [];
+  return {
+    rows: items.map(function (it) {
+      var t = triageRow_(it, toggles);
+      return { row_id: t.row_id, origNum: t.origNum, status: t.status, message: t.message,
+               repairEligible: t.repairEligible,
+               expectedTotal: t.rec ? t.rec.expectedTotal : null,
+               calculatedTotal: t.rec ? t.rec.calculatedTotal : null,
+               difference: t.rec ? t.rec.difference : null };
+    })
+  };
+}
+
+// Authoritative commit: reconciles, applies toggle policy, allocates IDs
+// (locked), appends in receipt units, records the ledger. Idempotent per
+// submission_id + row_id. Unresolved rows are never appended.
+function commitReceiptRows(submission, finals, sessionToken) {
+  requireSession_(sessionToken);
+  submission = submission || {};
+  var submissionId = String(submission.submission_id || '').trim();
+  if (!submissionId) throw new Error('Submission is missing its stable ID.');
+  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount };
+  finals = finals || [];
+  if (!Array.isArray(finals) || finals.length === 0) {
+    throw new Error('Nothing to commit - no final rows were provided.');
+  }
+
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    ensureTransactionIdColumn_(ss);
+    var ledger = ledgerRead_(ss);
+    var rowsOut = [];
+    var staged = []; // {final, txn, transactionId, noteFull, status, message}
+    var allocDates = [];
+
+    for (var i = 0; i < finals.length; i++) {
+      var it = finals[i] || {};
+      var key = submissionId + '|' + String(it.row_id || '');
+      var prior = ledger[key];
+      if (prior && (prior.status === 'logged' || prior.status === 'force-adjusted' || prior.status === 'auto-discount-adjusted')) {
+        rowsOut.push({ row_id: it.row_id, origNum: it.origNum, status: prior.status,
+          transactionId: prior.transactionId, duplicate: true,
+          message: 'Row ' + (it.origNum || '?') + ' was already logged (' + prior.transactionId + ') - not duplicated.' });
+        continue;
+      }
+      var t = triageRow_(it, toggles);
+      if (t.status === 'verified') {
+        staged.push({ final: it, txn: t.txn, triage: t, status: 'logged', message: '' });
+        allocDates.push(t.txn.transaction_date);
+      } else if (t.status === 'mismatch') {
+        var pol = applyTogglePolicy_(t.txn, t.rec, toggles);
+        if (pol.applied === 'none') {
+          rowsOut.push({ row_id: t.row_id, origNum: t.origNum, status: 'review', transactionId: '',
+            message: t.message });
+        } else {
+          var st = pol.applied === 'force-item' || pol.applied === 'force-discount' ? 'force-adjusted' : 'auto-discount-adjusted';
+          staged.push({ final: it, txn: pol.txn, triage: t, status: st, message: pol.note });
+          allocDates.push(pol.txn.transaction_date);
+        }
+      } else {
+        rowsOut.push({ row_id: t.row_id, origNum: t.origNum,
+          status: t.status === 'error' ? 'error' : 'review', transactionId: '', message: t.message });
+      }
+    }
+
+    var ids = allocateTransactionIds_(ss, allocDates);
+    var ledgerEntries = [];
+    for (var s = 0; s < staged.length; s++) {
+      var st2 = staged[s];
+      var txnId = ids[s];
+      st2.txn.transactionId = txnId;
+      var noteFull = String(st2.final.note || '');
+      if (st2.message) noteFull = noteFull ? noteFull + ' | ' + st2.message : st2.message;
+      var sheet = getOrCreateMonthSheet(ss, st2.txn.transaction_date);
+      appendTransactionRows(sheet, st2.txn, noteFull);
+      var total = st2.txn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
+      ledgerEntries.push({ submissionId: submissionId, rowId: st2.final.row_id,
+        transactionId: txnId, status: st2.status });
+      rowsOut.push({ row_id: st2.final.row_id, origNum: st2.final.origNum, status: st2.status,
+        transactionId: txnId, type: st2.txn.transaction_type, merchant: st2.txn.merchant,
+        itemCount: st2.txn.items.length, total: total,
+        message: st2.status === 'logged' ? '' : st2.message });
+    }
+    ledgerWrite_(ss, ledgerEntries);
+
+    var summary = { logged: 0, forceAdjusted: 0, discountAdjusted: 0, review: 0, errors: 0, duplicates: 0 };
+    for (var r = 0; r < rowsOut.length; r++) {
+      var st3 = rowsOut[r].status;
+      if (st3 === 'logged') summary.logged++;
+      else if (st3 === 'force-adjusted') summary.forceAdjusted++;
+      else if (st3 === 'auto-discount-adjusted') summary.discountAdjusted++;
+      else if (st3 === 'review') summary.review++;
+      else if (st3 === 'error') summary.errors++;
+      if (rowsOut[r].duplicate) summary.duplicates++;
+    }
+    return { rows: rowsOut, summary: summary,
+             sortEligible: (summary.review === 0 && summary.errors === 0) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// ---------- POST-REPORT SORT (separate call, clean state only) ----------
+
+var MONTH_INDEX = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+
+function parseMonthSheet_(name) {
+  var m = String(name || '').match(/^(January|February|March|April|May|June|July|August|September|October|November|December) (\d{4})$/);
+  if (!m) return null;
+  return { year: Number(m[2]), month: MONTH_INDEX[m[1].toLowerCase()] };
+}
+
+// Sorts month tabs chronologically and each month's rows by Transaction ID.
+// Whole rows always move together. Legacy rows with blank IDs keep relative
+// order at the end (never deleted/merged). Idempotent. Locked.
+function sortCashflowSheets(sessionToken) {
+  requireSession_(sessionToken);
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    ensureTransactionIdColumn_(ss);
+    var sheets = ss.getSheets();
+    var months = [];
+    var si;
+    for (si = 0; si < sheets.length; si++) {
+      var pm = parseMonthSheet_(sheets[si].getName());
+      if (pm) months.push({ sheet: sheets[si], year: pm.year, month: pm.month });
+    }
+    months.sort(function (a, b) {
+      return (a.year - b.year) || (a.month - b.month);
+    });
+    // Keep non-month sheets in place: compact month tabs into their block.
+    var positions = months.map(function (m) { return m.sheet.getIndex(); }).sort(function (a, b) { return a - b; });
+    for (var i = 0; i < months.length; i++) {
+      ss.setActiveSheet(months[i].sheet);
+      ss.moveActiveSheet(positions[i]);
+    }
+    var rowsMoved = 0, sortedSheets = [];
+    for (var mI = 0; mI < months.length; mI++) {
+      var sh = months[mI].sheet;
+      var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+      if (lastRow < 3 || lastCol < 1) continue; // header + <2 rows: nothing to order
+      var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+      var idCol = colByName_(headers, TXN_ID_HEADER);
+      if (!idCol) continue;
+      var vals = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+      var decorated = vals.map(function (row, idx) { return { row: row, idx: idx }; });
+      decorated.sort(function (a, b) {
+        var ka = String(a.row[idCol - 1] || '').match(/^\d{8}[A-Z]{2,}$/) ? 0 : 1;
+        var kb = String(b.row[idCol - 1] || '').match(/^\d{8}[A-Z]{2,}$/) ? 0 : 1;
+        if (ka !== kb) return ka - kb;
+        if (ka === 0) {
+          var c = compareTxnIds_(a.row[idCol - 1], b.row[idCol - 1]);
+          if (c !== 0) return c;
+        }
+        return a.idx - b.idx;
+      });
+      var changed = false, ci;
+      for (ci = 0; ci < decorated.length; ci++) {
+        if (decorated[ci].idx !== ci) { changed = true; break; }
+      }
+      if (!changed) continue;
+      sh.getRange(2, 1, vals.length, lastCol).setValues(decorated.map(function (d) { return d.row; }));
+      rowsMoved += vals.length;
+      sortedSheets.push(sh.getName());
+    }
+    return { sheets: sortedSheets, rowsMoved: rowsMoved };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
