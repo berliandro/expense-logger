@@ -2222,6 +2222,25 @@
       var force = !!(f && f.checked);
       return { forceLog: force, autoDiscount: !!(d && d.checked) && !force };
     }
+    // Shared button busy state: disables the control, shows a concise pending
+    // label, and marks it aria-busy. The original label is restored when the
+    // operation ends, on success and on failure alike. Never imply success.
+    function cfBusyBtn(btn, busy, label) {
+      if (!btn) return;
+      if (busy) {
+        if (btn.__origLabel === undefined) btn.__origLabel = btn.textContent;
+        btn.disabled = true;
+        if (btn.setAttribute) btn.setAttribute('aria-busy', 'true');
+        if (label != null) btn.textContent = label;
+      } else {
+        btn.disabled = false;
+        if (btn.removeAttribute) btn.removeAttribute('aria-busy');
+        if (btn.__origLabel !== undefined) {
+          try { btn.textContent = btn.__origLabel; } catch (e) {}
+          delete btn.__origLabel;
+        }
+      }
+    }
     function cfFormatIDR(n) {
       try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
       catch (e) { return 'Rp' + n; }
@@ -3098,20 +3117,20 @@
         if (pinBusy) return;
         if (!hasBackend) { try { cfSaveSession('preview', Date.now() + 43200000); } catch (e) {} onUnlocked(); return; }
         pinBusy = true;
-        pinSubmit.disabled = true;
+        cfBusyBtn(pinSubmit, true, 'Checking…');
         setError('');
         if (mode === 'setup-new') {
           firstPin = v;
           mode = 'setup-confirm';
           pinBusy = false;
-          pinSubmit.disabled = false;
+          cfBusyBtn(pinSubmit, false);
           paintMode();
           return;
         }
         if (mode === 'setup-confirm') {
           if (v !== firstPin) {
             pinBusy = false;
-            pinSubmit.disabled = false;
+            cfBusyBtn(pinSubmit, false);
             firstPin = '';
             mode = 'setup-new';
             paintMode('PINs do not match — try again.');
@@ -3120,7 +3139,7 @@
           google.script.run
             .withSuccessHandler(function (sess) {
               pinBusy = false;
-              pinSubmit.disabled = false;
+              cfBusyBtn(pinSubmit, false);
               firstPin = '';
               if (sess && sess.token) {
                 try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
@@ -3131,7 +3150,7 @@
             })
             .withFailureHandler(function (err) {
               pinBusy = false;
-              pinSubmit.disabled = false;
+              cfBusyBtn(pinSubmit, false);
               setError('Could not save PIN: ' + (err && err.message ? err.message : err));
             })
             .setupPin(v);
@@ -3140,7 +3159,7 @@
         google.script.run
           .withSuccessHandler(function (sess) {
             pinBusy = false;
-            pinSubmit.disabled = false;
+            cfBusyBtn(pinSubmit, false);
             if (sess && sess.token) {
               try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
               onUnlocked();
@@ -3152,7 +3171,7 @@
           })
           .withFailureHandler(function (err) {
             pinBusy = false;
-            pinSubmit.disabled = false;
+            cfBusyBtn(pinSubmit, false);
             setError('Error: ' + (err && err.message ? err.message : err));
           })
           .login(v);
@@ -3189,10 +3208,10 @@
         if (!valid6(oldP) || !valid6(newP)) { fail('All PINs must be exactly 6 digits.'); return; }
         if (newP !== newP2) { fail('New PINs do not match.'); return; }
         if (!hasBackend) { try { cfSaveSession(newP, Date.now() + 43200000); } catch (e) {} closeModal(); return; }
-        saveBtn.disabled = true;
+        cfBusyBtn(saveBtn, true, 'Saving…');
         google.script.run
           .withSuccessHandler(function (sess) {
-            saveBtn.disabled = false;
+            cfBusyBtn(saveBtn, false);
             if (sess && sess.token) {
               try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
             }
@@ -3200,7 +3219,7 @@
             try { setStatus('PIN changed. All other sessions revoked.', 'success'); } catch (e) {}
           })
           .withFailureHandler(function (err) {
-            saveBtn.disabled = false;
+            cfBusyBtn(saveBtn, false);
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               closeModal();
               try { cfNoteAuthExpired(); } catch (e) {}
@@ -3270,17 +3289,17 @@
         var k = (apiInput && apiInput.value ? apiInput.value : '').trim();
         if (!k) { if (apiError) apiError.textContent = 'Paste your Gemini API key first.'; return; }
         if (!hasBackend) { closeApiModal(); return; }
-        apiSave.disabled = true;
+        cfBusyBtn(apiSave, true, 'Saving…');
         if (apiError) apiError.textContent = '';
         google.script.run
           .withSuccessHandler(function () {
-            apiSave.disabled = false;
+            cfBusyBtn(apiSave, false);
             closeApiModal();
             setApiKeyLabel(true);
             try { setStatus('Gemini API key saved.', 'success'); } catch (e) {}
           })
           .withFailureHandler(function (err) {
-            apiSave.disabled = false;
+            cfBusyBtn(apiSave, false);
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               closeApiModal();
               try { cfNoteAuthExpired(); } catch (e) {}
@@ -3365,18 +3384,18 @@
         var v = (sheetInput && sheetInput.value ? sheetInput.value : '').trim();
         if (!v) { if (sheetError) sheetError.textContent = 'Paste your Sheet ID or full Sheet URL first.'; return; }
         if (!hasBackend) { closeSheetModal(); return; }
-        sheetSave.disabled = true;
+        cfBusyBtn(sheetSave, true, 'Saving…');
         if (sheetError) sheetError.textContent = '';
         google.script.run
           .withSuccessHandler(function () {
-            sheetSave.disabled = false;
+            cfBusyBtn(sheetSave, false);
             closeSheetModal();
             setSheetLabel(true);
             try { setStatus('Google Sheet saved.', 'success'); } catch (e) {}
             checkGeminiKey();
           })
           .withFailureHandler(function (err) {
-            sheetSave.disabled = false;
+            cfBusyBtn(sheetSave, false);
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               closeSheetModal();
               try { cfNoteAuthExpired(); } catch (e) {}
@@ -3448,7 +3467,7 @@
         try { if (trashClose) trashClose.focus(); } catch (e) {}
       }
       function closeTrashModal() { if (trashModal) trashModal.classList.add('hidden'); }
-      function trashRowBusy(btn, busy) { if (btn) btn.disabled = !!busy; }
+      function trashRowBusy(btn, busy) { cfBusyBtn(btn, busy, busy ? 'Restoring…' : null); }
       function refreshTrashList() {
         if (!trashList) return;
         if (!hasBackend) {
@@ -3467,6 +3486,7 @@
         p.className = 'trash-state';
         p.textContent = 'Loading…';
         trashList.appendChild(p);
+        if (trashList.setAttribute) trashList.setAttribute('aria-busy', 'true');
         google.script.run
           .withSuccessHandler(function (res) {
             trashGroupsCache = (res && res.groups) || [];
@@ -3479,6 +3499,7 @@
               return;
             }
             trashList.innerHTML = '';
+            if (trashList.removeAttribute) trashList.removeAttribute('aria-busy');
             if (trashCount) trashCount.textContent = '';
             var pe = document.createElement('p');
             pe.className = 'trash-state';
@@ -3495,6 +3516,7 @@
       }
       function renderTrashList() {
         if (!trashList) return;
+        if (trashList.removeAttribute) trashList.removeAttribute('aria-busy');
         trashList.innerHTML = '';
         // Transaction groups always live under Transactions, even singletons.
         var groups = trashFilter === 'transactions'
@@ -3657,7 +3679,7 @@
           histOpenMenu = null;
         }
       }
-      function histBusy(btn, busy) { if (btn) btn.disabled = !!busy; }
+      function histBusy(btn, busy, label) { cfBusyBtn(btn, busy, busy ? (label || 'Working…') : null); }
       if (histList) histList.addEventListener('click', function (e) {
         var t = histActTarget(e.target);
         if (!t) return;
@@ -3735,7 +3757,7 @@
           danger: true
         }).then(function (yes) {
           if (!yes) return;
-          histBusy(btn, true);
+          histBusy(btn, true, 'Deleting…');
           cfCall('deleteEntries', [sessionToken, [entryId], opId]).then(function (res) {
             histBusy(btn, false);
             try {
@@ -3756,7 +3778,7 @@
         txnId = String(txnId || '');
         if (!txnId) return;
         if (!hasBackend || !sessionToken) return;
-        histBusy(btn, true);
+        histBusy(btn, true, 'Loading…');
         cfCall('describeTransaction', [sessionToken, txnId]).then(function (info) {
           histBusy(btn, false);
           info = info || {};
@@ -3775,7 +3797,7 @@
             danger: true
           }).then(function (yes) {
             if (!yes) return;
-            histBusy(btn, true);
+            histBusy(btn, true, 'Moving…');
             cfCall('deleteTransaction', [sessionToken, txnId, opId]).then(function (res) {
               histBusy(btn, false);
               try {
@@ -3813,10 +3835,12 @@
         }
         if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
         var btn = reset ? histLoad : histMore;
-        if (btn) { btn.disabled = true; }
+        cfBusyBtn(btn, true, 'Loading…');
+        if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
         google.script.run
           .withSuccessHandler(function (res) {
-            if (btn) btn.disabled = false;
+            cfBusyBtn(btn, false);
+            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
             res = res || {};
             var logs = res.logs || [];
             renderLogs(logs, !reset);
@@ -3832,7 +3856,8 @@
             }
           })
           .withFailureHandler(function (err) {
-            if (btn) btn.disabled = false;
+            cfBusyBtn(btn, false);
+            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               try { cfNoteAuthExpired(); } catch (e) {}
               try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
