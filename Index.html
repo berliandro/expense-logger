@@ -263,6 +263,7 @@
       text-wrap: balance;
     }
     h1 .thin { color: var(--muted); font-weight: 600; }
+    .hero h1 { font-size: clamp(24px, 3vw, 32px); }
     .lede {
       margin: 0 0 22px;
       color: var(--muted);
@@ -1354,12 +1355,12 @@
     <section class="hero" aria-label="About">
       <div class="eyebrow">Receipt &rarr; Sheet in seconds</div>
       <h1>Log cashflow <span class="thin">without the spreadsheet chore.</span></h1>
-      <p class="lede">Snap a receipt, invoice, payslip or transfer proof — or just type what happened. Gemini extracts date, merchant, amount and category.</p>
+      <p class="lede">Add a receipt photo or a note below. Each photo becomes its own receipt: Gemini extracts the items, checks them against the printed total, and saves the rows to your month sheet.</p>
       <p class="hero-compact-note">Snap a receipt or describe income / expense below.</p>
 
       <ul class="steps">
-        <li><div class="step-n">1</div><div><b>Attach or type</b><span>Photos optional — attach several receipts at once. A short note like “Gaji bulanan 5jt” works.</span></div></li>
-        <li><div class="step-n">2</div><div><b>Gemini structures each photo</b><span>Date, merchant, items, Expense vs Income per receipt. Missing date &rarr; today.</span></div></li>
+        <li><div class="step-n">1</div><div><b>Attach or type</b><span>Photos optional — attach several receipts at once. A short note like “Gaji bulanan 5jt” works. Empty rows are ignored.</span></div></li>
+        <li><div class="step-n">2</div><div><b>Gemini structures each photo</b><span>Each photo is its own receipt: date, merchant, items, Expense vs Income. One note covers all photos — say “first photo…” to point at one. Tap a thumbnail for the full image. Missing date &rarr; today.</span></div></li>
         <li><div class="step-n">3</div><div><b>Saved to the month sheet</b><span>Rows land in “MMMM yyyy” under Date · Merchant · Amount · Type.</span></div></li>
       </ul>
 
@@ -1398,19 +1399,19 @@
       <fieldset class="recon-toggles" aria-label="Receipt reconciliation options">
         <legend><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Reconciliation options</legend>
         <label class="switch">
-          <span class="txt"><b>Force-save unmatched receipts</b><i>Save after a failed check using a labeled balancing line. Review the adjustment afterward.</i></span>
-          <input type="checkbox" id="toggle-force" aria-label="Force-save unmatched receipts">
+          <span class="txt"><b>Force-save</b><i>Save unmatched receipts with one labeled balancing line. Review the adjustment afterward.</i></span>
+          <input type="checkbox" id="toggle-force" aria-label="Force-save">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
         <label class="switch">
-          <span class="txt"><b>Add missing discount automatically</b><i>If extracted items exceed the printed total, add a negative adjustment after one retry.</i></span>
-          <input type="checkbox" id="toggle-discount" aria-label="Add missing discount automatically">
+          <span class="txt"><b>Auto-discount</b><i>Add a negative adjustment when items exceed a readable total.</i></span>
+          <input type="checkbox" id="toggle-discount" aria-label="Auto-discount">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
         <p class="switch-note hidden" id="discount-note">Auto-discount is unavailable while Force-save is on — Force-save already covers both directions.</p>
         <details class="recon-details">
           <summary>How it works</summary>
-          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward.</p>
+          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. Receipts submit in sequential bounded batches; valid rows are logged even while others wait for review with their photos. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward.</p>
         </details>
       </fieldset>
 
