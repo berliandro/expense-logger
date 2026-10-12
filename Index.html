@@ -3684,13 +3684,19 @@
         if (e.key === 'Escape' && histOpenMenu) closeHistMenu();
       });
       function histMenuContains(el) {
+        var owner = histOpenMenu && histOpenMenu._owner;
         while (el) {
-          if (el === histOpenMenu) return true;
+          // The open trigger counts as inside: the same click that opens the
+          // menu bubbles to document, and must not close it immediately.
+          if (el === histOpenMenu || el === owner) return true;
           el = el.parentNode || el.parent || null;
         }
         return false;
       }
       function openHistMenu(ownerBtn) {
+        // Toggle: clicking the open trigger again closes its menu instead of
+        // reopening it. A different trigger switches the menu to that row.
+        if (histOpenMenu && histOpenMenu._owner === ownerBtn) { closeHistMenu(); return; }
         closeHistMenu();
         var wrap = ownerBtn.parentNode || ownerBtn.parent;
         var txnId = ownerBtn.getAttribute('data-txn-id') || '';
