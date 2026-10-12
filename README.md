@@ -34,12 +34,12 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 
 ## How it works
 
-1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Standard** tab, then submit.
+1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Quick-Input** tab, then submit.
 2. The app **plans** the submission, then runs **Phase 1** (printed totals) and **Phase 2** (line items) in sequential batches.
 3. Rows are **triaged**: exact matches log immediately, mismatches get **one repair pass**, and leftovers wait for **review** with their photos.
 4. **Commit** appends verified rows with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
 5. **Sorting** runs separately once the report has zero unresolved rows.
-6. **Delete** moves rows to `_CF_Trash`; **Recover deleted entries/transactions** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
+6. **Delete** moves rows to `_CF_Trash`; **Trash** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
 
 ## Getting started
 
@@ -88,7 +88,7 @@ The app runs with timezone `Asia/Jakarta` (`appsscript.json`), and the web app e
 
 - In **Recent logs**, each card has a **Delete entry** action; the **⋯** menu offers **Delete entire receipt…**, showing merchant, date, Transaction ID, and the exact line-item count before you confirm. Records without a Transaction ID can only delete the single entry.
 - Deleted rows move to the hidden `_CF_Trash` sheet and stay recoverable for **7 days from deletion**, then are removed automatically.
-- Recover via Settings menu → **Recover deleted entries** or **Recover deleted transactions**. Restored rows keep their original Entry and Transaction IDs; if an ID already exists live, the restore is blocked with an explanation instead of overwriting.
+- Recover via Settings menu → **Trash** (with Entries and Transactions filters). Restored rows keep their original Entry and Transaction IDs; if an ID already exists live, the restore is blocked with an explanation instead of overwriting.
 - Never edit the system-managed `Transaction ID` / `Entry ID` columns or the hidden `_CF_Submissions` / `_CF_Trash` sheets by hand — logs, delete/restore, and sorting all rely on them.
 
 ## Updates and deployment
@@ -133,7 +133,7 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 | Path | Purpose |
 |------|---------|
 | `Code.js` | Apps Script backend: serves the page, calls Gemini, writes Sheets, owns Trash/IDs/sort |
-| `Index.html` | Single-page frontend (dark default + light mode, Table Layout + Standard tabs) |
+| `Index.html` | Single-page frontend (dark default + light mode, Table Layout + Quick-Input tabs) |
 | `appsscript.json` | Timezone, runtime, and web-app access settings |
 | `docs/screenshots/` | Desktop and mobile product screenshots shown above |
 | `Install and Tutorial Berliandro Cash Log.bat` | Family Windows installer |
