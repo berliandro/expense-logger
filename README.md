@@ -1,104 +1,64 @@
-# Cashflow Logger (expense-logger)
+# Cashflow Log
 
-Snap a receipt (or type a note) → Gemini structures it → rows land in Google
-Sheets. Frosted Liquid Glass UI, Table Layout (default) + Standard tabs,
-two-phase receipt checking, PIN-first 12h sessions, recent-logs history.
+Snap a receipt → Gemini structures it → rows land in Google Sheets. Self-hosted expense-and-income logging for individuals and families, running entirely on Google Apps Script + Google Sheets.
+
+<p align="center">
+  <img src="docs/screenshots/cashflow-desktop.png" alt="Cashflow Log desktop interface showing the New entry form with the Table Layout tab, reconciliation option switches, receipt rows, and submit button">
+  <br><em>Desktop preview</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/cashflow-mobile.png" alt="Cashflow Log on a narrow mobile viewport showing the stacked entry form, reconciliation switches, and receipt rows remaining readable" width="300">
+  <br><em>Mobile preview</em>
+</p>
+
+## Overview
+
+Cashflow Log removes the spreadsheet chore from expense tracking. Photograph a receipt (or just type a note), and Gemini extracts the date, merchant, line items, and category. Each receipt is checked against its own printed total before anything is written, and every row lands in a monthly sheet with stable IDs. Mistakes are recoverable: deletions go to a hidden Trash sheet for 7 days instead of vanishing.
+
+It is useful for anyone who already lives in Google Sheets and wants receipt logging without another paid service, another account, or data leaving their own Google account — plus a one-click Windows installer so non-technical family members can run their own copy.
+
+## Key features
+
+- **Receipt extraction** — Gemini reads dates, merchants, line items, categories, and Expense/Income type from JPG, PNG, WEBP, or HEIC photos; a typed note works with no photo at all.
+- **Two-phase total reconciliation** — Phase 1 reads each photo's printed total, Phase 2 extracts every line item, and each receipt's item sum must match its printed total exactly.
+- **Batched submission pipeline** — Table Layout rows (the default tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
+- **Repair and review handling** — Mismatches get one bounded repair pass; unresolved rows stay in the app with their photos for review while valid rows are still logged. Nothing unverified is saved silently.
+- **Optional balancing rules** (both OFF by default) — **Force-save unmatched receipts** adds one labeled balancing line after a failed check; **Add missing discount automatically** adds only a negative adjustment when items exceed a readable printed total. Turning Force-save on visibly suspends auto-discount without losing your choice.
+- **Transaction IDs** — Every receipt gets a unique `YYYYMMDD` + letter-sequence ID (e.g. `20261231AA`) shared by all its rows; month sheets sort chronologically with rows ordered by Transaction ID after clean reports.
+- **Entry IDs** — Every line item carries a system-managed unique ID that survives sorting, deletion, and recovery. Both IDs are looked up by header name, never by column position.
+- **Google Sheets integration** — Rows append to `MMMM yyyy` month sheets copied from an auto-created `Template`; missing system headers are migrated idempotently.
+- **Recoverable Trash** — Deleted entries and whole receipts move to a hidden `_CF_Trash` sheet with typed payloads and deletion timestamps.
+- **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
+- **Desktop and mobile UI** — Dark default with light mode, compact switch controls, keyboard support, and reduced-motion respect; the layout stays readable down to narrow phone screens.
 
 ## How it works
 
-- Frontend: `Index.html` (single page, dark default + light mode). **Table
-  Layout is the default tab** with unlimited rows: rows auto-grow one blank
-  at a time, and submissions run as sequential bounded batches.
-- Receipts are checked in **two phases**: Phase 1 reads each photo's printed
-  final total, Phase 2 extracts every line item, and each receipt's item sum
-  must match its own printed total exactly. Mismatches get one bounded repair
-  pass; unresolved rows stay in the app with their photos for review while
-  valid rows are still logged.
-- Optional toggles (both default OFF, compact switches under Reconciliation
-  options): **Force-save unmatched receipts** adds one clearly labeled
-  balancing line after a failed check; **Add missing discount automatically**
-  adds only a negative adjustment when items exceed a readable printed total.
-  Placeholders are always marked in Notes for review. Full details live under
-  the in-app “How it works” disclosure.
-- Every logged receipt gets a unique **Transaction ID** (`YYYYMMDD` + letter
-  sequence, e.g. `20261231AA`) shared by all its item rows. After a clean
-  report (zero unresolved rows), month sheets are ordered chronologically and
-  rows are sorted by Transaction ID via a separate call.
-- Every line item also carries a system-managed **Entry ID** (unique per row).
-  Both IDs are found by header name, never by column position, and survive
-  sorting, deletion, and recovery.
-- Backend: `Code.js` (Apps Script: serves the page, calls Gemini, writes sheets)
-- `appsscript.json`: timezone `Asia/Jakarta`, web app `USER_DEPLOYING` /
-  `ANYONE_ANONYMOUS` (family members open the `/exec` URL without editor
-  access; the app's own PIN/session check still gates sensitive calls)
-- `.clasp.json`: generated locally per user by the installer from your Script
-  ID — never committed, covered by `.gitignore`
-- `.cashlogger-deployment-id`: per-installation Web App deployment ID, saved
-  locally by the installer — never committed, covered by `.gitignore`
+1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Standard** tab, then submit.
+2. The app **plans** the submission, then runs **Phase 1** (printed totals) and **Phase 2** (line items) in sequential batches.
+3. Rows are **triaged**: exact matches log immediately, mismatches get **one repair pass**, and leftovers wait for **review** with their photos.
+4. **Commit** appends verified rows with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
+5. **Sorting** runs separately once the report has zero unresolved rows.
+6. **Delete** moves rows to `_CF_Trash`; **Recover deleted entries/transactions** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
 
-## Prerequisites
+## Getting started
 
-- Git, Node.js + [`@google/clasp`](https://github.com/google/clasp)
-  (`npm install -g @google/clasp`). The Windows installer below installs any
-  missing prerequisites automatically.
-- A Google account with access to Google Sheets + AI Studio
-- A Gemini API key from [Google AI Studio](https://aistudio.google.com/)
-- A Google Sheet (bound automatically when the script comes from a Sheet, or
-  set via Settings menu → Set Sheet). If no `Template` sheet exists, one is
-  created automatically on first log with headers:
-  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
-  (widths 100, 173, 100, 157, 127, 103, 207, 392, 130, 140), frozen header
-  row, then hidden. Monthly sheets (`MMMM yyyy`) are copied from that
-  `Template`, gain the `Transaction ID` and `Entry ID` headers automatically
-  if missing, and are sorted chronologically with rows ordered by Transaction
-  ID after clean reports.
+### Prerequisites
 
-## Family install (Windows)
+- A Google account with access to Google Sheets and [Google AI Studio](https://aistudio.google.com/)
+- A Gemini API key from AI Studio
+- A Google Sheet (or let the app create the structure for you)
+- For manual setup: Git, Node.js, and [`@google/clasp`](https://github.com/google/clasp) (`npm install -g @google/clasp`)
+
+### Family install (Windows, easiest)
 
 1. Run `Install and Tutorial Berliandro Cash Log.bat` once.
-2. It downloads the latest project from
-   `https://github.com/berliandro/expense-logger.git` (`main` branch),
-   installs missing Git / Node.js / clasp, and asks for your Google Apps
-   Script ID.
-3. Log in with Google when `clasp login` opens the browser.
-4. The installer runs `clasp push -f`, then creates the initial Web App
-   deployment with `clasp create-deployment --description "Cash Logger" --json`
-   and extracts the deployment ID from the JSON output (no fragile text
-   parsing). If the ID cannot be extracted, installation fails clearly.
-5. The deployment ID is validated and saved to `.cashlogger-deployment-id`.
-6. The installer shows `https://script.google.com/macros/s/{DEPLOYMENT_ID}/exec`
-   and opens it automatically.
-7. The installer does not delete itself and does not report success when
-   something failed.
+2. It downloads the latest `main` from `https://github.com/berliandro/expense-logger.git` and installs any missing Git / Node.js / clasp.
+3. Enter your Google Apps Script ID when asked, then log in with Google when `clasp login` opens the browser.
+4. The installer runs `clasp push -f`, creates the initial Web App deployment, validates the deployment ID, and saves it locally.
+5. It shows your `https://script.google.com/macros/s/{DEPLOYMENT_ID}/exec` URL and opens it automatically.
 
-## Updates (same URL)
-
-Run `Update.bat` for later updates. It keeps the same Web App URL:
-
-```text
-Update.bat
-→ temporary copy in %TEMP% (so Git can safely replace Update.bat itself)
-→ git fetch origin main
-→ git reset --hard origin/main (tracked files match GitHub exactly)
-→ run the newly downloaded Update.bat
-→ clasp push -f
-→ clasp update-deployment {saved deployment ID}
-→ show the same https://script.google.com/macros/s/{DEPLOYMENT_ID}/exec URL
-```
-
-- The updater reuses the deployment ID stored in
-  `.cashlogger-deployment-id` and updates that existing deployment. It does
-  not create a new deployment on every run, so the `/exec` URL stays the
-  same.
-- Family installs are treated as deployment clients: `reset --hard` makes
-  tracked files match GitHub exactly. Commit any local source changes before
-  updating, or they will be overwritten. Ignored per-user files
-  (`.clasp.json`, `.cashlogger-deployment-id`) are untouched.
-- The updater checks for Git, clasp, `.git`, `.clasp.json`, and
-  `.cashlogger-deployment-id`, and fails with a useful message when anything
-  is missing.
-
-## Manual clone & setup (developers)
+### Manual setup (developers)
 
 ```sh
 git clone https://github.com/berliandro/expense-logger.git
@@ -107,17 +67,45 @@ clasp login          # opens Google OAuth in your browser (auth stays local)
 clasp push           # uploads Code.js + Index.html + appsscript.json
 ```
 
-Then in the Apps Script editor (**Project Settings → Script Properties**), add:
+Then open the web-app `/exec` URL, set a 6-digit PIN on first run, and add the Gemini API key (Settings menu → Set API key) and Google Sheet (Settings menu → Set Sheet) when prompted. If the script was copied from an existing Sheet (container-bound), that sheet is used automatically.
 
-| Key              | Value                              |
-|------------------|------------------------------------|
-| `GEMINI_API_KEY` | your Gemini key (AI Studio)        |
-| `SPREADSHEET_ID` | the ID from your sheet's URL       |
+## Configuration
 
-No keys ever live in this repo — they stay in Script Properties (and the
-browser only ever holds a random 12h session token, never the PIN or keys).
+Script Properties (**Project Settings → Script Properties** in the Apps Script editor) accept:
 
-## Manual deploy (developers)
+| Key              | Value                                                              |
+|------------------|--------------------------------------------------------------------|
+| `GEMINI_API_KEY` | Your Gemini key (AI Studio). Also settable in-app via Settings.    |
+| `SPREADSHEET_ID` | Manual fallback for the sheet ID; the in-app Set Sheet prompt is preferred. |
+
+No keys ever live in this repo — they stay in Script Properties, and the browser holds only a random 12h session token, never the PIN or keys.
+
+Month sheets are created automatically from the hidden `Template` sheet with headers
+`Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`.
+The app runs with timezone `Asia/Jakarta` (`appsscript.json`), and the web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
+
+## Deleting and recovering entries
+
+- In **Recent logs**, each card has a **Delete entry** action; the **⋯** menu offers **Delete entire receipt…**, showing merchant, date, Transaction ID, and the exact line-item count before you confirm. Records without a Transaction ID can only delete the single entry.
+- Deleted rows move to the hidden `_CF_Trash` sheet and stay recoverable for **7 days from deletion**, then are removed automatically.
+- Recover via Settings menu → **Recover deleted entries** or **Recover deleted transactions**. Restored rows keep their original Entry and Transaction IDs; if an ID already exists live, the restore is blocked with an explanation instead of overwriting.
+- Never edit the system-managed `Transaction ID` / `Entry ID` columns or the hidden `_CF_Submissions` / `_CF_Trash` sheets by hand — logs, delete/restore, and sorting all rely on them.
+
+## Updates and deployment
+
+Run `Update.bat` for later updates. It keeps the same Web App URL:
+
+```text
+Update.bat
+→ temporary copy in %TEMP% (so Git can safely replace Update.bat itself)
+→ git fetch origin main
+→ git reset --hard origin/main (tracked files match GitHub exactly)
+→ clasp push -f
+→ clasp update-deployment {saved deployment ID}
+→ show the same https://script.google.com/macros/s/{DEPLOYMENT_ID}/exec URL
+```
+
+Family installs are deployment clients: `reset --hard` overwrites local source changes, so commit anything you care about before updating. Per-user files (`.clasp.json`, `.cashlogger-deployment-id`) are untouched. For manual deploys:
 
 ```sh
 # first time (creates a deployment and prints its deploymentId as JSON):
@@ -126,51 +114,29 @@ clasp create-deployment --description "Cashflow logger" --json
 clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 ```
 
-Open the web-app `/exec` URL, set a 6-digit PIN on first run, then add the
-Gemini API key when prompted (Settings menu → Set API key) and the Google
-Sheet when prompted (Settings menu → Set Sheet). If the script was copied
-from an existing Sheet (container-bound), the bound sheet is used
-automatically; standalone scripts ask for the Sheet ID/URL in-app (same
-style as the API-key prompt). `SPREADSHEET_ID` in Script Properties remains
-supported as a manual fallback.
-
-## Deleting and recovering entries
-
-- In **Recent logs**, each card has a **Delete entry** action; a “⋯” menu on
-  the card offers **Delete entire receipt…** (with merchant, date,
-  Transaction ID, and exact line-item count shown before you confirm).
-  Records without a Transaction ID can only delete the single entry.
-- Deleted rows move to a hidden `_CF_Trash` sheet and stay recoverable for
-  **7 days from deletion**, then are permanently removed automatically.
-- Recover via Settings menu → **Recover deleted entries** or **Recover
-  deleted transactions**. Restored rows keep their original Entry and
-  Transaction IDs. Restoring never overwrites live data: if an ID already
-  exists, the restore is blocked with an explanation.
-- System-managed sheets and columns: `Transaction ID` and `Entry ID` columns
-  plus the hidden `_CF_Submissions` (idempotency ledger) and `_CF_Trash`
-  sheets. Columns are always found by header name. Never edit these IDs by
-  hand — Recent Logs, delete/restore, and sorting all rely on them.
-
 ## Troubleshooting
 
-- `Google Sheet is not set` (or `Spreadsheet is not configured` /
-  `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log
-  entry means no usable sheet was found. If bound to a Sheet it is used
-  automatically; otherwise set it via Settings menu → Set Sheet (Sheet ID or
-  full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then
-  reload the `/exec` URL and try again. A missing `Template` sheet is created
-  automatically with the header row from Prerequisites.
-- `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script
-  Properties, or it was never saved via Settings menu → Set API key. Add it,
-  then retry.
+- `Google Sheet is not set` (or `Spreadsheet is not configured` / `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log entry means no usable sheet was found. Set it via Settings menu → Set Sheet (Sheet ID or full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then reload the `/exec` URL and retry. A missing `Template` sheet is created automatically with the headers listed under Configuration.
+- `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script Properties or was never saved via Settings menu → Set API key. Add it, then retry.
+- `Too many PIN attempts - try again later` means 5 wrong PINs within 10 minutes; wait for the window to pass.
+- A restore that reports a missing month sheet recreates it from the `Template` automatically; restores that cannot determine a destination refuse with an explanation and leave the Trash record untouched.
 
-## Security notes
+## Security and privacy
 
-- The raw PIN is never stored on the device and never accepted by sensitive
-  backend calls — login exchanges it (rate-limited: 5 fails / 10 min) for a
-  random 256-bit session token valid 12h, stored hashed server-side.
+- The raw PIN is never stored on the device and is never accepted by sensitive backend calls — login exchanges it for a random 256-bit session token valid 12h, stored hashed server-side. Wrong PINs are rate-limited (5 fails / 10 min).
 - `PIN_HASH` / `PIN_SALT` / hashed sessions live in Script Properties.
-- `.clasp.json` (your Script ID binding, generated by the installer),
-  `.clasprc.json` (your personal clasp OAuth tokens),
-  `.cashlogger-deployment-id` (your Web App deployment ID), and `.opencode/`
-  (agent session state) are git-ignored — never commit them.
+- Receipt photos are sent to Gemini for extraction and are never stored in the Trash ledger or logs beyond the review flow; financial rows live only in your own Google Sheet.
+- `.clasp.json` (Script ID binding), `.clasprc.json` (personal clasp OAuth tokens), `.cashlogger-deployment-id` (Web App deployment ID), and `.opencode/` (agent session state) are git-ignored — never commit them.
+
+## Project layout
+
+| Path | Purpose |
+|------|---------|
+| `Code.js` | Apps Script backend: serves the page, calls Gemini, writes Sheets, owns Trash/IDs/sort |
+| `Index.html` | Single-page frontend (dark default + light mode, Table Layout + Standard tabs) |
+| `appsscript.json` | Timezone, runtime, and web-app access settings |
+| `docs/screenshots/` | Desktop and mobile product screenshots shown above |
+| `Install and Tutorial Berliandro Cash Log.bat` | Family Windows installer |
+| `Update.bat` | Updater that preserves the Web App URL |
+
+There is no build step and no test runner shipped in the repo — `Code.js` and `Index.html` deploy directly with `clasp push`.
