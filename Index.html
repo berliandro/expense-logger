@@ -3550,8 +3550,8 @@
         function go() {
           trashRowBusy(btn, true);
           var call = g.type === 'transaction'
-            ? cfCall('restoreTransaction', [g.groupId, sessionToken])
-            : cfCall('restoreEntry', [entryIdOf_(g), sessionToken]);
+            ? cfCall('restoreTransaction', [sessionToken, g.groupId])
+            : cfCall('restoreEntry', [sessionToken, entryIdOf_(g)]);
           call.then(function (res) {
             trashRowBusy(btn, false);
             refreshTrashList();
@@ -3733,7 +3733,7 @@
         }).then(function (yes) {
           if (!yes) return;
           histBusy(btn, true);
-          cfCall('deleteEntries', [[entryId], opId, sessionToken]).then(function (res) {
+          cfCall('deleteEntries', [sessionToken, [entryId], opId]).then(function (res) {
             histBusy(btn, false);
             try {
               setStatus(res && res.alreadyMoved ? 'Entry was already in Trash.' : 'Entry moved to Trash. Recover it within 7 days.', 'success');
@@ -3754,7 +3754,7 @@
         if (!txnId) return;
         if (!hasBackend || !sessionToken) return;
         histBusy(btn, true);
-        cfCall('describeTransaction', [txnId, sessionToken]).then(function (info) {
+        cfCall('describeTransaction', [sessionToken, txnId]).then(function (info) {
           histBusy(btn, false);
           info = info || {};
           if (!info.hasLiveRows) {
@@ -3773,7 +3773,7 @@
           }).then(function (yes) {
             if (!yes) return;
             histBusy(btn, true);
-            cfCall('deleteTransaction', [txnId, opId, sessionToken]).then(function (res) {
+            cfCall('deleteTransaction', [sessionToken, txnId, opId]).then(function (res) {
               histBusy(btn, false);
               try {
                 setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' rows). Recover it within 7 days.', 'success');
