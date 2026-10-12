@@ -2637,10 +2637,13 @@ function collectExistingIdSeq_(ss) {
 
 // Assigns one ID per receipt date in order. Caller must hold the script lock.
 // dateStrs are validated YYYY-MM-DD; sequence keys are dashless YYYYMMDD.
+// Each input is re-normalized defensively so a malformed date can never open
+// a garbage bucket (e.g. 'undefinedAA') - it falls back to the transaction
+// date rules (unreadable -> today) like every other path.
 function allocateTransactionIds_(ss, dateStrs) {
   var maxSeq = collectExistingIdSeq_(ss);
   return dateStrs.map(function (ds) {
-    var key = String(ds).replace(/-/g, '');
+    var key = String(normalizeTransactionDate(ds)).replace(/-/g, '');
     var next = (maxSeq[key] == null ? -1 : maxSeq[key]) + 1;
     maxSeq[key] = next;
     return key + seqToLetters_(next);
