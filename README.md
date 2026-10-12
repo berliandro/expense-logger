@@ -14,15 +14,19 @@ two-phase receipt checking, PIN-first 12h sessions, recent-logs history.
   must match its own printed total exactly. Mismatches get one bounded repair
   pass; unresolved rows stay in the app with their photos for review while
   valid rows are still logged.
-- Optional toggles (both default OFF): **Force log with balancing line**
-  adds one clearly labeled `Missing/hidden item` or `Missing/hidden
-  discount` placeholder after a failed repair; **Auto-add missing discount**
-  adds only a negative `Missing/hidden discount` when items exceed a readable
-  printed total. Placeholders are always marked in Notes for review.
+- Optional toggles (both default OFF, compact switches under Reconciliation
+  options): **Force-save unmatched receipts** adds one clearly labeled
+  balancing line after a failed check; **Add missing discount automatically**
+  adds only a negative adjustment when items exceed a readable printed total.
+  Placeholders are always marked in Notes for review. Full details live under
+  the in-app “How it works” disclosure.
 - Every logged receipt gets a unique **Transaction ID** (`YYYYMMDD` + letter
   sequence, e.g. `20261231AA`) shared by all its item rows. After a clean
   report (zero unresolved rows), month sheets are ordered chronologically and
   rows are sorted by Transaction ID via a separate call.
+- Every line item also carries a system-managed **Entry ID** (unique per row).
+  Both IDs are found by header name, never by column position, and survive
+  sorting, deletion, and recovery.
 - Backend: `Code.js` (Apps Script: serves the page, calls Gemini, writes sheets)
 - `appsscript.json`: timezone `Asia/Jakarta`, web app `USER_DEPLOYING` /
   `ANYONE_ANONYMOUS` (family members open the `/exec` URL without editor
@@ -42,11 +46,12 @@ two-phase receipt checking, PIN-first 12h sessions, recent-logs history.
 - A Google Sheet (bound automatically when the script comes from a Sheet, or
   set via Settings menu → Set Sheet). If no `Template` sheet exists, one is
   created automatically on first log with headers:
-  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID`
-  (widths 100, 173, 100, 157, 127, 103, 207, 392, 130), frozen header row,
-  then hidden. Monthly sheets (`MMMM yyyy`) are copied from that `Template`,
-  gain the `Transaction ID` header automatically if missing, and are sorted
-  chronologically with rows ordered by Transaction ID after clean reports.
+  `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
+  (widths 100, 173, 100, 157, 127, 103, 207, 392, 130, 140), frozen header
+  row, then hidden. Monthly sheets (`MMMM yyyy`) are copied from that
+  `Template`, gain the `Transaction ID` and `Entry ID` headers automatically
+  if missing, and are sorted chronologically with rows ordered by Transaction
+  ID after clean reports.
 
 ## Family install (Windows)
 
@@ -128,6 +133,23 @@ from an existing Sheet (container-bound), the bound sheet is used
 automatically; standalone scripts ask for the Sheet ID/URL in-app (same
 style as the API-key prompt). `SPREADSHEET_ID` in Script Properties remains
 supported as a manual fallback.
+
+## Deleting and recovering entries
+
+- In **Recent logs**, each card has a **Delete entry** action; a “⋯” menu on
+  the card offers **Delete entire receipt…** (with merchant, date,
+  Transaction ID, and exact line-item count shown before you confirm).
+  Records without a Transaction ID can only delete the single entry.
+- Deleted rows move to a hidden `_CF_Trash` sheet and stay recoverable for
+  **7 days from deletion**, then are permanently removed automatically.
+- Recover via Settings menu → **Recover deleted entries** or **Recover
+  deleted transactions**. Restored rows keep their original Entry and
+  Transaction IDs. Restoring never overwrites live data: if an ID already
+  exists, the restore is blocked with an explanation.
+- System-managed sheets and columns: `Transaction ID` and `Entry ID` columns
+  plus the hidden `_CF_Submissions` (idempotency ledger) and `_CF_Trash`
+  sheets. Columns are always found by header name. Never edit these IDs by
+  hand — Recent Logs, delete/restore, and sorting all rely on them.
 
 ## Troubleshooting
 

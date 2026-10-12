@@ -845,10 +845,8 @@
       border: 1px solid var(--glass-border);
       border-radius: var(--radius-md);
       background: var(--field);
-      padding: 12px 14px;
+      padding: 10px 14px 12px;
       margin: 0 0 18px;
-      display: grid;
-      gap: 10px;
     }
     .recon-toggles legend {
       font-size: 12px;
@@ -858,23 +856,18 @@
       color: var(--muted);
       padding: 0 6px;
     }
-    .recon-toggles .toggle {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      cursor: pointer;
-      font-size: 13.5px;
-    }
-    .recon-toggles .toggle input {
-      width: 18px; height: 18px;
-      margin-top: 2px;
-      flex: none;
-      accent-color: var(--accent);
+    .recon-toggles legend svg { vertical-align: -2px; margin-right: 4px; }
+    .recon-toggles .switch {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      align-items: center;
+      padding: 8px 0;
       cursor: pointer;
     }
-    .recon-toggles .toggle input:disabled { cursor: not-allowed; opacity: 0.5; }
-    .recon-toggles .toggle b { display: block; font-size: 13.5px; }
-    .recon-toggles .toggle i {
+    .recon-toggles .switch + .switch { border-top: 1px solid var(--line); }
+    .recon-toggles .switch .txt b { display: block; font-size: 13.5px; }
+    .recon-toggles .switch .txt i {
       display: block;
       font-style: normal;
       font-size: 12.5px;
@@ -882,6 +875,114 @@
       margin-top: 2px;
       line-height: 1.45;
     }
+    .recon-toggles .switch input {
+      position: absolute;
+      opacity: 0;
+      width: 1px; height: 1px;
+      overflow: hidden;
+    }
+    .recon-toggles .switch .track {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      width: 44px; height: 25px;
+      border-radius: 999px;
+      background: var(--field-hover);
+      border: 1px solid var(--line);
+      position: relative;
+      flex: none;
+      transition: background 0.18s ease, border-color 0.18s ease;
+    }
+    .recon-toggles .switch .track::after {
+      content: "";
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 19px; height: 19px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+    .recon-toggles .switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+    .recon-toggles .switch input:checked + .track::after { transform: translateX(19px); background: #fff; }
+    .recon-toggles .switch input:focus-visible + .track { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
+    .recon-toggles .switch input:disabled + .track { opacity: 0.45; cursor: not-allowed; }
+    .recon-toggles .switch input:disabled ~ .txt { opacity: 0.55; }
+    .recon-toggles .switch-note {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin: 2px 0 0;
+    }
+    .recon-toggles details.recon-details { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+    .recon-toggles details.recon-details summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--ink);
+      font-size: 12.5px;
+      border-radius: 8px;
+    }
+    .recon-toggles details.recon-details summary:focus-visible { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
+    .recon-toggles details.recon-details p { margin: 6px 0 2px; line-height: 1.55; }
+    @media (max-width: 560px) {
+      .recon-toggles .switch { grid-template-columns: 1fr auto; }
+      .recon-toggles { padding: 8px 12px 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .recon-toggles .switch .track, .recon-toggles .switch .track::after { transition: none; }
+    }
+    /* History delete actions + per-card menu */
+    .hist-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .hist-del {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .hist-del:hover { color: var(--accent); border-color: rgba(230,0,35,0.4); background: var(--accent-soft); }
+    .hist-del:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hist-del:focus-visible { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
+    .hist-more-wrap { position: relative; }
+    .hist-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      min-width: 220px;
+      z-index: 40;
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: var(--shadow), var(--glass-hi);
+      border-radius: 14px;
+      padding: 6px;
+    }
+    /* Confirm dialog (delete/restore) */
+    #confirm-modal { z-index: 120; }
+    #confirm-modal .lock-card { text-align: left; }
+    #confirm-modal h2 { font-size: 17px; }
+    #confirm-title { margin: 0 0 8px; }
+    #confirm-body { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); line-height: 1.55; white-space: pre-line; }
+    #confirm-ok.danger { background: var(--accent-grad); }
+    /* Trash view */
+    #trash-modal .lock-card { max-width: 520px; max-height: 82dvh; overflow-y: auto; text-align: left; }
+    .trash-filters { display: flex; gap: 8px; margin-bottom: 12px; }
+    .trash-count { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+    .trash-group {
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      background: var(--field);
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .trash-group b { display: block; font-size: 13.5px; }
+    .trash-group .desc { color: var(--muted); font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .trash-group .meta { color: var(--muted); font-size: 12.5px; margin: 4px 0 10px; line-height: 1.5; }
+    .trash-group .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .trash-empty, .trash-state { color: var(--muted); font-size: 13.5px; text-align: center; padding: 18px 0; }
     .recon-progress {
       font-size: 13px;
       color: var(--muted);
@@ -1081,7 +1182,7 @@
     }
     .upload-title { color: var(--ink); }
     /* ---- PIN lock + history (Frosted Liquid Glass) ---- */
-    #lock-screen, #pin-modal, #api-modal, #sheet-modal {
+    #lock-screen, #pin-modal, #api-modal, #sheet-modal, #confirm-modal, #trash-modal {
       position: fixed;
       inset: 0;
       z-index: 100;
@@ -1093,7 +1194,7 @@
       backdrop-filter: blur(22px) saturate(160%);
       -webkit-backdrop-filter: blur(22px) saturate(160%);
     }
-    [data-theme="light"] #lock-screen, [data-theme="light"] #pin-modal, [data-theme="light"] #api-modal, [data-theme="light"] #sheet-modal {
+    [data-theme="light"] #lock-screen, [data-theme="light"] #pin-modal, [data-theme="light"] #api-modal, [data-theme="light"] #sheet-modal, [data-theme="light"] #confirm-modal, [data-theme="light"] #trash-modal {
       background: rgba(246, 245, 242, 0.66);
     }
     .lock-card {
@@ -1131,7 +1232,7 @@
     .pin-field { margin-bottom: 12px; text-align: left; }
     .pin-field label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 0 2px 6px; }
     .pin-field .pin-input { font-size: 20px; letter-spacing: 0.35em; }
-    #pin-submit, #pin-change-save, #api-save {
+    #pin-submit, #pin-change-save, #api-save, #sheet-save, #confirm-ok {
       width: 100%;
       margin-top: 6px;
       padding: 14px 16px;
@@ -1145,7 +1246,7 @@
       cursor: pointer;
       box-shadow: 0 14px 26px -14px rgba(255, 106, 0, 0.65);
     }
-    #pin-submit:disabled, #api-save:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
+    #pin-submit:disabled, #api-save:disabled, #sheet-save:disabled, #confirm-ok:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
     #pin-change-cancel {
       width: 100%;
       margin-top: 10px;
@@ -1159,9 +1260,9 @@
       border-radius: 999px;
       cursor: pointer;
     }
-    #pin-error, #pin-change-error, #api-error { min-height: 20px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--err-ink); }
+    #pin-error, #pin-change-error, #api-error, #sheet-error, #confirm-error { min-height: 20px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--err-ink); }
     .api-input { font-size: 14px !important; letter-spacing: normal !important; text-indent: 0 !important; text-align: left !important; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #api-cancel {
+    #api-cancel, #sheet-cancel, #confirm-cancel, #trash-close {
       width: 100%;
       margin-top: 10px;
       padding: 12px 16px;
@@ -1239,6 +1340,8 @@
           <button type="button" class="menu-item hidden" id="pin-change-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="menu-label">Change PIN</span></button>
           <button type="button" class="menu-item hidden" id="api-key-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span class="menu-label">Set API key</span></button>
           <button type="button" class="menu-item hidden" id="sheet-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="menu-label">Set Sheet</span></button>
+          <button type="button" class="menu-item hidden" id="trash-entries-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg><span class="menu-label">Recover deleted entries</span></button>
+          <button type="button" class="menu-item hidden" id="trash-txns-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg><span class="menu-label">Recover deleted transactions</span></button>
           <button type="button" class="menu-item danger hidden" id="pin-logout-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="menu-label">Log out</span></button>
         </div>
       </div>
@@ -1294,14 +1397,22 @@
       </div>
 
       <fieldset class="recon-toggles" aria-label="Receipt reconciliation options">
-        <label class="toggle">
-          <input type="checkbox" id="toggle-force">
-          <span><b>Force log with balancing line</b><i>If a receipt still does not match after one retry, log it with a clearly labeled placeholder for the missing amount. Review these entries afterward.</i></span>
+        <legend><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Reconciliation options</legend>
+        <label class="switch">
+          <span class="txt"><b>Force-save unmatched receipts</b><i>Save after a failed check using a labeled balancing line. Review the adjustment afterward.</i></span>
+          <input type="checkbox" id="toggle-force" aria-label="Force-save unmatched receipts">
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-discount">
-          <span><b>Auto-add missing discount</b><i>If extracted items exceed the printed total, add a negative Missing/hidden discount line for the difference after one retry. It will be marked for review.</i></span>
+        <label class="switch">
+          <span class="txt"><b>Add missing discount automatically</b><i>If extracted items exceed the printed total, add a negative adjustment after one retry.</i></span>
+          <input type="checkbox" id="toggle-discount" aria-label="Add missing discount automatically">
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
+        <p class="switch-note hidden" id="discount-note">Auto-discount is unavailable while Force-save is on — Force-save already covers both directions.</p>
+        <details class="recon-details">
+          <summary>How it works</summary>
+          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward.</p>
+        </details>
       </fieldset>
 
       <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
@@ -1487,6 +1598,30 @@
       <button type="button" id="sheet-save">Save Sheet</button>
       <button type="button" id="sheet-cancel">Later</button>
       <div id="sheet-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="lock-card">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-body"></p>
+      <button type="button" id="confirm-ok">Confirm</button>
+      <button type="button" id="confirm-cancel">Cancel</button>
+      <div id="confirm-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="trash-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+    <div class="lock-card">
+      <h2 id="trash-title">Trash</h2>
+      <p id="trash-sub">Deleted items stay recoverable for 7 days from deletion, then are permanently removed.</p>
+      <div class="trash-filters" role="tablist" aria-label="Trash filter">
+        <button type="button" class="btn-choice" id="trash-filter-entries" role="tab" aria-selected="true">Entries</button>
+        <button type="button" class="btn-choice" id="trash-filter-txns" role="tab" aria-selected="false">Transactions</button>
+      </div>
+      <div class="trash-count" id="trash-count" role="status" aria-live="polite"></div>
+      <div id="trash-list"></div>
+      <button type="button" id="trash-close">Close</button>
     </div>
   </div>
 
@@ -1904,6 +2039,7 @@
       clearChipState();
       updateCounter();
       clearPreview();
+      try { maybeTrashCleanup(sessionToken); } catch (e) {}
     }
 
     function onFailure(err) {
@@ -2114,6 +2250,34 @@
     }
     function cfAuthError(err) {
       return (typeof cfIsAuthError === 'function' && cfIsAuthError(err));
+    }
+    // Trash retention upkeep: at most one backend cleanup call per local day,
+    // only after a successful entry workflow. The localStorage marker is purely
+    // an optimization (Asia/Jakarta day basis, malformed-tolerant) - the server
+    // always decides expiry by deleted_at. Failures stay silent so a cleanup
+    // hiccup never fails an otherwise good append; the next eligible check retries.
+    function trashCheckDateJakarta() {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      } catch (e) { return ''; }
+    }
+    function maybeTrashCleanup(token) {
+      if (!(window.google && google.script && google.script.run)) return;
+      if (!token) return;
+      var key = 'cf-trash-last-check-date';
+      var today = trashCheckDateJakarta();
+      if (!today) return;
+      var last = null;
+      try { last = localStorage.getItem(key); } catch (e) {}
+      if (last === today) return;
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.ok) { try { localStorage.setItem(key, today); } catch (e) {} }
+          })
+          .withFailureHandler(function () {})
+          .cleanupTrash(token);
+      } catch (e) {}
     }
     function cfSizeError(err) {
       return /exceed|too large|payload|budget/i.test(String((err && err.message) || err || ''));
@@ -2337,13 +2501,29 @@
       if (!rowsEl || !addBtn || !submitBtnT) return;
       var jobActive = false;
       var pendingSort = false;
+      // The user's own auto-discount choice, preserved across the Force
+      // interlock (Force ON only suspends it visibly; OFF restores it).
+      var savedDiscount = !!(discountBox && discountBox.checked);
 
       function setProgress(t) { if (progressEl) progressEl.textContent = t || ''; }
       function syncToggleStates() {
         if (!forceBox || !discountBox) return;
-        discountBox.disabled = forceBox.checked;
-        if (forceBox.checked) discountBox.checked = false;
+        if (!forceBox.checked) {
+          // Force off: restore the user's own discount choice (never lost).
+          discountBox.disabled = false;
+          discountBox.checked = savedDiscount;
+        } else {
+          // Force on: visibly disabled with the note below; the saved
+          // preference is kept in savedDiscount, never cleared.
+          discountBox.checked = false;
+          discountBox.disabled = true;
+        }
+        var note = document.getElementById('discount-note');
+        if (note) note.classList.toggle('hidden', !forceBox.checked);
       }
+      if (discountBox) discountBox.addEventListener('change', function () {
+        if (!discountBox.disabled) savedDiscount = discountBox.checked;
+      });
       if (forceBox) forceBox.addEventListener('change', syncToggleStates);
       syncToggleStates();
 
@@ -2735,6 +2915,7 @@
           renderReport(report, rowsById);
           setProgress('');
           setLocked(false);
+          try { maybeTrashCleanup(sessionToken); } catch (e) {}
           return maybeSort(report);
         }).then(function () { if (done) done(); })
         .catch(function (err) {
@@ -2845,6 +3026,21 @@
       var histMore = document.getElementById('history-more');
       var histRefresh = document.getElementById('history-refresh');
       var histSub = document.getElementById('history-sub');
+      var trashEntriesBtn = document.getElementById('trash-entries-btn');
+      var trashTxnsBtn = document.getElementById('trash-txns-btn');
+      var confirmModal = document.getElementById('confirm-modal');
+      var confirmTitle = document.getElementById('confirm-title');
+      var confirmBody = document.getElementById('confirm-body');
+      var confirmOk = document.getElementById('confirm-ok');
+      var confirmCancel = document.getElementById('confirm-cancel');
+      var confirmError = document.getElementById('confirm-error');
+      var trashModal = document.getElementById('trash-modal');
+      var trashTitle = document.getElementById('trash-title');
+      var trashCount = document.getElementById('trash-count');
+      var trashList = document.getElementById('trash-list');
+      var trashClose = document.getElementById('trash-close');
+      var trashFilterEntries = document.getElementById('trash-filter-entries');
+      var trashFilterTxns = document.getElementById('trash-filter-txns');
       if (!lockEl || !pinInput || !pinSubmit) return;
       var mode = 'login'; // login | setup-new | setup-confirm
       var firstPin = '';
@@ -2857,7 +3053,7 @@
         try { document.body.classList.toggle('locked', !!locked); } catch (e) {}
         if (locked) { lockEl.classList.remove('hidden'); }
         else { lockEl.classList.add('hidden'); }
-        [changeBtn, apiBtn, sheetBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
+        [changeBtn, apiBtn, sheetBtn, trashEntriesBtn, trashTxnsBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
         try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
         if (histCard) histCard.classList.toggle('hidden', !!locked);
       }
@@ -2888,6 +3084,8 @@
         firstPin = '';
         try { if (typeof closeApiModal === 'function') closeApiModal(); } catch (e) {}
         try { if (typeof closeSheetModal === 'function') closeSheetModal(); } catch (e) {}
+        try { if (typeof closeConfirmModal === 'function') closeConfirmModal(); } catch (e) {}
+        try { if (typeof closeTrashModal === 'function') closeTrashModal(); } catch (e) {}
         setLockedUI(true);
         paintMode(msg || '');
       }
@@ -3191,6 +3389,216 @@
           .saveSpreadsheetId(v, sessionToken);
       });
 
+      // Generic confirm dialog. Resolves true on explicit confirm, false on
+      // cancel/backdrop/Escape. Never destructive on its own.
+      var confirmResolve = null;
+      function openConfirmModal(opts) {
+        opts = opts || {};
+        if (!confirmModal) return Promise.resolve(false);
+        if (confirmTitle) confirmTitle.textContent = opts.title || 'Confirm';
+        if (confirmBody) confirmBody.textContent = opts.body || '';
+        if (confirmOk) {
+          confirmOk.textContent = opts.okLabel || 'Confirm';
+          confirmOk.classList.toggle('danger', !!opts.danger);
+          confirmOk.disabled = false;
+        }
+        if (confirmError) confirmError.textContent = '';
+        confirmModal.classList.remove('hidden');
+        try { if (confirmCancel) confirmCancel.focus(); } catch (e) {}
+        return new Promise(function (resolve) { confirmResolve = resolve; });
+      }
+      function closeConfirmModal(result) {
+        if (confirmModal) confirmModal.classList.add('hidden');
+        if (typeof confirmResolve === 'function') {
+          var r = confirmResolve;
+          confirmResolve = null;
+          r(!!result);
+        } else {
+          confirmResolve = null;
+        }
+      }
+      if (confirmCancel) confirmCancel.addEventListener('click', function () { closeConfirmModal(false); });
+      if (confirmOk) confirmOk.addEventListener('click', function () { closeConfirmModal(true); });
+      if (confirmModal) confirmModal.addEventListener('click', function (e) { if (e.target === confirmModal) closeConfirmModal(false); });
+
+      function fmtDaysLeft(ms) {
+        var days = Math.ceil(Number(ms || 0) / 86400000);
+        if (days <= 0) return 'less than a day';
+        return days + (days === 1 ? ' day' : ' days');
+      }
+      function fmtTrashWhen(ms) {
+        try {
+          return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(Number(ms)));
+        } catch (e) { return ''; }
+      }
+
+      // Trash / recovery view (unified screen, two filter sections).
+      var trashFilter = 'entries';
+      var trashGroupsCache = [];
+      function setTrashFilter(f) {
+        trashFilter = (f === 'transactions') ? 'transactions' : 'entries';
+        if (trashFilterEntries) trashFilterEntries.setAttribute('aria-selected', trashFilter === 'entries' ? 'true' : 'false');
+        if (trashFilterTxns) trashFilterTxns.setAttribute('aria-selected', trashFilter === 'transactions' ? 'true' : 'false');
+        renderTrashList();
+      }
+      function openTrashModal(filter) {
+        if (!trashModal) return;
+        if (trashTitle) trashTitle.textContent = 'Trash — recover deleted items';
+        trashModal.classList.remove('hidden');
+        setTrashFilter(filter || 'entries');
+        refreshTrashList();
+        try { if (trashClose) trashClose.focus(); } catch (e) {}
+      }
+      function closeTrashModal() { if (trashModal) trashModal.classList.add('hidden'); }
+      function trashRowBusy(btn, busy) { if (btn) btn.disabled = !!busy; }
+      function refreshTrashList() {
+        if (!trashList) return;
+        if (!hasBackend) {
+          if (trashCount) trashCount.textContent = '';
+          trashList.innerHTML = '';
+          var p0 = document.createElement('p');
+          p0.className = 'trash-empty';
+          p0.textContent = 'Preview mode — connect to Apps Script to see deleted items.';
+          trashList.appendChild(p0);
+          return;
+        }
+        if (!sessionToken) return;
+        if (trashCount) trashCount.textContent = 'Loading Trash…';
+        trashList.innerHTML = '';
+        var p = document.createElement('p');
+        p.className = 'trash-state';
+        p.textContent = 'Loading…';
+        trashList.appendChild(p);
+        google.script.run
+          .withSuccessHandler(function (res) {
+            trashGroupsCache = (res && res.groups) || [];
+            renderTrashList();
+          })
+          .withFailureHandler(function (err) {
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeTrashModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            trashList.innerHTML = '';
+            if (trashCount) trashCount.textContent = '';
+            var pe = document.createElement('p');
+            pe.className = 'trash-state';
+            pe.textContent = 'Could not load Trash: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            trashList.appendChild(pe);
+            var retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'btn-choice';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', refreshTrashList);
+            trashList.appendChild(retry);
+          })
+          .listTrash(sessionToken);
+      }
+      function renderTrashList() {
+        if (!trashList) return;
+        trashList.innerHTML = '';
+        // Transaction groups always live under Transactions, even singletons.
+        var groups = trashFilter === 'transactions'
+          ? trashGroupsCache.filter(function (g) { return g.type === 'transaction'; })
+          : trashGroupsCache.filter(function (g) { return g.type !== 'transaction'; });
+        if (trashCount) trashCount.textContent = groups.length
+          ? groups.length + (groups.length === 1 ? ' deleted item' : ' deleted items') + ' in Trash'
+          : '';
+        if (!groups.length) {
+          var pe = document.createElement('p');
+          pe.className = 'trash-empty';
+          pe.textContent = 'Trash is empty. Deleted entries and receipts stay here for 7 days.';
+          trashList.appendChild(pe);
+          return;
+        }
+        groups.forEach(function (g) {
+          var card = document.createElement('div');
+          card.className = 'trash-group';
+          var title = document.createElement('b');
+          title.textContent = (g.merchant || 'Unknown') +
+            (g.type === 'transaction' ? ' · ' + g.count + ' line items' : '');
+          var descEl = null;
+          if (g.description) {
+            descEl = document.createElement('div');
+            descEl.className = 'desc';
+            descEl.textContent = g.description;
+          }
+          var meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = 'Deleted ' + (fmtTrashWhen(g.deletedAtMs) || 'recently') +
+            (g.date ? ' · receipt ' + g.date : '') +
+            (g.transactionId ? ' · ' + g.transactionId : '') +
+            (g.total ? ' · ' + fmtRp(g.total) : '') +
+            ' · expires in ' + fmtDaysLeft(g.msRemaining);
+          var row = document.createElement('div');
+          row.className = 'row';
+          var rb = document.createElement('button');
+          rb.type = 'button';
+          rb.className = 'btn-choice';
+          rb.textContent = g.type === 'transaction' ? 'Recover transaction' : 'Recover entry';
+          rb.addEventListener('click', function () { restoreTrashGroup(g, rb); });
+          row.appendChild(rb);
+          card.appendChild(title);
+          if (descEl) card.appendChild(descEl);
+          card.appendChild(meta);
+          card.appendChild(row);
+          trashList.appendChild(card);
+        });
+      }
+      function restoreTrashGroup(g, btn) {
+        function go() {
+          trashRowBusy(btn, true);
+          var call = g.type === 'transaction'
+            ? cfCall('restoreTransaction', [g.groupId, sessionToken])
+            : cfCall('restoreEntry', [entryIdOf_(g), sessionToken]);
+          call.then(function (res) {
+            trashRowBusy(btn, false);
+            refreshTrashList();
+            fetchHistory(true);
+            try {
+              setStatus(g.type === 'transaction'
+                ? 'Receipt restored (' + (res && res.restored) + ' rows).'
+                : 'Entry restored.', 'success');
+            } catch (e) {}
+          }, function (err) {
+            trashRowBusy(btn, false);
+            if (cfAuthError(err)) { closeTrashModal(); try { cfNoteAuthExpired(); } catch (e) {} return; }
+            try {
+              setStatus('Restore failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+            } catch (e2) {}
+            refreshTrashList();
+          });
+        }
+        if (g.type === 'transaction' && g.count > 1) {
+          openConfirmModal({
+            title: 'Recover entire receipt?',
+            body: 'Restore "' + (g.merchant || 'Unknown') + '" and all ' + g.count +
+              ' line items back to ' + 'their month sheet? Entry and Transaction IDs are preserved.',
+            okLabel: 'Recover receipt',
+            danger: false
+          }).then(function (yes) { if (yes) go(); });
+        } else {
+          go();
+        }
+      }
+      // Entry groups carry their single Entry ID from the server summary.
+      function entryIdOf_(g) {
+        var ids = (g && g.entryIds) || [];
+        return ids.length ? ids[0] : '';
+      }
+      if (trashFilterEntries) trashFilterEntries.addEventListener('click', function () { setTrashFilter('entries'); });
+      if (trashFilterTxns) trashFilterTxns.addEventListener('click', function () { setTrashFilter('transactions'); });
+      if (trashClose) trashClose.addEventListener('click', closeTrashModal);
+      if (trashModal) trashModal.addEventListener('click', function (e) { if (e.target === trashModal) closeTrashModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (confirmModal && !confirmModal.classList.contains('hidden')) closeConfirmModal(false);
+        else if (trashModal && !trashModal.classList.contains('hidden')) closeTrashModal();
+      });
+      if (trashEntriesBtn) trashEntriesBtn.addEventListener('click', function () { openTrashModal('entries'); });
+      if (trashTxnsBtn) trashTxnsBtn.addEventListener('click', function () { openTrashModal('transactions'); });
+
       // Log out: destroy server session, drop local copy, back to PIN-first.
       if (logoutBtn) logoutBtn.addEventListener('click', function () {
         if (!hasBackend) { try { cfClearSession(); } catch (e) {} lockToLogin(''); return; }
@@ -3216,17 +3624,183 @@
         logs.forEach(function (lg) {
           var item = document.createElement('div');
           item.className = 'hist-item';
+          item.setAttribute('data-entry-id', lg.entryId || '');
+          item.setAttribute('data-txn-id', lg.transactionId || '');
           var isInc = String(lg.type || '').toLowerCase() === 'income';
           var amt = Number(lg.amount || 0);
           var desc = lg.description || lg.notes || lg.category || '';
+          var eid = esc(lg.entryId || '');
+          var tid = esc(lg.transactionId || '');
           item.innerHTML =
             '<div class="hist-top"><span class="hist-merchant">' + esc(lg.merchant || 'Unknown') + '</span>' +
             '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(lg.type || (amt < 0 ? 'Expense' : '')) + '</span></div>' +
             '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(fmtRp(amt)) + '</div>' +
             (desc ? '<div class="hist-sub">' + esc(desc) + '</div>' : '') +
-            '<div class="hist-meta">' + esc(lg.date || '') + ' · ' + esc(lg.sheet || '') + (lg.category ? ' · ' + esc(lg.category) : '') + (lg.transactionId ? ' · ' + esc(lg.transactionId) : '') + '</div>';
+            '<div class="hist-meta">' + esc(lg.date || '') + ' · ' + esc(lg.sheet || '') + (lg.category ? ' · ' + esc(lg.category) : '') + (lg.transactionId ? ' · ' + esc(lg.transactionId) : '') + '</div>' +
+            '<div class="hist-actions">' +
+              '<button type="button" class="hist-del" data-act="del-entry" data-entry-id="' + eid + '">Delete entry</button>' +
+              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for this entry">⋯</button></span>' +
+            '</div>';
           histList.appendChild(item);
         });
+      }
+      var histOpenMenu = null;
+      function histActTarget(el) {
+        while (el && el !== histList) {
+          if (el.getAttribute && el.getAttribute('data-act')) return el;
+          el = el.parentNode || el.parent || null;
+        }
+        return null;
+      }
+      function closeHistMenu() {
+        if (histOpenMenu) {
+          try { histOpenMenu.remove(); } catch (e) {}
+          var btn = histOpenMenu && histOpenMenu._owner;
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+          histOpenMenu = null;
+        }
+      }
+      function histBusy(btn, busy) { if (btn) btn.disabled = !!busy; }
+      if (histList) histList.addEventListener('click', function (e) {
+        var t = histActTarget(e.target);
+        if (!t) return;
+        var act = t.getAttribute('data-act');
+        if (act === 'more') { openHistMenu(t); return; }
+        if (act === 'del-entry') {
+          closeHistMenu();
+          deleteHistoryEntry(t.getAttribute('data-entry-id'), t);
+          return;
+        }
+        if (act === 'del-txn') {
+          closeHistMenu();
+          deleteHistoryTransaction(t.getAttribute('data-txn-id'), t);
+          return;
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (histOpenMenu && !histMenuContains(e.target)) closeHistMenu();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && histOpenMenu) closeHistMenu();
+      });
+      function histMenuContains(el) {
+        while (el) {
+          if (el === histOpenMenu) return true;
+          el = el.parentNode || el.parent || null;
+        }
+        return false;
+      }
+      function openHistMenu(ownerBtn) {
+        closeHistMenu();
+        var wrap = ownerBtn.parentNode || ownerBtn.parent;
+        var txnId = ownerBtn.getAttribute('data-txn-id') || '';
+        var menu = document.createElement('div');
+        menu.className = 'hist-menu';
+        menu.setAttribute('role', 'menu');
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'menu-item';
+        item.setAttribute('role', 'menuitem');
+        if (txnId) {
+          item.textContent = 'Delete entire receipt…';
+          item.setAttribute('data-act', 'del-txn');
+          item.setAttribute('data-txn-id', txnId);
+        } else {
+          item.textContent = 'No receipt group for this record';
+          item.disabled = true;
+          item.title = 'This record has no Transaction ID, so only the single entry can be deleted.';
+        }
+        menu.appendChild(item);
+        menu._owner = ownerBtn;
+        if (wrap) wrap.appendChild(menu);
+        ownerBtn.setAttribute('aria-expanded', 'true');
+        histOpenMenu = menu;
+        try { item.focus(); } catch (e) {}
+      }
+      function deleteHistoryEntry(entryId, btn) {
+        entryId = String(entryId || '');
+        if (!entryId) {
+          try { setStatus('That record has no Entry ID - reload Recent logs and try again.', 'error'); } catch (e) {}
+          return;
+        }
+        if (!hasBackend || !sessionToken) return;
+        var opId = (typeof cfUuid === 'function') ? cfUuid() : String(Date.now());
+        openConfirmModal({
+          title: 'Move entry to Trash?',
+          body: 'Move this line item to Trash? Other items in this receipt will remain. You can recover it for 7 days.',
+          okLabel: 'Move to Trash',
+          danger: true
+        }).then(function (yes) {
+          if (!yes) return;
+          histBusy(btn, true);
+          cfCall('deleteEntries', [[entryId], opId, sessionToken]).then(function (res) {
+            histBusy(btn, false);
+            try {
+              setStatus(res && res.alreadyMoved ? 'Entry was already in Trash.' : 'Entry moved to Trash. Recover it within 7 days.', 'success');
+            } catch (e) {}
+            fetchHistory(true);
+            refreshTrashIfOpen();
+          }, function (err) {
+            histBusy(btn, false);
+            if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+            try {
+              setStatus('Delete failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+            } catch (e2) {}
+          });
+        });
+      }
+      function deleteHistoryTransaction(txnId, btn) {
+        txnId = String(txnId || '');
+        if (!txnId) return;
+        if (!hasBackend || !sessionToken) return;
+        histBusy(btn, true);
+        cfCall('describeTransaction', [txnId, sessionToken]).then(function (info) {
+          histBusy(btn, false);
+          info = info || {};
+          if (!info.hasLiveRows) {
+            try { setStatus('No live rows carry that Transaction ID - it may already be in Trash.', 'error'); } catch (e) {}
+            fetchHistory(true);
+            return;
+          }
+          var n = Number(info.count || 0);
+          var opId = (typeof cfUuid === 'function') ? cfUuid() : String(Date.now());
+          openConfirmModal({
+            title: 'Move entire receipt to Trash?',
+            body: 'Move this entire receipt' + (info.merchant ? ' ("' + info.merchant + '")' : '') + ' and all ' + n +
+              ' line item' + (n === 1 ? '' : 's') + ' to Trash? You can recover it for 7 days. After 7 days, it will be permanently deleted.',
+            okLabel: 'Move receipt to Trash',
+            danger: true
+          }).then(function (yes) {
+            if (!yes) return;
+            histBusy(btn, true);
+            cfCall('deleteTransaction', [txnId, opId, sessionToken]).then(function (res) {
+              histBusy(btn, false);
+              try {
+                setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' rows). Recover it within 7 days.', 'success');
+              } catch (e) {}
+              fetchHistory(true);
+              refreshTrashIfOpen();
+            }, function (err) {
+              histBusy(btn, false);
+              if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+              try {
+                setStatus('Delete failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+              } catch (e2) {}
+            });
+          });
+        }, function (err) {
+          histBusy(btn, false);
+          if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+          try {
+            setStatus('Could not inspect that receipt: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+          } catch (e2) {}
+        });
+      }
+      function refreshTrashIfOpen() {
+        try {
+          var tm = document.getElementById('trash-modal');
+          if (tm && !tm.classList.contains('hidden') && typeof refreshTrashList === 'function') refreshTrashList();
+        } catch (e) {}
       }
       function fetchHistory(reset) {
         if (reset) histOffset = 0;

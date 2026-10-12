@@ -1186,7 +1186,8 @@ function getRecentLogs(sessionToken, offset, limit) {
     function col(name) { return headers.indexOf(name); }
     var cDate = col('date'), cMerch = col('merchant'), cDesc = col('description'),
         cAmt = col('amount'), cCat = col('category'), cSpend = col('spending type'),
-        cType = col('type'), cNotes = col('notes'), cTxnId = col('transaction id');
+        cType = col('type'), cNotes = col('notes'), cTxnId = col('transaction id'),
+        cEntryId = col('entry id');
     for (var r = 1; r < values.length; r++) {
       var row = values[r];
       var empty = true;
@@ -1221,7 +1222,8 @@ function getRecentLogs(sessionToken, offset, limit) {
         spendingType: cSpend >= 0 ? String(row[cSpend] || '') : '',
         type: cType >= 0 ? String(row[cType] || '') : '',
         notes: cNotes >= 0 ? String(row[cNotes] || '') : '',
-        transactionId: cTxnId >= 0 ? String(row[cTxnId] || '') : ''
+        transactionId: cTxnId >= 0 ? String(row[cTxnId] || '') : '',
+        entryId: cEntryId >= 0 ? String(row[cEntryId] || '') : ''
       });
     }
   }
@@ -1233,7 +1235,7 @@ function getRecentLogs(sessionToken, offset, limit) {
       sheet: e.sheet, date: e.date, merchant: e.merchant,
       description: e.description, amount: e.amount, category: e.category,
       spendingType: e.spendingType, type: e.type, notes: e.notes,
-      transactionId: e.transactionId || ''
+      transactionId: e.transactionId || '', entryId: e.entryId || ''
     };
   });
   return { total: total, offset: offset, limit: limit, hasMore: (offset + limit) < total, logs: page };
@@ -1783,8 +1785,8 @@ function applyTogglePolicy_(txn, rec, toggles) {
 
 // ---------- SHEET WRITING ----------
 
-var TEMPLATE_HEADERS = ['Date', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Merchant', 'Notes', 'Transaction ID'];
-var TEMPLATE_WIDTHS = [100, 173, 100, 157, 127, 103, 207, 392, 130];
+var TEMPLATE_HEADERS = ['Date', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Merchant', 'Notes', 'Transaction ID', 'Entry ID'];
+var TEMPLATE_WIDTHS = [100, 173, 100, 157, 127, 103, 207, 392, 130, 140];
 
 function getOrCreateTemplateSheet_(ss) {
   var template = ss.getSheetByName(TEMPLATE_SHEET_NAME);
@@ -1802,6 +1804,8 @@ function getOrCreateTemplateSheet_(ss) {
 // ---------- TRANSACTION IDS (date-prefixed, per receipt) ----------
 
 var TXN_ID_HEADER = 'Transaction ID';
+var ENTRY_ID_HEADER = 'Entry ID';
+var ENTRY_ID_WIDTH = 140;
 var LEDGER_SHEET_NAME = '_CF_Submissions';
 var LEDGER_HEADERS = ['Submission ID', 'Row ID', 'Transaction ID', 'Status', 'Updated At'];
 
@@ -1876,6 +1880,41 @@ function ensureTransactionIdColumn_(ss) {
   return touched;
 }
 
+// Idempotent Entry ID migration: adds the header to Template + legacy month
+// sheets and backfills a unique ID for data rows missing one, without
+// touching any other value. Returns {addedTo, backfilled}.
+function ensureEntryIdColumn_(ss) {
+  var addedTo = [], backfilled = 0;
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    var name = sh.getName();
+    if (name === LEDGER_SHEET_NAME || name === TRASH_SHEET_NAME) continue;
+    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name)) continue;
+    var lastCol = sh.getLastColumn();
+    if (lastCol < 1) continue;
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c = colByName_(headers, ENTRY_ID_HEADER);
+    if (!c) {
+      c = lastCol + 1;
+      sh.getRange(1, c).setValue(ENTRY_ID_HEADER);
+      try { sh.setColumnWidth(c, ENTRY_ID_WIDTH); } catch (e) {}
+      addedTo.push(name);
+    }
+    var lastRow = sh.getLastRow();
+    if (name !== TEMPLATE_SHEET_NAME && lastRow >= 2) {
+      var vals = sh.getRange(2, c, lastRow - 1, 1).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        if (!String(vals[i][0] || '').trim()) {
+          sh.getRange(i + 2, c).setValue(Utilities.getUuid());
+          backfilled++;
+        }
+      }
+    }
+  }
+  return { addedTo: addedTo, backfilled: backfilled };
+}
+
 // Hidden operational ledger: idempotency metadata ONLY (no images/keys/notes).
 function ledgerSheet_(ss) {
   var sh = ss.getSheetByName(LEDGER_SHEET_NAME);
@@ -1911,6 +1950,515 @@ function ledgerWrite_(ss, entries) {
   sh.getRange(start, 1, vals.length, LEDGER_HEADERS.length).setValues(vals);
 }
 
+// ---------- TRASH (recoverable deletion, 7-day retention) ----------
+//
+// Deleted month-sheet rows are preserved as typed records in a hidden sheet.
+// Retention is measured from the server deletion timestamp (deleted_at),
+// never from the receipt Date. Expiry is group-atomic: a transaction group
+// is purged only once its newest record is 7+ days old, so a group never
+// expires halfway. No API keys, images, or session data are stored here.
+var TRASH_SHEET_NAME = '_CF_Trash';
+var TRASH_HEADERS = ['Trash ID', 'Group ID', 'Type', 'Entry ID', 'Transaction ID',
+  'Sheet', 'Row JSON', 'Deleted At Ms', 'Deleted At ISO'];
+var TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function trashSheet_(ss) {
+  var sh = ss.getSheetByName(TRASH_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(TRASH_SHEET_NAME);
+    sh.getRange(1, 1, 1, TRASH_HEADERS.length).setValues([TRASH_HEADERS]);
+    try { sh.hideSheet(); } catch (e) {}
+  }
+  return sh;
+}
+
+function isSystemSheetName_(name) {
+  return name === TEMPLATE_SHEET_NAME || name === LEDGER_SHEET_NAME ||
+    name === TRASH_SHEET_NAME || String(name || '').indexOf('_CF_') === 0;
+}
+
+// Encodes one month-sheet data row with types so restore round-trips Dates
+// and numbers exactly instead of reviving everything as strings.
+function encodeTrashRow_(headers, values) {
+  var types = values.map(function (v) {
+    if (v === '' || v == null) return 'e';
+    if (Object.prototype.toString.call(v) === '[object Date]') return 'd';
+    if (typeof v === 'number') return 'n';
+    if (typeof v === 'boolean') return 'b';
+    return 's';
+  });
+  var vals = values.map(function (v, i) {
+    if (types[i] === 'd') return v.getTime();
+    if (types[i] === 'e') return '';
+    return v;
+  });
+  return JSON.stringify({ headers: headers, values: vals, types: types });
+}
+
+function decodeTrashRow_(json) {
+  var o = JSON.parse(json);
+  var vals = (o.values || []).map(function (v, i) {
+    var t = (o.types || [])[i] || 's';
+    if (t === 'd') return new Date(Number(v));
+    if (t === 'n') return Number(v);
+    if (t === 'b') return !!v;
+    if (t === 'e') return '';
+    return String(v);
+  });
+  return { headers: o.headers || [], values: vals };
+}
+
+function trashRead_(ss) {
+  var out = [];
+  var sh = ss.getSheetByName(TRASH_SHEET_NAME);
+  if (!sh || sh.getLastRow() < 2) return out;
+  var lastRow = sh.getLastRow();
+  var vals = sh.getRange(2, 1, lastRow - 1, TRASH_HEADERS.length).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    out.push({
+      rowNum: i + 2,
+      trashId: String(vals[i][0] || ''),
+      groupId: String(vals[i][1] || ''),
+      type: String(vals[i][2] || ''),
+      entryId: String(vals[i][3] || ''),
+      transactionId: String(vals[i][4] || ''),
+      sheet: String(vals[i][5] || ''),
+      rowJson: String(vals[i][6] || ''),
+      deletedAtMs: Number(vals[i][7] || 0),
+      deletedAtIso: String(vals[i][8] || '')
+    });
+  }
+  return out;
+}
+
+function trashEntryIds_(ss) {
+  var set = {};
+  var rows = trashRead_(ss);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].entryId) set[rows[i].entryId] = true;
+  }
+  return set;
+}
+
+// Locates one live line item by Entry ID across month sheets only.
+function findEntryRow_(ss, entryId) {
+  entryId = String(entryId || '');
+  if (!entryId) return null;
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    if (!isMonthSheetName_(sh.getName())) continue;
+    var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) continue;
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c = colByName_(headers, ENTRY_ID_HEADER);
+    if (!c) continue;
+    var vals = sh.getRange(2, c, lastRow - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0] || '') === entryId) {
+        return { sheet: sh, rowNum: i + 2, headers: headers, lastCol: lastCol };
+      }
+    }
+  }
+  return null;
+}
+
+// Locates every live row sharing one Transaction ID (month sheets only).
+function findTxnRows_(ss, transactionId) {
+  transactionId = String(transactionId || '');
+  var out = [];
+  if (!transactionId) return out;
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    if (!isMonthSheetName_(sh.getName())) continue;
+    var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) continue;
+    var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c = colByName_(headers, TXN_ID_HEADER);
+    if (!c) continue;
+    var vals = sh.getRange(2, c, lastRow - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0] || '') === transactionId) {
+        out.push({ sheet: sh, rowNum: i + 2, headers: headers, lastCol: lastCol });
+      }
+    }
+  }
+  return out;
+}
+
+function monthSheetForRestore_(ss, name, txnDateStr) {
+  var sh = ss.getSheetByName(name);
+  if (sh) return sh;
+  // Recreate safely: month-named sheets via the normal template path so the
+  // schema is right; anything else as a plain sheet.
+  if (isMonthSheetName_(name) && txnDateStr) return getOrCreateMonthSheet(ss, txnDateStr);
+  if (isMonthSheetName_(name)) return ss.insertSheet(name);
+  throw new Error('Original sheet "' + name + '" is not a month sheet - restore refused to recreate it.');
+}
+
+// Moves rows to Trash and deletes sources as one locked, idempotent operation.
+// targets: [{sheet, rowNum, headers, lastCol}]. Returns {moved, alreadyMoved}.
+function trashMoveRows_(ss, targets, groupId, type) {
+  var tsh = trashSheet_(ss);
+  var trashed = trashEntryIds_(ss);
+  var moved = 0, alreadyMoved = 0;
+  var fresh = [];
+  for (var i = 0; i < targets.length; i++) {
+    var t = targets[i];
+    var rowVals = t.sheet.getRange(t.rowNum, 1, 1, t.lastCol).getValues()[0];
+    var entryId = '';
+    var ce = colByName_(t.headers, ENTRY_ID_HEADER);
+    if (ce > 0) entryId = String(rowVals[ce - 1] || '');
+    if (entryId && trashed[entryId]) { alreadyMoved++; continue; }
+    fresh.push({ t: t, rowVals: rowVals, entryId: entryId });
+  }
+  var nowMs = Date.now();
+  var nowIso = new Date(nowMs).toISOString();
+  for (var j = 0; j < fresh.length; j++) {
+    var f = fresh[j];
+    var ctx = colByName_(f.t.headers, TXN_ID_HEADER);
+    var txnId = ctx > 0 ? String(f.rowVals[ctx - 1] || '') : '';
+    tsh.getRange(tsh.getLastRow() + 1, 1, 1, TRASH_HEADERS.length).setValues([[
+      Utilities.getUuid(), groupId, type, f.entryId, txnId, f.t.sheet.getName(),
+      encodeTrashRow_(f.t.headers, f.rowVals), nowMs, nowIso
+    ]]);
+    moved++;
+  }
+  // Delete sources bottom-up per sheet so physical row numbers stay valid.
+  var bySheet = {};
+  for (var k = 0; k < fresh.length; k++) {
+    var nm = fresh[k].t.sheet.getName();
+    (bySheet[nm] = bySheet[nm] || { sheet: fresh[k].t.sheet, rows: [] }).rows.push(fresh[k].t.rowNum);
+  }
+  for (var key in bySheet) {
+    if (!Object.prototype.hasOwnProperty.call(bySheet, key)) continue;
+    var list = bySheet[key].rows.sort(function (a, b) { return b - a; });
+    for (var d = 0; d < list.length; d++) bySheet[key].sheet.deleteRow(list[d]);
+  }
+  return { moved: moved, alreadyMoved: alreadyMoved };
+}
+
+// Session-gated: move line items to Trash. Each entryId resolves to exactly
+// one live row; duplicates in the request are moved once.
+function deleteEntries(sessionToken, entryIds, operationId) {
+  requireSession_(sessionToken);
+  entryIds = entryIds || [];
+  if (!Array.isArray(entryIds) || entryIds.length === 0) {
+    throw new Error('Select at least one entry to delete.');
+  }
+  var opId = String(operationId || '').trim() || Utilities.getUuid();
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    ensureEntryIdColumn_(ss);
+    var seen = {};
+    var targets = [];
+    var missing = [];
+    for (var i = 0; i < entryIds.length; i++) {
+      var id = String(entryIds[i] || '');
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      var found = findEntryRow_(ss, id);
+      if (found) targets.push(found);
+      else missing.push(id);
+    }
+    if (!targets.length) {
+      // Everything is already gone: idempotent success, nothing to do.
+      return { moved: 0, alreadyMoved: entryIds.length, missing: missing };
+    }
+    var res = trashMoveRows_(ss, targets, opId, 'entry');
+    res.missing = missing;
+    return res;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// Session-gated: move a whole receipt (every row with one Transaction ID).
+function deleteTransaction(sessionToken, transactionId, operationId) {
+  requireSession_(sessionToken);
+  transactionId = String(transactionId || '').trim();
+  if (!transactionId) {
+    throw new Error('That record has no Transaction ID, so only the single entry can be deleted - the receipt group cannot be determined.');
+  }
+  var opId = String(operationId || '').trim() || Utilities.getUuid();
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    ensureEntryIdColumn_(ss);
+    var targets = findTxnRows_(ss, transactionId);
+    if (!targets.length) {
+      return { moved: 0, alreadyMoved: 0, transactionId: transactionId, note: 'No live rows carry that Transaction ID - it may already be in Trash.' };
+    }
+    var res = trashMoveRows_(ss, targets, opId, 'transaction');
+    res.transactionId = transactionId;
+    res.count = targets.length;
+    return res;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// Session-gated: describes one live receipt for the delete confirmation
+// dialog (exact affected line-item count — never guessed client-side).
+function describeTransaction(sessionToken, transactionId) {
+  requireSession_(sessionToken);
+  transactionId = String(transactionId || '').trim();
+  if (!transactionId) throw new Error('That record has no Transaction ID.');
+  var ss = getSpreadsheet_();
+  var rows = findTxnRows_(ss, transactionId);
+  if (!rows.length) {
+    return { transactionId: transactionId, count: 0, merchant: '', date: '', hasLiveRows: false };
+  }
+  var first = rows[0];
+  var vals = first.sheet.getRange(first.rowNum, 1, 1, first.lastCol).getValues()[0];
+  function byName(nm) {
+    for (var h = 0; h < first.headers.length; h++) {
+      if (normHeader_(first.headers[h]) === nm) return vals[h];
+    }
+    return '';
+  }
+  var d = byName('date');
+  return {
+    transactionId: transactionId,
+    count: rows.length,
+    merchant: String(byName('merchant') || ''),
+    date: Object.prototype.toString.call(d) === '[object Date]'
+      ? Utilities.formatDate(d, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd') : String(d || ''),
+    hasLiveRows: true
+  };
+}
+
+// Groups trash rows for list/restore/expiry views.
+function groupTrashRows_(rows) {
+  var groups = {}, order = [];
+  for (var i = 0; i < rows.length; i++) {
+    var g = rows[i].groupId || rows[i].trashId;
+    if (!groups[g]) { groups[g] = []; order.push(g); }
+    groups[g].push(rows[i]);
+  }
+  return { groups: groups, order: order };
+}
+
+function trashGroupSummary_(rows) {
+  var total = 0, merchant = '', dateStr = '', txnId = '', desc = '';
+  var entryIds = [];
+  for (var i = 0; i < rows.length; i++) {
+    var rec;
+    try { rec = decodeTrashRow_(rows[i].rowJson); } catch (e) { continue; }
+    var byName = {};
+    for (var h = 0; h < rec.headers.length; h++) byName[normHeader_(rec.headers[h])] = rec.values[h];
+    if (!merchant && byName['merchant']) merchant = String(byName['merchant']);
+    if (!desc) {
+      var d = byName['description'];
+      if (d == null || String(d) === '') d = byName['notes'];
+      if (d == null || String(d) === '') d = byName['category'];
+      if (d != null && String(d) !== '') desc = String(d);
+    }
+    if (!dateStr && byName['date']) {
+      dateStr = Object.prototype.toString.call(byName['date']) === '[object Date]'
+        ? Utilities.formatDate(byName['date'], Session.getScriptTimeZone(), 'yyyy-MM-dd')
+        : String(byName['date']);
+    }
+    if (!txnId && rows[i].transactionId) txnId = rows[i].transactionId;
+    var a = Number(byName['amount']);
+    if (isFinite(a)) total += a;
+  }
+  var newest = 0;
+  for (var j = 0; j < rows.length; j++) {
+    if (Number(rows[j].deletedAtMs) > newest) newest = Number(rows[j].deletedAtMs);
+    if (rows[j].entryId) entryIds.push(rows[j].entryId);
+  }
+  return { merchant: merchant, date: dateStr, transactionId: txnId, description: desc, total: total, newestDeletedAtMs: newest, entryIds: entryIds };
+}
+
+// Deletes trash rows whose whole group is 7+ days old (group-atomic).
+// Returns {removedGroups, removedRows}. Never purges recent records.
+function cleanupExpiredTrash_(ss, nowMs) {
+  var rows = trashRead_(ss);
+  if (!rows.length) return { removedGroups: 0, removedRows: 0 };
+  var g = groupTrashRows_(rows);
+  var killNums = [];
+  var removedGroups = 0, removedRows = 0;
+  for (var i = 0; i < g.order.length; i++) {
+    var members = g.groups[g.order[i]];
+    var newest = 0;
+    for (var j = 0; j < members.length; j++) {
+      var t = Number(members[j].deletedAtMs) || 0;
+      if (t > newest) newest = t;
+    }
+    if (newest > 0 && nowMs - newest >= TRASH_RETENTION_MS) {
+      removedGroups++;
+      for (var k = 0; k < members.length; k++) {
+        killNums.push(members[k].rowNum);
+        removedRows++;
+      }
+    }
+  }
+  if (killNums.length) {
+    var sh = ss.getSheetByName(TRASH_SHEET_NAME);
+    killNums.sort(function (a, b) { return b - a; });
+    for (var d = 0; d < killNums.length; d++) sh.deleteRow(killNums[d]);
+  }
+  return { removedGroups: removedGroups, removedRows: removedRows };
+}
+
+// Session-gated cleanup endpoint. Always decides by server time + deleted_at.
+function cleanupTrash(sessionToken) {
+  requireSession_(sessionToken);
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    var res = cleanupExpiredTrash_(ss, Date.now());
+    res.ok = true;
+    return res;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// Session-gated Trash listing. Always runs the backend expiry check first so
+// the view is current, then returns live groups with time remaining.
+function listTrash(sessionToken) {
+  requireSession_(sessionToken);
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    var cleaned = cleanupExpiredTrash_(ss, Date.now());
+    var g = groupTrashRows_(trashRead_(ss));
+    var nowMs = Date.now();
+    var groups = [];
+    for (var i = 0; i < g.order.length; i++) {
+      var members = g.groups[g.order[i]];
+      var sum = trashGroupSummary_(members);
+      groups.push({
+        groupId: g.order[i],
+        type: members[0].type || 'entry',
+        count: members.length,
+        merchant: sum.merchant,
+        date: sum.date,
+        description: sum.description,
+        transactionId: sum.transactionId,
+        entryIds: sum.entryIds,
+        total: sum.total,
+        deletedAtMs: sum.newestDeletedAtMs,
+        expiresAtMs: sum.newestDeletedAtMs + TRASH_RETENTION_MS,
+        msRemaining: Math.max(0, sum.newestDeletedAtMs + TRASH_RETENTION_MS - nowMs)
+      });
+    }
+    groups.sort(function (a, b) { return b.deletedAtMs - a.deletedAtMs; });
+    return { groups: groups, cleaned: cleaned };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// Restores one trash row by Entry ID. Entry must be live-absent (no dup) and
+// unexpired. Appends to the original month sheet (recreated if needed).
+function restoreEntry(sessionToken, entryId) {
+  requireSession_(sessionToken);
+  entryId = String(entryId || '').trim();
+  if (!entryId) throw new Error('Select an entry to restore.');
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    cleanupExpiredTrash_(ss, Date.now());
+    var rows = trashRead_(ss);
+    var rec = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].entryId === entryId) { rec = rows[i]; break; }
+    }
+    if (!rec) {
+      throw new Error('That entry is no longer in Trash (it may have expired after 7 days or already been restored). The list has been refreshed.');
+    }
+    if (findEntryRow_(ss, entryId)) {
+      throw new Error('That entry already exists in the live sheet - restore blocked to avoid a duplicate.');
+    }
+    restoreTrashRecord_(ss, rec);
+    deleteTrashRows_(ss, [rec.rowNum]);
+    return { restored: 1, entryId: entryId, transactionId: rec.transactionId };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// Restores a whole deletion group atomically: every member or none.
+function restoreTransaction(sessionToken, groupId) {
+  requireSession_(sessionToken);
+  groupId = String(groupId || '').trim();
+  if (!groupId) throw new Error('Select a transaction to restore.');
+  var ss = getSpreadsheet_();
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
+  try {
+    cleanupExpiredTrash_(ss, Date.now());
+    var rows = trashRead_(ss).filter(function (r) { return r.groupId === groupId; });
+    if (!rows.length) {
+      throw new Error('That transaction is no longer in Trash (it may have expired after 7 days or already been restored). The list has been refreshed.');
+    }
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].entryId && findEntryRow_(ss, rows[i].entryId)) {
+        throw new Error('One row of that transaction already exists live - restore blocked to avoid duplicates. Nothing was restored.');
+      }
+    }
+    for (var j = 0; j < rows.length; j++) restoreTrashRecord_(ss, rows[j]);
+    var nums = rows.map(function (r) { return r.rowNum; }).sort(function (a, b) { return b - a; });
+    deleteTrashRows_(ss, nums);
+    return { restored: rows.length, groupId: groupId, transactionId: rows[0].transactionId };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function deleteTrashRows_(ss, rowNums) {
+  if (!rowNums || !rowNums.length) return;
+  var sh = ss.getSheetByName(TRASH_SHEET_NAME);
+  if (!sh) return;
+  var nums = rowNums.slice().sort(function (a, b) { return b - a; });
+  for (var i = 0; i < nums.length; i++) sh.deleteRow(nums[i]);
+}
+
+// Appends one trash record back to its month sheet with original IDs intact.
+// Never mints new IDs and never overwrites live rows (checked by callers).
+function restoreTrashRecord_(ss, rec) {
+  var data = decodeTrashRow_(rec.rowJson);
+  var dateStr = '';
+  for (var h = 0; h < data.headers.length; h++) {
+    if (normHeader_(data.headers[h]) === 'date' && data.values[h]) {
+      dateStr = Object.prototype.toString.call(data.values[h]) === '[object Date]'
+        ? Utilities.formatDate(data.values[h], ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd')
+        : String(data.values[h]);
+      break;
+    }
+  }
+  var sh = monthSheetForRestore_(ss, rec.sheet, dateStr);
+  ensureTransactionIdColumn_(ss);
+  ensureEntryIdColumn_(ss);
+  var lastCol = sh.getLastColumn();
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colIndex = {};
+  headers.forEach(function (hh, i) { colIndex[normHeader_(hh)] = i + 1; });
+  var rowNum = sh.getLastRow() + 1;
+  var byName = {};
+  for (var k = 0; k < data.headers.length; k++) byName[normHeader_(data.headers[k])] = data.values[k];
+  var keys = Object.keys(colIndex);
+  for (var n = 0; n < keys.length; n++) {
+    if (keys[n] in byName) sh.getRange(rowNum, colIndex[keys[n]]).setValue(byName[keys[n]]);
+  }
+}
+
 // Scans month sheets + ledger once per commit for existing IDs.
 // Returns {dateStr: maxSeq}. Malformed IDs are ignored for sequencing.
 function collectExistingIdSeq_(ss) {
@@ -1926,7 +2474,7 @@ function collectExistingIdSeq_(ss) {
   for (var s = 0; s < sheets.length; s++) {
     var sh = sheets[s];
     var name = sh.getName();
-    if (name === TEMPLATE_SHEET_NAME || name === LEDGER_SHEET_NAME) continue;
+    if (name === TEMPLATE_SHEET_NAME || name === LEDGER_SHEET_NAME || name === TRASH_SHEET_NAME) continue;
     if (!isMonthSheetName_(name)) continue;
     var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
     if (lastRow < 2 || lastCol < 1) continue;
@@ -1985,6 +2533,7 @@ function appendTransactionRows(sheet, txn, sheetNote) {
 
   txn.items.forEach(function (item) {
     var rowNum = sheet.getLastRow() + 1;
+    if (!item.entryId) item.entryId = Utilities.getUuid();
     setIfColumnExists(sheet, rowNum, colIndex, 'date', txn.transaction_date);
     setIfColumnExists(sheet, rowNum, colIndex, 'merchant', txn.merchant);
     setIfColumnExists(sheet, rowNum, colIndex, 'description', item.description);
@@ -1994,12 +2543,8 @@ function appendTransactionRows(sheet, txn, sheetNote) {
     setIfColumnExists(sheet, rowNum, colIndex, 'type', txn.transaction_type);
     setIfColumnExists(sheet, rowNum, colIndex, 'notes', sheetNote || '');
     setIfColumnExists(sheet, rowNum, colIndex, 'transaction id', txn.transactionId || '');
+    setIfColumnExists(sheet, rowNum, colIndex, 'entry id', item.entryId || '');
   });
-}
-
-function setIfColumnExists(sheet, row, colIndex, headerKey, value) {
-  var col = colIndex[headerKey];
-  if (col) sheet.getRange(row, col).setValue(value);
 }
 
 function setIfColumnExists(sheet, row, colIndex, headerKey, value) {
@@ -2083,6 +2628,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
   catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
   try {
     ensureTransactionIdColumn_(ss);
+    ensureEntryIdColumn_(ss);
     var ledger = ledgerRead_(ss);
     var rowsOut = [];
     var staged = []; // {final, txn, transactionId, noteFull, status, message}
@@ -2177,6 +2723,7 @@ function sortCashflowSheets(sessionToken) {
   catch (e) { throw new Error('Another sheet operation is running - try again in a few seconds.'); }
   try {
     ensureTransactionIdColumn_(ss);
+    ensureEntryIdColumn_(ss);
     var sheets = ss.getSheets();
     var months = [];
     var si;
