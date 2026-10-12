@@ -1968,8 +1968,75 @@ function trashSheet_(ss) {
     sh = ss.insertSheet(TRASH_SHEET_NAME);
     sh.getRange(1, 1, 1, TRASH_HEADERS.length).setValues([TRASH_HEADERS]);
     try { sh.hideSheet(); } catch (e) {}
+  } else {
+    normalizeTrashSheet_(sh);
   }
   return sh;
+}
+
+// Maps a Trash header row to canonical field positions by header name
+// (case/space-insensitive, first occurrence wins). Missing fields map to -1.
+// Never assumes fixed column positions: records written under an earlier or
+// shuffled column layout are still read correctly.
+function trashHeaderMap_(headers) {
+  var map = { trashId: -1, groupId: -1, type: -1, entryId: -1, transactionId: -1, sheet: -1, rowJson: -1, deletedAtMs: -1, deletedAtIso: -1 };
+  var names = { trashId: 'trash id', groupId: 'group id', type: 'type', entryId: 'entry id', transactionId: 'transaction id', sheet: 'sheet', rowJson: 'row json', deletedAtMs: 'deleted at ms', deletedAtIso: 'deleted at iso' };
+  for (var i = 0; i < headers.length; i++) {
+    var n = normHeader_(headers[i]);
+    for (var k in names) {
+      if (names[k] === n && map[k] < 0) map[k] = i;
+    }
+  }
+  return map;
+}
+
+function trashDefault_(field) {
+  if (field === 'trashId') return Utilities.getUuid();
+  if (field === 'deletedAtMs') return Date.now();
+  if (field === 'deletedAtIso') return new Date().toISOString();
+  return '';
+}
+
+// Idempotent Trash schema migration. Validates the header row against
+// TRASH_HEADERS and, when it differs (legacy/shuffled layout), remaps every
+// data row by header name into the canonical layout. Non-canonical columns
+// are preserved as trailing extras; no record is dropped, reordered, or
+// renumbered, so row references stay valid. Already-canonical sheets are
+// left untouched (second runs are no-ops).
+function normalizeTrashSheet_(sh) {
+  var lastCol = sh.getLastColumn();
+  if (lastCol < 1) {
+    sh.getRange(1, 1, 1, TRASH_HEADERS.length).setValues([TRASH_HEADERS]);
+    return { migrated: true, reason: 'empty' };
+  }
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = trashHeaderMap_(headers);
+  var order = ['trashId', 'groupId', 'type', 'entryId', 'transactionId', 'sheet', 'rowJson', 'deletedAtMs', 'deletedAtIso'];
+  var aligned = lastCol >= TRASH_HEADERS.length;
+  if (aligned) {
+    for (var a = 0; a < order.length; a++) {
+      if (map[order[a]] !== a) { aligned = false; break; }
+    }
+  }
+  // A canonical header prefix with preserved trailing extras is steady
+  // state: later runs must be no-ops.
+  if (aligned) return { migrated: false };
+  var used = {};
+  order.forEach(function (k) { if (map[k] >= 0) used[map[k]] = true; });
+  var extraIdx = [];
+  for (var c = 0; c < lastCol; c++) if (!used[c]) extraIdx.push(c);
+  var newWidth = TRASH_HEADERS.length + extraIdx.length;
+  var newHeader = TRASH_HEADERS.concat(extraIdx.map(function (i) { return String(headers[i]); }));
+  var lastRow = sh.getLastRow();
+  var data = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+  var newData = data.map(function (row) {
+    var nr = order.map(function (k) { return map[k] >= 0 ? row[map[k]] : trashDefault_(k); });
+    extraIdx.forEach(function (i) { nr.push(row[i]); });
+    return nr;
+  });
+  sh.getRange(1, 1, 1, newWidth).setValues([newHeader]);
+  if (newData.length) sh.getRange(2, 1, newData.length, newWidth).setValues(newData);
+  return { migrated: true, reason: 'remapped', rows: newData.length };
 }
 
 function isSystemSheetName_(name) {
@@ -2012,20 +2079,31 @@ function trashRead_(ss) {
   var out = [];
   var sh = ss.getSheetByName(TRASH_SHEET_NAME);
   if (!sh || sh.getLastRow() < 2) return out;
+  normalizeTrashSheet_(sh);
+  var lastCol = sh.getLastColumn();
+  var map = trashHeaderMap_(sh.getRange(1, 1, 1, lastCol).getValues()[0]);
   var lastRow = sh.getLastRow();
-  var vals = sh.getRange(2, 1, lastRow - 1, TRASH_HEADERS.length).getValues();
+  var vals = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
   for (var i = 0; i < vals.length; i++) {
+    var row = vals[i];
+    var ms = map.deletedAtMs >= 0 ? Number(row[map.deletedAtMs]) : NaN;
+    if (!isFinite(ms)) {
+      var parsed = Date.parse(String(map.deletedAtIso >= 0 ? row[map.deletedAtIso] : '' || ''));
+      // Unknown age keeps the full retention window: never purge a record
+      // whose deletion timestamp cannot be established.
+      ms = isFinite(parsed) ? parsed : Date.now();
+    }
     out.push({
       rowNum: i + 2,
-      trashId: String(vals[i][0] || ''),
-      groupId: String(vals[i][1] || ''),
-      type: String(vals[i][2] || ''),
-      entryId: String(vals[i][3] || ''),
-      transactionId: String(vals[i][4] || ''),
-      sheet: String(vals[i][5] || ''),
-      rowJson: String(vals[i][6] || ''),
-      deletedAtMs: Number(vals[i][7] || 0),
-      deletedAtIso: String(vals[i][8] || '')
+      trashId: map.trashId >= 0 ? String(row[map.trashId] || '') : Utilities.getUuid(),
+      groupId: String(map.groupId >= 0 ? row[map.groupId] || '' : ''),
+      type: String(map.type >= 0 ? row[map.type] || '' : ''),
+      entryId: String(map.entryId >= 0 ? row[map.entryId] || '' : ''),
+      transactionId: String(map.transactionId >= 0 ? row[map.transactionId] || '' : ''),
+      sheet: String(map.sheet >= 0 ? row[map.sheet] || '' : ''),
+      rowJson: String(map.rowJson >= 0 ? row[map.rowJson] || '' : ''),
+      deletedAtMs: ms,
+      deletedAtIso: map.deletedAtIso >= 0 ? String(row[map.deletedAtIso] || '') : new Date(ms).toISOString()
     });
   }
   return out;
@@ -2087,14 +2165,57 @@ function findTxnRows_(ss, transactionId) {
   return out;
 }
 
-function monthSheetForRestore_(ss, name, txnDateStr) {
-  var sh = ss.getSheetByName(name);
-  if (sh) return sh;
-  // Recreate safely: month-named sheets via the normal template path so the
-  // schema is right; anything else as a plain sheet.
-  if (isMonthSheetName_(name) && txnDateStr) return getOrCreateMonthSheet(ss, txnDateStr);
-  if (isMonthSheetName_(name)) return ss.insertSheet(name);
-  throw new Error('Original sheet "' + name + '" is not a month sheet - restore refused to recreate it.');
+// Derives a validated 'MMMM yyyy' month-sheet name from a saved receipt date
+// value (Date, epoch ms, 'yyyy-MM-dd', or any unambiguous date string).
+// Returns '' when the value is missing or invalid - callers must refuse
+// rather than guess. Never yields a date-string sheet name.
+function monthNameFromDateStr_(value, ss) {
+  var d = null;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    d = value;
+  } else if (typeof value === 'number' && isFinite(value)) {
+    d = new Date(value);
+  } else if (typeof value === 'string' && value) {
+    var m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    } else if (/^\d{12,}$/.test(value.trim())) {
+      d = new Date(Number(value.trim()));
+    } else {
+      var t = new Date(value);
+      if (!isNaN(t.getTime())) d = t;
+    }
+  }
+  if (!d || isNaN(d.getTime())) return '';
+  var name = '';
+  try {
+    name = Utilities.formatDate(d, ss.getSpreadsheetTimeZone(), 'MMMM yyyy');
+  } catch (e) { return ''; }
+  return isMonthSheetName_(name) ? name : '';
+}
+
+// Pure destination planning for restores: resolves where a record would go
+// without creating anything, so a transaction group can be validated fully
+// before any row is written (all-or-none atomicity). Throws with a useful
+// diagnostic when neither the saved sheet name nor the receipt date yields
+// a real month sheet. Never plans a date-named sheet.
+function planRestoreSheet_(ss, name, txnDateValue) {
+  name = String(name || '');
+  var existing = name && ss.getSheetByName(name);
+  if (existing) return { sheet: existing };
+  if (isMonthSheetName_(name)) {
+    if (monthNameFromDateStr_(txnDateValue, ss)) return { monthDate: txnDateValue };
+    return { named: name };
+  }
+  if (monthNameFromDateStr_(txnDateValue, ss)) return { monthDate: txnDateValue };
+  throw new Error('Cannot restore - the saved sheet reference "' + (name || '(empty)') + '" is not a month sheet and no usable receipt date was saved with the record. The Trash entry was left untouched for recovery.');
+}
+
+function monthSheetForRestore_(ss, name, txnDateValue) {
+  var plan = planRestoreSheet_(ss, name, txnDateValue);
+  if (plan.sheet) return plan.sheet;
+  if (plan.monthDate !== undefined) return getOrCreateMonthSheet(ss, plan.monthDate);
+  return ss.insertSheet(plan.named);
 }
 
 // Moves rows to Trash and deletes sources as one locked, idempotent operation.
@@ -2413,6 +2534,25 @@ function restoreTransaction(sessionToken, groupId) {
         throw new Error('One row of that transaction already exists live - restore blocked to avoid duplicates. Nothing was restored.');
       }
     }
+    // Pre-validate every member's payload and destination before writing
+    // anything: a single unrecoverable member blocks the whole group, so a
+    // late failure can never leave a half-restored transaction.
+    for (var v = 0; v < rows.length; v++) {
+      var preview;
+      try {
+        preview = decodeTrashRow_(rows[v].rowJson);
+      } catch (e) {
+        throw new Error('Cannot restore - one saved record payload is corrupted and cannot be read. Nothing was restored; the Trash entries were left untouched.');
+      }
+      var dateVal = '';
+      for (var h = 0; h < preview.headers.length; h++) {
+        if (normHeader_(preview.headers[h]) === 'date' && preview.values[h] !== '' && preview.values[h] != null) {
+          dateVal = preview.values[h];
+          break;
+        }
+      }
+      planRestoreSheet_(ss, rows[v].sheet, dateVal);
+    }
     for (var j = 0; j < rows.length; j++) restoreTrashRecord_(ss, rows[j]);
     var nums = rows.map(function (r) { return r.rowNum; }).sort(function (a, b) { return b - a; });
     deleteTrashRows_(ss, nums);
@@ -2433,17 +2573,20 @@ function deleteTrashRows_(ss, rowNums) {
 // Appends one trash record back to its month sheet with original IDs intact.
 // Never mints new IDs and never overwrites live rows (checked by callers).
 function restoreTrashRecord_(ss, rec) {
-  var data = decodeTrashRow_(rec.rowJson);
-  var dateStr = '';
+  var data;
+  try {
+    data = decodeTrashRow_(rec.rowJson);
+  } catch (e) {
+    throw new Error('Cannot restore - the saved record payload is corrupted and cannot be read. The Trash entry was left untouched for recovery.');
+  }
+  var dateVal = '';
   for (var h = 0; h < data.headers.length; h++) {
-    if (normHeader_(data.headers[h]) === 'date' && data.values[h]) {
-      dateStr = Object.prototype.toString.call(data.values[h]) === '[object Date]'
-        ? Utilities.formatDate(data.values[h], ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd')
-        : String(data.values[h]);
+    if (normHeader_(data.headers[h]) === 'date' && data.values[h] !== '' && data.values[h] != null) {
+      dateVal = data.values[h];
       break;
     }
   }
-  var sh = monthSheetForRestore_(ss, rec.sheet, dateStr);
+  var sh = monthSheetForRestore_(ss, rec.sheet, dateVal);
   ensureTransactionIdColumn_(ss);
   ensureEntryIdColumn_(ss);
   var lastCol = sh.getLastColumn();
