@@ -31,6 +31,9 @@ assert.match(html, /#sess-modal \.lock-card,\s*#info-modal \.lock-card\s*\{\s*ma
 assert.match(html, /body\.modal-open\s*\{\s*overflow:\s*hidden;\s*\}/, 'background scroll lock');
 assert.match(html, /Escape[\s\S]{0,180}closeSessModal\(\)/, 'session modal Escape close');
 
+assert.equal(count(html, /<fieldset\b/gi), 1, 'one reconciliation fieldset opening tag');
+assert.equal(count(html, /<\/fieldset>/gi), 1, 'one reconciliation fieldset closing tag');
+assert.match(html, /\.recon-toggles\s*\{[^}]*margin:\s*0 0 10px;/s, 'tight bottom spacing after reconciliation options');
 assert.match(html, /id="recon-options"/, 'reconciliation fieldset');
 assert.match(html, /recon\.classList\.toggle\('hidden', isStd\)/, 'Quick-Input hides settings');
 assert.match(html, /id="toggle-force"/, 'Force-save toggle');
