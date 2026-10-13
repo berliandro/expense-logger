@@ -2900,20 +2900,30 @@ function commitReceiptRows(submission, finals, sessionToken) {
 
     var ids = allocateTransactionIds_(ss, allocDates);
     var ledgerEntries = [];
+    var oneRow = !!submission.oneRowPerReceipt;
     for (var s = 0; s < staged.length; s++) {
       var st2 = staged[s];
       var txnId = ids[s];
       st2.txn.transactionId = txnId;
       var noteFull = String(st2.final.note || '');
       if (st2.message) noteFull = noteFull ? noteFull + ' | ' + st2.message : st2.message;
+      var appendTxn = st2.txn;
+      if (oneRow) {
+        // One row per receipt (Quick-Input option): the reconciled receipt
+        // collapses to its verified total with the item detail preserved in
+        // Notes. IDs, dates, and types are unchanged.
+        var condensed = condenseTxn_(st2.txn);
+        appendTxn = condensed.txn;
+        if (condensed.itemLines) noteFull = noteFull ? noteFull + '\n' + condensed.itemLines : condensed.itemLines;
+      }
       var sheet = getOrCreateMonthSheet(ss, st2.txn.transaction_date);
-      appendTransactionRows(sheet, st2.txn, noteFull);
-      var total = st2.txn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
+      appendTransactionRows(sheet, appendTxn, noteFull);
+      var total = appendTxn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
       ledgerEntries.push({ submissionId: submissionId, rowId: st2.final.row_id,
         transactionId: txnId, status: st2.status });
       rowsOut.push({ row_id: st2.final.row_id, origNum: st2.final.origNum, status: st2.status,
         transactionId: txnId, type: st2.txn.transaction_type, merchant: st2.txn.merchant,
-        itemCount: st2.txn.items.length, total: total,
+        itemCount: appendTxn.items.length, total: total,
         message: st2.status === 'logged' ? '' : st2.message });
     }
     ledgerWrite_(ss, ledgerEntries);
@@ -2933,6 +2943,41 @@ function commitReceiptRows(submission, finals, sessionToken) {
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+// Condenses one reconciled receipt into a single spreadsheet row for
+// one-row-per-receipt mode. Amount is the verified signed total; the full
+// item list (including any balancing adjustment, negatives preserved) moves
+// into the notes summary. Nothing is fabricated: without a title the
+// description falls back to merchant plus item count. IDs, dates, and types
+// pass through untouched.
+function condenseTxn_(txn) {
+  var items = (txn && txn.items) || [];
+  var total = Math.round(items.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
+  var desc = items.length === 1
+    ? String(items[0].description || txn.merchant || 'Unknown')
+    : String(txn.merchant || 'Unknown') + ' (' + items.length + ' items)';
+  var lines = items.map(function (it) {
+    return '- ' + String(it.description || '') + ': ' + idr_(Number(it.amount || 0));
+  });
+  var isIncome = txn.transaction_type === 'Income';
+  return {
+    txn: {
+      transaction_date: txn.transaction_date,
+      merchant: txn.merchant,
+      transaction_type: txn.transaction_type,
+      line_list_complete: txn.line_list_complete,
+      extraction_notes: txn.extraction_notes,
+      transactionId: txn.transactionId,
+      items: [{
+        description: desc,
+        amount: total,
+        category: dominantCategory_(txn),
+        spending_type: isIncome ? '' : dominantSpendingType_(txn)
+      }]
+    },
+    itemLines: lines.join('\n')
+  };
 }
 
 // ---------- POST-REPORT SORT (separate call, clean state only) ----------

@@ -860,7 +860,7 @@
       padding: 0 6px;
     }
     .recon-toggles legend svg { vertical-align: -2px; margin-right: 4px; }
-    .recon-toggles .switch {
+    .recon-toggles .switch, #tab-standard .switch {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 4px 12px;
@@ -869,8 +869,8 @@
       cursor: pointer;
     }
     .recon-toggles .switch + .switch { border-top: 1px solid var(--line); }
-    .recon-toggles .switch .txt b { display: block; font-size: 13.5px; }
-    .recon-toggles .switch .txt i {
+    .recon-toggles .switch .txt b, #tab-standard .switch .txt b { display: block; font-size: 13.5px; }
+    .recon-toggles .switch .txt i, #tab-standard .switch .txt i {
       display: block;
       font-style: normal;
       font-size: 12.5px;
@@ -878,13 +878,13 @@
       margin-top: 2px;
       line-height: 1.45;
     }
-    .recon-toggles .switch input {
+    .recon-toggles .switch input, #tab-standard .switch input {
       position: absolute;
       opacity: 0;
       width: 1px; height: 1px;
       overflow: hidden;
     }
-    .recon-toggles .switch .track {
+    .recon-toggles .switch .track, #tab-standard .switch .track {
       grid-column: 2;
       grid-row: 1 / span 2;
       width: 44px; height: 25px;
@@ -895,7 +895,7 @@
       flex: none;
       transition: background 0.18s ease, border-color 0.18s ease;
     }
-    .recon-toggles .switch .track::after {
+    .recon-toggles .switch .track::after, #tab-standard .switch .track::after {
       content: "";
       position: absolute;
       top: 2px; left: 2px;
@@ -904,11 +904,11 @@
       background: var(--muted);
       transition: transform 0.18s ease, background 0.18s ease;
     }
-    .recon-toggles .switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
-    .recon-toggles .switch input:checked + .track::after { transform: translateX(19px); background: #fff; }
-    .recon-toggles .switch input:focus-visible + .track { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
-    .recon-toggles .switch input:disabled + .track { opacity: 0.45; cursor: not-allowed; }
-    .recon-toggles .switch input:disabled ~ .txt { opacity: 0.55; }
+    .recon-toggles .switch input:checked + .track, #tab-standard .switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+    .recon-toggles .switch input:checked + .track::after, #tab-standard .switch input:checked + .track::after { transform: translateX(19px); background: #fff; }
+    .recon-toggles .switch input:focus-visible + .track, #tab-standard .switch input:focus-visible + .track { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
+    .recon-toggles .switch input:disabled + .track, #tab-standard .switch input:disabled + .track { opacity: 0.45; cursor: not-allowed; }
+    .recon-toggles .switch input:disabled ~ .txt, #tab-standard .switch input:disabled ~ .txt { opacity: 0.55; }
     .recon-toggles .switch-note {
       font-size: 12.5px;
       color: var(--muted);
@@ -925,11 +925,11 @@
     .recon-toggles details.recon-details summary:focus-visible { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
     .recon-toggles details.recon-details p { margin: 6px 0 2px; line-height: 1.55; }
     @media (max-width: 560px) {
-      .recon-toggles .switch { grid-template-columns: 1fr auto; }
+      .recon-toggles .switch, #tab-standard .switch { grid-template-columns: 1fr auto; }
       .recon-toggles { padding: 8px 12px 10px; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .recon-toggles .switch .track, .recon-toggles .switch .track::after { transition: none; }
+      .recon-toggles .switch .track, .recon-toggles .switch .track::after, #tab-standard .switch .track, #tab-standard .switch .track::after { transition: none; }
     }
     /* History delete actions + per-card menu */
     .hist-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
@@ -1421,7 +1421,7 @@
         <p class="switch-note hidden" id="discount-note">Auto-discount is unavailable while Force-save is on — Force-save already covers both directions.</p>
         <details class="recon-details">
           <summary>How it works</summary>
-          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. Receipts submit in sequential bounded batches; valid rows are logged even while others wait for review with their photos. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward.</p>
+          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. Receipts submit in sequential bounded batches; valid rows are logged even while others wait for review with their photos. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward. Quick-Input's One row per receipt writes one spreadsheet row per receipt at its verified total, with that receipt's item detail preserved in Notes.</p>
         </details>
       </fieldset>
 
@@ -1482,6 +1482,12 @@
             <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
           </div>
         </div>
+
+        <label class="switch" style="margin-top:12px">
+          <span class="txt"><b>One row per receipt</b><i>Quick-Input only: one spreadsheet row per receipt at its verified total; item detail moves into Notes.</i></span>
+          <input type="checkbox" id="toggle-onerow" aria-label="One row per receipt">
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+        </label>
 
         <button type="submit" id="submit-btn">
           <svg id="submit-ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -2006,6 +2012,8 @@
     });
 
     function submitExpenses(images, noteText) {
+      var oneRowBox = document.getElementById('toggle-onerow');
+      var oneRow = !!(oneRowBox && oneRowBox.checked);
       var rows = (images && images.length ? images : [null]).map(function (img, i) {
         return {
           row_id: cfUuid(), origNum: i + 1, note: noteText, type: null,
@@ -2020,6 +2028,7 @@
           sessionToken: sessionToken,
           // Quick-Input (this panel) always force-saves; see cfEngineSubmit.
           quickForce: true,
+          oneRowPerReceipt: oneRow,
           progress: function (t) { setStatus(t, ''); }
         }).then(function (report) {
           var counts = (report && report.summary) || {};
@@ -2391,6 +2400,10 @@
       // ledgers. The saved toggle preferences are never touched; the override
       // applies to this submission only.
       var tg = opts.quickForce ? { forceLog: true, autoDiscount: false } : cfReadToggles();
+      // One-row-per-receipt is a Quick-Input-only presentation option: it
+      // never changes triage, repair, or toggle policy, only how commit
+      // writes verified rows to the sheet.
+      var oneRowFlag = !!opts.oneRowPerReceipt;
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
       var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
       function needBackend() {
@@ -2594,7 +2607,7 @@
                    preError: it.preError || '' };
         });
         progress('Writing validated rows…');
-        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, finals, token]);
+        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, oneRowPerReceipt: oneRowFlag }, finals, token]);
       });
       return chain;
     }
