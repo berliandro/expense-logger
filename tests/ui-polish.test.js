@@ -33,6 +33,7 @@ assert.match(html, /recon\.classList\.toggle\('hidden', isStd\)/, 'Quick-Input h
 assert.match(html, /id="toggle-force"/, 'Force-save toggle');
 assert.doesNotMatch(html, /toggle-discount|discount-note|Auto-discount|autoDiscount|auto-discount-adjusted|discountAdjusted/i, 'no Auto-discount UI/client feature or stale summary counter');
 assert.match(html, /class="switch one-row-switch"/, 'one-row toggle must reuse shared switch styling');
+assert.match(html, /#tab-standard \.one-row-switch \.track \{ grid-row: 1; \}/, 'one-row toggle track stays on the title row');
 assert.doesNotMatch(readme, /Auto-discount/i, 'README does not advertise Auto-discount');
 
 for (const key of ['entry', 'reconciliation', 'photos', 'note', 'one-row']) {
