@@ -19,19 +19,18 @@ Cashflow Log removes the spreadsheet chore from expense tracking. Photograph a r
 It is useful for anyone who already lives in Google Sheets and wants receipt logging without another paid service, another account, or data leaving their own Google account — plus a one-click Windows installer so non-technical family members can run their own copy.
 
 - **One row per receipt** (Quick-Input only) — writes exactly one spreadsheet row per receipt at its verified signed total. The Description uses the receipt's own printed title when there is one, otherwise the item description, or `Merchant · Category (N items)`. Notes carry your shared note plus that receipt's own items, written as `Item ×qty @ unit price = line total` whenever the printed quantity and unit price were legible — and as `Item: line total` when they were not, so nothing is ever invented. Each receipt repeats your note but never mixes in another photo's items.
-- **Optional balancing rules**
 
 - **Receipt extraction** — Gemini reads dates, merchants, line items, categories, and Expense/Income type from JPG, PNG, WEBP, or HEIC photos; a typed note works with no photo at all.
 - **Two-phase total reconciliation** — Phase 1 reads each photo's printed total, Phase 2 extracts every line item, and each receipt's item sum must match its printed total exactly.
 - **Batched submission pipeline** — Table Layout rows (the default tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
 - **Repair and review handling** — Mismatches get a bounded repair pass (Quick-Input retries still-mismatched receipts up to two more times); unresolved rows stay in the app with their photos for review while valid rows are still logged. Nothing unverified is saved silently.
-- **Optional balancing rules** (both OFF by default) — **Force-save** adds one labeled balancing line after a failed check; **Auto-discount** adds only a negative adjustment when items exceed a readable printed total. Turning Force-save on visibly suspends auto-discount without losing your choice.
+- **Force-save (Table Layout only)** (OFF by default) — after repair, adds one clearly labeled balancing line only when the printed total is readable. It handles either missing charges or missing discounts and records an audit note. With Force-save off, unresolved mismatches remain available for review. Quick-Input follows its fixed automatic reconciliation policy without exposing a toggle.
 - **Transaction IDs** — Every receipt gets a unique `YYYYMMDD` + letter-sequence ID (e.g. `20261231AA`) shared by all its rows; month sheets sort chronologically with rows ordered by Transaction ID after clean reports.
 - **Entry IDs** — Every line item carries a system-managed unique ID that survives sorting, deletion, and recovery. Both IDs are looked up by header name, never by column position.
 - **Google Sheets integration** — Rows append to `MMMM yyyy` month sheets copied from an auto-created `Template`; missing system headers are migrated idempotently.
 - **Recoverable Trash** — Deleted entries and whole receipts move to a hidden `_CF_Trash` sheet with typed payloads and deletion timestamps.
 - **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
-- **Desktop and mobile UI** — Dark default with light mode, compact switch controls, keyboard support, and reduced-motion respect; the layout stays readable down to narrow phone screens.
+- **Desktop and mobile UI** — Dark default with light mode, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to narrow phone screens.
 
 ## How it works
 
@@ -114,6 +113,16 @@ clasp create-deployment --description "Cashflow logger" --json
 # afterwards (keep the same web-app URL / deployment ID):
 clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 ```
+
+## Tests
+
+Run the source-contract and isolated reconciliation-policy regressions with Node.js:
+
+```sh
+node tests/ui-polish.test.js
+```
+
+These tests cover source contracts and isolated backend policy functions. Browser layout and physical Android testing should be reported separately when available.
 
 ## Troubleshooting
 

@@ -592,23 +592,23 @@ function processExpense(imageBase64, mimeType, noteText, sessionToken) {
 
 // Multi-photo entry point: images is an array of {data, mimeType}.
 // Image receipts run the same two-phase reconcile/commit pipeline as Table
-// rows (Phase 1 totals, Phase 2 lines, one repair, toggle policy); text-only
-// submissions keep the direct path. opts: {forceLog, autoDiscount} (both off
-// by default). Returns the classic summary string; throws when nothing could
-// be logged. Kept for backward compatibility - the web UI drives the phased
-// ops directly for large submissions.
+// rows (Phase 1 totals, Phase 2 lines, one repair, Force-save policy); text-only
+// submissions keep the direct path. opts: {forceLog} (off by default).
+// Returns the classic summary string; throws when nothing could be logged.
+// Kept for backward compatibility - the web UI drives phased ops directly
+// for large submissions.
 function processExpenses(images, noteText, sessionToken, opts) {
   requireSession_(sessionToken);
   images = images || [];
   noteText = noteText || '';
-  var toggles = { forceLog: !!(opts && opts.forceLog), autoDiscount: !!(opts && opts.autoDiscount) };
+  var toggles = { forceLog: !!(opts && opts.forceLog) };
   var submissionId = Utilities.getUuid();
 
   // Text-only: the note IS the source data (no Phase 1, no invented total).
   if (images.length === 0) {
     var promptText = buildPrompt(noteText, 0);
     var txn = sanitizeTransaction(callGemini_(promptText, noteText, [], TRANSACTION_SCHEMA));
-    var report = commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog, autoDiscount: toggles.autoDiscount },
+    var report = commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog },
       [{ row_id: Utilities.getUuid(), origNum: 1, forcedType: null, note: '',
          hasPhoto: false, phase1: null, txn: txn, repaired: false }], sessionToken);
     return summarizeReport_(report, 'receipt');
@@ -709,8 +709,7 @@ function processRowsPipeline_(defs, toggles, sessionToken, submissionId) {
     }
   }
   // Failed Phase 2 rows (no txn at all) were already queued as repaired:true with null txn.
-  return commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog,
-    autoDiscount: toggles.autoDiscount }, finals, sessionToken);
+  return commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog }, finals, sessionToken);
 }
 
 // Classic summary strings from a commit report. unit is 'receipt' or 'row'.
@@ -829,7 +828,7 @@ function processTableBatch(rows, sessionToken, opts) {
   if (nonEmpty.length > BATCH_LIMITS.maxRowsPerBatch) {
     throw new Error('Too many rows for a single request - submit from Table Layout, which sends phased batches automatically.');
   }
-  var toggles = { forceLog: !!(opts && opts.forceLog), autoDiscount: !!(opts && opts.autoDiscount) };
+  var toggles = { forceLog: !!(opts && opts.forceLog) };
   var defs = nonEmpty.map(function (r, i) {
     r = r || {};
     return {
@@ -1960,47 +1959,31 @@ function dominantSpendingType_(txn) {
   return best || 'Need';
 }
 
-// Applies Force Log / Auto-discount AFTER the bounded repair attempt.
-// Only ever synthesizes for verdict 'mismatch' with a reliable (found)
-// Phase 1 total - never for uncertain/unreadable totals, invalid rows, or
-// text-only rows. Returns {txn, applied, note} with applied in
-// none|force-item|force-discount|auto-discount.
+// Applies Force-save AFTER the bounded repair attempt.
+// Only synthesizes a balancing line for a reliable-total mismatch. It never
+// acts on uncertain/unreadable totals, invalid rows, or text-only rows.
+// Returns {txn, applied, note} with applied in none|force-item|force-discount.
 function applyTogglePolicy_(txn, rec, toggles) {
   toggles = toggles || {};
   var forceLog = !!toggles.forceLog;
-  var autoDiscount = !!toggles.autoDiscount && !forceLog; // Force ON disables discount
   if (!rec || rec.verdict !== 'mismatch') return { txn: txn, applied: 'none', note: '' };
   var diff = rec.difference;
   if (!isFinite(diff) || diff === 0) return { txn: txn, applied: 'none', note: '' };
   var isIncome = txn.transaction_type === 'Income';
-  var complete = String(txn.line_list_complete || 'complete') === 'complete';
-
   function syntheticLine_(name, amount) {
-    return {
-      description: name,
-      amount: amount,
-      category: dominantCategory_(txn),
-      spending_type: isIncome ? '' : dominantSpendingType_(txn)
-    };
+    return { description: name, amount: amount, category: dominantCategory_(txn),
+      spending_type: isIncome ? '' : dominantSpendingType_(txn) };
   }
-
   if (forceLog) {
     var out = JSON.parse(JSON.stringify(txn));
     if (diff > 0) {
       out.items.push(syntheticLine_('Missing/hidden item', diff));
       return { txn: out, applied: 'force-item',
-               note: 'FORCED RECONCILIATION: synthetic missing/hidden line of ' + idr_(diff) + '; verify receipt.' };
+        note: 'FORCED RECONCILIATION: synthetic missing/hidden line of ' + idr_(diff) + '; verify receipt.' };
     }
     out.items.push(syntheticLine_('Missing/hidden discount', diff));
     return { txn: out, applied: 'force-discount',
-             note: 'FORCED RECONCILIATION: synthetic missing/hidden discount of ' + idr_(diff) + '; verify receipt.' };
-  }
-  // Auto-discount: over-total AND materially complete extraction only.
-  if (autoDiscount && diff < 0 && complete) {
-    var out2 = JSON.parse(JSON.stringify(txn));
-    out2.items.push(syntheticLine_('Missing/hidden discount', diff));
-    return { txn: out2, applied: 'auto-discount',
-             note: 'AUTO DISCOUNT: synthetic missing/hidden discount of ' + idr_(diff) + '; verify receipt.' };
+      note: 'FORCED RECONCILIATION: synthetic missing/hidden discount of ' + idr_(diff) + '; verify receipt.' };
   }
   return { txn: txn, applied: 'none', note: '' };
 }
@@ -2964,7 +2947,7 @@ function triageRow_(it, toggles) {
 function reconcileReceiptRows(submission, items, sessionToken) {
   requireSession_(sessionToken);
   submission = submission || {};
-  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount, quickMode: !!submission.quickMode };
+  var toggles = { forceLog: !!submission.forceLog, quickMode: !!submission.quickMode };
   items = items || [];
   return {
     rows: items.map(function (it) {
@@ -2986,7 +2969,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
   submission = submission || {};
   var submissionId = String(submission.submission_id || '').trim();
   if (!submissionId) throw new Error('Submission is missing its stable ID.');
-  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount, quickMode: !!submission.quickMode };
+  var toggles = { forceLog: !!submission.forceLog, quickMode: !!submission.quickMode };
   finals = finals || [];
   if (!Array.isArray(finals) || finals.length === 0) {
     throw new Error('Nothing to commit - no final rows were provided.');
@@ -3024,7 +3007,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
           rowsOut.push({ row_id: t.row_id, origNum: t.origNum, status: 'review', transactionId: '',
             message: t.message });
         } else {
-          var st = pol.applied === 'force-item' || pol.applied === 'force-discount' ? 'force-adjusted' : 'auto-discount-adjusted';
+          var st = 'force-adjusted';
           staged.push({ final: it, txn: pol.txn, triage: t, status: st, message: pol.note });
           allocDates.push(pol.txn.transaction_date);
         }
@@ -3065,12 +3048,11 @@ function commitReceiptRows(submission, finals, sessionToken) {
     }
     ledgerWrite_(ss, ledgerEntries);
 
-    var summary = { logged: 0, forceAdjusted: 0, discountAdjusted: 0, review: 0, errors: 0, duplicates: 0 };
+    var summary = { logged: 0, forceAdjusted: 0, review: 0, errors: 0, duplicates: 0 };
     for (var r = 0; r < rowsOut.length; r++) {
       var st3 = rowsOut[r].status;
       if (st3 === 'logged') summary.logged++;
       else if (st3 === 'force-adjusted') summary.forceAdjusted++;
-      else if (st3 === 'auto-discount-adjusted') summary.discountAdjusted++;
       else if (st3 === 'review') summary.review++;
       else if (st3 === 'error') summary.errors++;
       if (rowsOut[r].duplicate) summary.duplicates++;

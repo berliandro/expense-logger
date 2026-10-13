@@ -118,7 +118,7 @@
       gap: 12px;
       margin-bottom: 22px;
     }
-    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .brand {
       display: flex;
       align-items: center;
@@ -358,6 +358,21 @@
     }
     .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
     .card-head h2 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+    .entry-heading-row { display: flex; align-items: center; gap: 8px; }
+    .info-btn { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer; }
+    .info-btn:hover { color: var(--ink); background: var(--field-hover); }
+    .info-btn:focus-visible { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
+    .field-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .field-heading .label { margin: 0; flex: 1 1 auto; min-width: 0; }
+    .field-heading .opt { margin-left: auto; }
+    .switch-title-row { display: flex; align-items: center; gap: 8px; }
+    .switch-title-row label { cursor: pointer; }
+    .one-row-switch { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 8px 0; }
+    .one-row-switch .track { grid-column: 2; grid-row: 1; }
+    .one-row-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
+    .one-row-switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+    .one-row-switch input:checked + .track::after { transform: translateX(19px); background: #fff; }
+    .one-row-switch input:focus-visible + .track { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
     .card-head p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
     .date-badge {
       flex: none;
@@ -655,6 +670,7 @@
     }
     .hidden-input { display: none; }
     .hidden { display: none !important; }
+    body.modal-open { overflow: hidden; }
     #selected-file { display: none; }
 
     .textarea-wrap { position: relative; }
@@ -884,6 +900,8 @@
       padding: 0 6px;
     }
     .recon-toggles legend svg { vertical-align: -2px; margin-right: 4px; }
+    .recon-toggles legend { display: flex; align-items: center; gap: 7px; }
+    .recon-legend-label { flex: 1 1 auto; }
     .recon-toggles .switch, #tab-standard .switch {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -933,21 +951,6 @@
     .recon-toggles .switch input:focus-visible + .track, #tab-standard .switch input:focus-visible + .track { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
     .recon-toggles .switch input:disabled + .track, #tab-standard .switch input:disabled + .track { opacity: 0.45; cursor: not-allowed; }
     .recon-toggles .switch input:disabled ~ .txt, #tab-standard .switch input:disabled ~ .txt { opacity: 0.55; }
-    .recon-toggles .switch-note {
-      font-size: 12.5px;
-      color: var(--muted);
-      margin: 2px 0 0;
-    }
-    .recon-toggles details.recon-details { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
-    .recon-toggles details.recon-details summary {
-      cursor: pointer;
-      font-weight: 700;
-      color: var(--ink);
-      font-size: 12.5px;
-      border-radius: 8px;
-    }
-    .recon-toggles details.recon-details summary:focus-visible { outline: 3px solid rgba(255,106,0,0.45); outline-offset: 2px; }
-    .recon-toggles details.recon-details p { margin: 6px 0 2px; line-height: 1.55; }
     @media (max-width: 560px) {
       .recon-toggles .switch, #tab-standard .switch { grid-template-columns: 1fr auto; }
       .recon-toggles { padding: 8px 12px 10px; }
@@ -1166,14 +1169,15 @@
 
     @media (max-width: 480px) {
       body { padding: 14px 12px 0; }
-      .pill { display: none; }
       .topbar { gap: 10px; }
       .brand { flex: 1 1 auto; gap: 10px; }
       .brand-mark { width: 34px; height: 34px; font-size: 18px; }
-      .brand-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand-name { max-width: 58px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .brand-sub { display: none; }
-      .topbar-right { flex: none; display: flex; align-items: center; gap: 8px; }
-      #theme-toggle, #settings-btn { width: 34px; height: 34px; font-size: 15px; }
+      .topbar-right { flex: none; display: flex; align-items: center; gap: 5px; }
+      .pill { font-size: 10px; gap: 5px; padding: 5px 7px; }
+      #pill-env, .pill-sep { display: none; }
+      #theme-toggle, #settings-btn { width: 30px; height: 30px; font-size: 14px; }
       #settings-menu { min-width: 190px; }
       .upload-actions { width: 100%; }
       .btn-choice { flex: 1 1 0; justify-content: center; }
@@ -1209,19 +1213,19 @@
     }
     .upload-title { color: var(--ink); }
     /* ---- PIN lock + history (Frosted Liquid Glass) ---- */
-    #lock-screen, #pin-modal, #api-modal, #sheet-modal, #confirm-modal, #trash-modal {
+    #lock-screen, #pin-modal, #api-modal, #sheet-modal, #sess-modal, #confirm-modal, #trash-modal, #info-modal {
       position: fixed;
       inset: 0;
       z-index: 100;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
       background: rgba(13, 10, 12, 0.62);
       backdrop-filter: blur(22px) saturate(160%);
       -webkit-backdrop-filter: blur(22px) saturate(160%);
     }
-    [data-theme="light"] #lock-screen, [data-theme="light"] #pin-modal, [data-theme="light"] #api-modal, [data-theme="light"] #sheet-modal, [data-theme="light"] #confirm-modal, [data-theme="light"] #trash-modal {
+    [data-theme="light"] #lock-screen, [data-theme="light"] #pin-modal, [data-theme="light"] #api-modal, [data-theme="light"] #sheet-modal, [data-theme="light"] #sess-modal, [data-theme="light"] #confirm-modal, [data-theme="light"] #trash-modal, [data-theme="light"] #info-modal {
       background: rgba(246, 245, 242, 0.66);
     }
     .lock-card {
@@ -1236,6 +1240,14 @@
       border-radius: var(--radius-xl);
       padding: 30px 26px 24px;
     }
+    #sess-modal { z-index: 110; }
+    #info-modal { z-index: 130; }
+    #sess-modal .lock-card, #info-modal .lock-card { max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; text-align: left; }
+    #info-modal .lock-card { max-width: 460px; }
+    #info-modal p { white-space: pre-line; }
+    .info-modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .info-modal-head h2 { margin: 0; }
+    #info-close { flex: none; width: auto; min-width: 72px; padding: 8px 12px; margin: 0; }
     .lock-card .brand-mark { margin: 0 auto 14px; width: 48px; height: 48px; font-size: 26px; }
     .lock-card h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.02em; }
     .lock-card p { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
@@ -1365,8 +1377,8 @@
       </div>
     </div>
     <div class="topbar-right">
-      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
       <div class="pill" id="session-pill" title="App access status is confirmed by the server on unlock."><span class="dot unknown" id="pill-dot" aria-hidden="true"></span><span id="pill-access">Access unknown</span><span class="pill-sep" aria-hidden="true">&middot;</span><span id="pill-env">Gemini &middot; Sheets</span><span id="sess-count" class="sess-count hidden"></span></div>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
       <div class="settings-wrap">
         <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
         <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
@@ -1421,8 +1433,8 @@
     <main class="card" aria-label="Log entry form">
       <div class="card-head">
         <div>
-          <h2>New entry</h2>
-          <p>Photo optional. Note optional. One of them required.</p>
+          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="Information about how logging works">i</button></div>
+          <p>Add a photo or a note.</p>
         </div>
         <div class="date-badge" id="today-badge">Today</div>
       </div>
@@ -1432,30 +1444,19 @@
         <button type="button" class="tab" id="tabbtn-standard" role="tab" aria-selected="false" aria-controls="tab-standard">Quick-Input</button>
       </div>
 
-      <fieldset class="recon-toggles" aria-label="Receipt reconciliation options">
-        <legend><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Reconciliation options</legend>
+      <fieldset class="recon-toggles" id="recon-options" aria-label="Receipt reconciliation options">
+        <legend><span class="recon-legend-label">Reconciliation options</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="Information about reconciliation options">i</button></legend>
         <label class="switch">
-          <span class="txt"><b>Force-save</b><i>Save unmatched receipts with one labeled balancing line. Review the adjustment afterward.</i></span>
+          <span class="txt"><b>Force-save</b></span>
           <input type="checkbox" id="toggle-force" aria-label="Force-save">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
-        <label class="switch">
-          <span class="txt"><b>Auto-discount</b><i>Add a negative adjustment when items exceed a readable total.</i></span>
-          <input type="checkbox" id="toggle-discount" aria-label="Auto-discount">
-          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
-        </label>
-        <p class="switch-note hidden" id="discount-note">Auto-discount is unavailable while Force-save is on — Force-save already covers both directions.</p>
-        <details class="recon-details">
-          <summary>How it works</summary>
-          <p>Each receipt photo is checked in two phases: first the printed total is read, then every line item is extracted and the signed sum must match that total exactly. A mismatch gets one automatic re-check. Receipts submit in sequential bounded batches; valid rows are logged even while others wait for review with their photos. With both options off, mismatched rows stay for review and nothing unverified is saved. Force-save adds exactly one clearly labeled placeholder line for the difference; auto-discount only ever adds a negative line when items exceed a readable total. Placeholder lines are always marked in Notes — review them afterward. Quick-Input's One row per receipt writes one spreadsheet row per receipt at its verified total, with that receipt's item detail preserved in Notes.</p>
-        </details>
-      </fieldset>
+      </fieldset>      </fieldset>
 
       <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
-      <p class="tip qi-note">Quick-Input logs fast: receipts that pass the check are saved at once, and mismatches get a clearly labeled balancing line automatically. For fully detailed line-item logging, use Table Layout.</p>
       <form id="expense-form" novalidate>
         <div class="form-group">
-          <label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label>
+          <div class="field-heading"><label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="Information about receipt photos">i</button></div>
           <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-labelledby="upload-label" aria-describedby="drop-hint">
             <div id="upload-placeholder" class="upload-placeholder">
               <div class="upload-icon">
@@ -1465,7 +1466,7 @@
                 </svg>
               </div>
               <div class="upload-title">Drag receipts here, or choose</div>
-              <div class="upload-subtitle" id="drop-hint">Snapped on phone? Use Camera. From files? Use Gallery — you can pick several.</div>
+              <div class="upload-subtitle" id="drop-hint">Camera takes a new photo. Gallery lets you choose existing photos.</div>
               <div class="upload-actions">
                 <button type="button" class="btn-choice" id="camera-btn">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -1496,9 +1497,9 @@
         </div>
 
         <div class="form-group">
-          <label class="label" for="note">Note / description <span class="opt" id="counter">0 / 1000</span></label>
+          <div class="field-heading"><label class="label" for="note">Note / description <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="Information about notes">i</button></div>
           <div class="textarea-wrap">
-            <textarea id="note" maxlength="1000" placeholder='Applies to all photos, e.g. "first photo is e-wallet top-up, third is paying food for my friend"'></textarea>
+            <textarea id="note" maxlength="1000" placeholder="Optional note for these receipt(s)…"></textarea>
             <div class="char-count" aria-hidden="true"></div>
           </div>
           <div class="chips" aria-label="Templates">
@@ -1509,11 +1510,11 @@
           </div>
         </div>
 
-        <label class="switch" style="margin-top:12px">
-          <span class="txt"><b>One row per receipt</b><i>Quick-Input only: one spreadsheet row per receipt at its verified total; item detail moves into Notes.</i></span>
+        <div class="one-row-switch" style="margin-top:12px">
+          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>One row per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="Information about one row per receipt">i</button></span></span>
           <input type="checkbox" id="toggle-onerow" aria-label="One row per receipt">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
-        </label>
+        </div>
 
         <button type="submit" id="submit-btn">
           <svg id="submit-ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -1536,7 +1537,6 @@
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           <span id="table-submit-label">Submit Batch</span>
         </button>
-        <p class="fineprint">Each row = optional photo + its own note + forced Expense/Income. Empty rows are ignored. Receipts are checked in two phases (printed total, then line items) across sequential batches, with one bounded repair pass for mismatches.</p>
       </div>
 
       <div class="lightbox" id="trow-lightbox" role="dialog" aria-modal="true" aria-label="Receipt viewer">
@@ -1552,7 +1552,6 @@
       </div>
 
       <div id="status" role="status" aria-live="polite"></div>
-      <p class="fineprint">Each photo is logged as its own receipt — discounts/fees share that receipt's category. One note applies to all photos; mention “first photo… third photo…” to describe them individually.</p>
     </main>
   </div>
 
@@ -1647,12 +1646,19 @@
   <div id="sess-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Session settings">
     <div class="lock-card">
       <h2>Session settings</h2>
-      <p>Applies to everyone using this web app. A new duration only affects sessions created afterward — current sessions keep their recorded expiry.</p>
+      <p>Applies to everyone. New durations affect new sessions only.</p>
       <div class="pin-field"><label for="sess-hours">Session duration (whole hours, 1–168)</label><input id="sess-hours" class="pin-input" type="number" min="1" max="168" step="1" inputmode="numeric" autocomplete="off"></div>
       <div class="pin-field pin-check"><input id="sess-renew" type="checkbox" checked><label for="sess-renew">Refresh countdown on activity</label><span class="hint">When off, the session expires at its fixed time even while you are active.</span></div>
       <button type="button" id="sess-save">Save session settings</button>
       <button type="button" id="sess-cancel">Cancel</button>
       <div id="sess-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="info-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="info-title" aria-describedby="info-body">
+    <div class="lock-card">
+      <div class="info-modal-head"><h2 id="info-title">Information</h2><button type="button" class="btn-choice" id="info-close">Close</button></div>
+      <p id="info-body"></p>
     </div>
   </div>
 
@@ -2062,7 +2068,7 @@
           var doneN = (counts.logged || 0) + (counts.duplicates || 0);
           var committedById = {};
           (report.rows || []).forEach(function (r) {
-            if (r.status === 'logged' || r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted' || r.duplicate) {
+            if (r.status === 'logged' || r.status === 'force-adjusted' || r.duplicate) {
               committedById[r.row_id] = true;
             }
           });
@@ -2089,16 +2095,16 @@
           });
           (report.rows || []).forEach(function (r) {
             if (r.status === 'logged' || r.duplicate) return;
-            if (r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted') {
+            if (r.status === 'force-adjusted') {
               parts.push('Adjusted row (' + (r.transactionId || '?') + '): ' + (r.message || ''));
             } else {
               parts.push(r.message || 'Row needs review.');
             }
           });
-          var okN = (counts.logged || 0) + (counts.forceAdjusted || 0) + (counts.discountAdjusted || 0);
+          var okN = (counts.logged || 0) + (counts.forceAdjusted || 0);
           if (okN > 0) {
             var msg = 'Logged ' + okN + ' receipt' + (okN === 1 ? '' : 's');
-            if (counts.forceAdjusted || counts.discountAdjusted) msg += ' (includes clearly marked placeholders - please verify)';
+            if (counts.forceAdjusted) msg += ' (includes a clearly marked balancing line - please verify)';
             msg += '.';
             if (parts.length) msg += ' ' + parts.join(' ');
             var hasUnresolved = (report.rows || []).some(function (r) {
@@ -2287,6 +2293,7 @@
       var btnT = document.getElementById('tabbtn-table');
       var panelS = document.getElementById('tab-standard');
       var panelT = document.getElementById('tab-table');
+      var recon = document.getElementById('recon-options');
       if (!btnS || !btnT) return;
       function show(which) {
         var isStd = (which === 'standard');
@@ -2296,6 +2303,7 @@
         btnT.setAttribute('aria-selected', !isStd ? 'true' : 'false');
         panelS.classList.toggle('active', isStd);
         panelT.classList.toggle('active', !isStd);
+        if (recon) recon.classList.toggle('hidden', isStd);
       }
       btnS.addEventListener('click', function () { show('standard'); });
       btnT.addEventListener('click', function () { show('table'); });
@@ -2314,9 +2322,7 @@
     }
     function cfReadToggles() {
       var f = document.getElementById('toggle-force');
-      var d = document.getElementById('toggle-discount');
-      var force = !!(f && f.checked);
-      return { forceLog: force, autoDiscount: !!(d && d.checked) && !force };
+      return { forceLog: !!(f && f.checked) };
     }
     // Shared button busy state: disables the control, shows a concise pending
     // label, and marks it aria-busy. The original label is restored when the
@@ -2432,7 +2438,7 @@
       // Quick-Input always force-saves: the mode is for speed, not detailed
       // ledgers. The saved toggle preferences are never touched; the override
       // applies to this submission only.
-      var tg = opts.quickForce ? { forceLog: true, autoDiscount: false } : cfReadToggles();
+      var tg = opts.quickForce ? { forceLog: true } : cfReadToggles();
       // One-row-per-receipt is a Quick-Input-only presentation option: it
       // never changes triage, repair, or toggle policy, only how commit
       // writes verified rows to the sheet.
@@ -2561,7 +2567,7 @@
                    hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
                    txn: st.okById[r.row_id] || null, repaired: false };
         });
-        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, quickMode: quickMode }, items, token])
+        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, quickMode: quickMode }, items, token])
           .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
       }).then(function (tri) {
         // 5. bounded repair for eligible mismatches (grouped, budget-aware).
@@ -2610,7 +2616,7 @@
                      txn: st.repairedTxnById[id], repaired: true };
           }).filter(function (it) { return !!it.txn; });
           if (!re.length) return Promise.resolve([]);
-          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, quickMode: quickMode }, re, token])
+          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, quickMode: quickMode }, re, token])
             .then(function (res) { return res.rows || []; })
             .catch(function (err) {
               if (cfAuthError(err)) throw err;
@@ -2643,7 +2649,7 @@
                    preError: it.preError || '' };
         });
         progress('Writing validated rows…');
-        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, oneRowPerReceipt: oneRowFlag, quickMode: quickMode }, finals, token]);
+        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, oneRowPerReceipt: oneRowFlag, quickMode: quickMode }, finals, token]);
       });
       return chain;
     }
@@ -2658,35 +2664,11 @@
       var countLabel = document.getElementById('table-count-label');
       var progressEl = document.getElementById('table-progress');
       var forceBox = document.getElementById('toggle-force');
-      var discountBox = document.getElementById('toggle-discount');
       if (!rowsEl || !addBtn || !submitBtnT) return;
       var jobActive = false;
       var pendingSort = false;
-      // The user's own auto-discount choice, preserved across the Force
-      // interlock (Force ON only suspends it visibly; OFF restores it).
-      var savedDiscount = !!(discountBox && discountBox.checked);
 
       function setProgress(t) { if (progressEl) progressEl.textContent = t || ''; }
-      function syncToggleStates() {
-        if (!forceBox || !discountBox) return;
-        if (!forceBox.checked) {
-          // Force off: restore the user's own discount choice (never lost).
-          discountBox.disabled = false;
-          discountBox.checked = savedDiscount;
-        } else {
-          // Force on: visibly disabled with the note below; the saved
-          // preference is kept in savedDiscount, never cleared.
-          discountBox.checked = false;
-          discountBox.disabled = true;
-        }
-        var note = document.getElementById('discount-note');
-        if (note) note.classList.toggle('hidden', !forceBox.checked);
-      }
-      if (discountBox) discountBox.addEventListener('change', function () {
-        if (!discountBox.disabled) savedDiscount = discountBox.checked;
-      });
-      if (forceBox) forceBox.addEventListener('change', syncToggleStates);
-      syncToggleStates();
 
       function updateCount() {
         var n = rowsEl.querySelectorAll('.trow').length;
@@ -2945,8 +2927,8 @@
             dom.remove();
             return;
           }
-          if (r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted') {
-            setRowStatus(dom, 'adjusted', (r.status === 'force-adjusted' ? 'Force-logged' : 'Discount-adjusted') +
+          if (r.status === 'force-adjusted') {
+            setRowStatus(dom, 'adjusted', 'Force-saved' +
               (r.transactionId ? ' (' + r.transactionId + ')' : '') + (r.message ? ' — ' + r.message : ''));
             dom.setAttribute('data-state', 'adjusted');
             if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
@@ -3786,10 +3768,17 @@
       var sessCancel = document.getElementById('sess-cancel');
       var sessError = document.getElementById('sess-error');
       var sessBtn = document.getElementById('sess-btn');
+      var sessReturnFocus = null;
+      function showSessModal() {
+        if (!sessModal) return;
+        sessModal.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+      }
       function openSessModal() {
         if (!sessModal) return;
         if (sessError) sessError.textContent = '';
         if (!hasBackend || !sessionToken) return;
+        sessReturnFocus = document.getElementById('settings-btn') || sessBtn;
         cfBusyBtn(sessSave, true, 'Loading…');
         google.script.run
           .withSuccessHandler(function (res) {
@@ -3797,21 +3786,82 @@
             if (!res || !res.valid) { expireSession(); return; }
             if (sessHours) sessHours.value = (res.ttlHours != null ? res.ttlHours : 3);
             if (sessRenewBox) sessRenewBox.checked = res.refreshOnActivity === true;
-            sessModal.classList.remove('hidden');
+            showSessModal();
             try { if (sessHours) sessHours.focus(); } catch (e) {}
           })
           .withFailureHandler(function (err) {
             cfBusyBtn(sessSave, false);
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) { expireSession(); return; }
             if (sessError) sessError.textContent = 'Could not load session settings: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
-            sessModal.classList.remove('hidden');
+            showSessModal();
+            try { if (sessCancel) sessCancel.focus(); } catch (e) {}
           })
           .validateSession(sessionToken);
       }
-      function closeSessModal() { if (sessModal) sessModal.classList.add('hidden'); }
+      function closeSessModal() {
+        if (sessModal) sessModal.classList.add('hidden');
+        syncSpecialModalScrollLock();
+        var focus = sessReturnFocus;
+        sessReturnFocus = null;
+        try { if (focus && focus.focus) focus.focus(); } catch (e) {}
+      }
       if (sessBtn) sessBtn.addEventListener('click', openSessModal);
       if (sessCancel) sessCancel.addEventListener('click', closeSessModal);
       if (sessModal) sessModal.addEventListener('click', function (e) { if (e.target === sessModal) closeSessModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && sessModal && !sessModal.classList.contains('hidden')) {
+          e.preventDefault();
+          closeSessModal();
+        }
+      });
+      // Reusable information dialog. Content is assigned as text, never HTML.
+      var infoModal = document.getElementById('info-modal');
+      var infoTitle = document.getElementById('info-title');
+      var infoBody = document.getElementById('info-body');
+      var infoClose = document.getElementById('info-close');
+      var infoReturnFocus = null;
+      var infoCopy = {
+        entry: { title: 'How logging works', body: 'The app reads the printed total first, then extracts line items and checks their sum. A mismatch gets a bounded repair. Unreadable totals or unresolved mismatches stay available for review unless Table Layout Force-save is enabled with a reliable total. You can also log a typed note without a photo.' },
+        reconciliation: { title: 'Reconciliation options', body: 'Receipts whose extracted items match the printed total are saved. A mismatch gets a repair first. With Force-save off, an unresolved mismatch waits for review. With Force-save on, a reliably read printed total can be balanced by one clearly labeled line after repair. An unreadable total is never force-saved.' },
+        photos: { title: 'Receipt photos', body: 'Supported formats: JPG, PNG, WEBP, and HEIC. Camera captures one new photo at a time. Use Gallery to select multiple existing photos.' },
+        note: { title: 'Notes', body: 'The note applies to all selected photos. To describe individual receipts, use wording such as “first photo is a top-up; third photo is food for a friend”.' },
+        'one-row': { title: 'One row per receipt', body: 'Each receipt is written as one spreadsheet row at its reliably read printed total. Its item detail is preserved in Notes. Quantity and unit price are included only when they were clearly readable on the receipt.' }
+      };
+      function syncSpecialModalScrollLock() {
+        var sessionOpen = sessModal && !sessModal.classList.contains('hidden');
+        var infoOpen = infoModal && !infoModal.classList.contains('hidden');
+        document.body.classList.toggle('modal-open', !!(sessionOpen || infoOpen));
+      }
+      function openInfoModal(key, trigger) {
+        var copy = infoCopy[key];
+        if (!infoModal || !copy) return;
+        infoReturnFocus = trigger || document.activeElement;
+        infoTitle.textContent = copy.title;
+        infoBody.textContent = copy.body;
+        infoModal.classList.remove('hidden');
+        syncSpecialModalScrollLock();
+        try { if (infoClose) infoClose.focus(); } catch (e) {}
+      }
+      function closeInfoModal() {
+        if (!infoModal || infoModal.classList.contains('hidden')) return;
+        infoModal.classList.add('hidden');
+        syncSpecialModalScrollLock();
+        var focus = infoReturnFocus;
+        infoReturnFocus = null;
+        try { if (focus && focus.focus) focus.focus(); } catch (e) {}
+      }
+      document.querySelectorAll('[data-info]').forEach(function (button) {
+        button.addEventListener('click', function () { openInfoModal(button.getAttribute('data-info'), button); });
+      });
+      if (infoClose) infoClose.addEventListener('click', closeInfoModal);
+      if (infoModal) infoModal.addEventListener('click', function (e) { if (e.target === infoModal) closeInfoModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && infoModal && !infoModal.classList.contains('hidden')) {
+          e.preventDefault();
+          closeInfoModal();
+        }
+      });
+
       if (sessSave) sessSave.addEventListener('click', function () {
         var h = sessHours ? Number(String(sessHours.value || '').trim()) : NaN;
         if (!isFinite(h) || Math.floor(h) !== h || h < 1 || h > 168) {
@@ -4497,8 +4547,5 @@
       }
     })();
     </script>
-</body>
-</html>
->
 </body>
 </html>

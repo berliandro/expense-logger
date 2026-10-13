@@ -8,11 +8,11 @@ This is an execution specification, not a brainstorming task. Make the decisions
 
 ## Branch and production safety
 
-- Work only on `experiment/dots3-note-corrective-pass`, starting from its current remote HEAD.
-- Inspect the worktree first. Preserve all local changes. If uncommitted work prevents a safe fast-forward, stop and report it; never reset or discard it.
-- Do not merge to `main`; do not modify `main`.
+- Work directly on `main`, starting from its current remote HEAD.
+- Inspect the worktree first. Preserve all local changes. If the worktree is dirty or `main` moved during implementation, stop and report the situation rather than overwriting anything.
+- The experiment branch is abandoned. Do not switch back to it or create another experiment branch for this goal.
 - Do not run `clasp push`, update any deployment, change deployment visibility, or touch production Apps Script.
-- Commit and push the finished work only to the experiment branch. Leave the working tree clean.
+- Commit the finished work directly to `main`. Leave the working tree clean.
 - Read this entire file before changing code. Treat the decisions and acceptance criteria here as authoritative.
 
 ## 1. Remove the stray page-ending character
@@ -128,4 +128,4 @@ Report each section separately as PASS / FAIL / PENDING with evidence. Include:
 - browser/viewports tested and findings
 - any limitations or tests not possible in this environment
 
-Do not claim physical Android testing unless actually performed. Stop after pushing the experiment branch. No merge, no production deploy, and no `clasp push`.
+Do not claim physical Android testing unless actually performed. Stop after committing the finished work directly to `main`. No production deploy and no `clasp push`.
