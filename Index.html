@@ -2040,6 +2040,7 @@
       updateCounter();
       clearPreview();
       try { maybeTrashCleanup(sessionToken); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e2) {}
     }
 
     function onFailure(err) {
@@ -2935,6 +2936,12 @@
           setProgress('');
           setLocked(false);
           try { maybeTrashCleanup(sessionToken); } catch (e) {}
+          try {
+            var sc = (report && report.summary) || {};
+            if ((sc.logged || 0) + (sc.forceAdjusted || 0) + (sc.discountAdjusted || 0) > 0) {
+              window.dispatchEvent(new CustomEvent('cf:history-changed'));
+            }
+          } catch (e2) {}
           return maybeSort(report);
         }).then(function () { if (done) done(); })
         .catch(function (err) {
@@ -3074,6 +3081,8 @@
         [changeBtn, apiBtn, sheetBtn, trashBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
         try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
         if (histCard) histCard.classList.toggle('hidden', !!locked);
+        // Never leave another session's rows in memory: locking drops the cache.
+        if (locked) { try { invalidateHistCache(); } catch (e) {} }
       }
       function setError(msg) { if (pinError) pinError.textContent = msg || ''; }
       function paintMode(msg) {
@@ -3096,7 +3105,13 @@
           try { pinInput.focus(); } catch (e) {}
         }
       }
-      function onUnlocked() { setLockedUI(false); checkSpreadsheetAndKey(); }
+      function onUnlocked() {
+        setLockedUI(false);
+        checkSpreadsheetAndKey();
+        // Warm the first history page after the UI is interactive. Deferred
+        // so unlock and the entry form never wait on it; silent by design.
+        deferIdle(function () { prefetchPage(0); });
+      }
       function lockToLogin(msg) {
         mode = 'login';
         firstPin = '';
@@ -3576,7 +3591,7 @@
           call.then(function (res) {
             trashRowBusy(btn, false);
             refreshTrashList();
-            fetchHistory(true);
+            noteHistoryMutated();
             try {
               setStatus(g.type === 'transaction'
                 ? 'Receipt restored (' + (res && res.restored) + ' rows).'
@@ -3764,7 +3779,7 @@
             try {
               setStatus(res && res.alreadyMoved ? 'Entry was already in Trash.' : 'Entry moved to Trash. Recover it within 7 days.', 'success');
             } catch (e) {}
-            fetchHistory(true);
+            noteHistoryMutated();
             refreshTrashIfOpen();
           }, function (err) {
             histBusy(btn, false);
@@ -3785,7 +3800,7 @@
           info = info || {};
           if (!info.hasLiveRows) {
             try { setStatus('No live rows carry that Transaction ID - it may already be in Trash.', 'error'); } catch (e) {}
-            fetchHistory(true);
+            noteHistoryMutated();
             return;
           }
           var n = Number(info.count || 0);
@@ -3804,7 +3819,7 @@
               try {
                 setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' rows). Recover it within 7 days.', 'success');
               } catch (e) {}
-              fetchHistory(true);
+              noteHistoryMutated();
               refreshTrashIfOpen();
             }, function (err) {
               histBusy(btn, false);
@@ -3828,6 +3843,119 @@
           if (tm && !tm.classList.contains('hidden') && typeof refreshTrashList === 'function') refreshTrashList();
         } catch (e) {}
       }
+      // Recent-logs page cache. Pages are keyed by offset and hold exact
+      // server responses; the client never re-sorts or fabricates rows.
+      // histGen rises on every refresh/invalidation so stale in-flight
+      // responses can never overwrite newer data.
+      var histCache = { pages: {}, total: 0 };
+      var histPending = {};
+      var histWaiters = {};
+      var histReqGen = {};
+      var histGen = 0;
+      var CACHED_REVEAL_MS = 300;
+      function deferIdle(fn) {
+        try {
+          if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(function () { fn(); });
+            return;
+          }
+        } catch (e) {}
+        setTimeout(fn, 0);
+      }
+      function cacheHistPage(offset, res) {
+        histCache.pages[offset] = { logs: (res.logs || []).slice(), total: res.total || 0, hasMore: !!res.hasMore };
+        histCache.total = res.total || 0;
+      }
+      function invalidateHistCache() {
+        histCache = { pages: {}, total: 0 };
+        histGen++;
+      }
+      function flushHistWaiters(offset, page, reqGen) {
+        var w = histWaiters[offset] || [];
+        var keep = [];
+        var live = (reqGen === histGen);
+        w.forEach(function (item) {
+          // Notify only waiters from the responding generation while it is
+          // still current. Waiters from newer generations stay queued for
+          // their own response; older ones drop silently and must never
+          // surface as an error.
+          if (item.gen === reqGen && live) {
+            try { item.fn(page); } catch (e) {}
+          } else if (item.gen > reqGen) {
+            keep.push(item);
+          }
+        });
+        histWaiters[offset] = keep;
+      }
+      // Fetches one page (or serves it from cache) and notifies waiters.
+      // Silent prefetch and explicit user requests share in-flight calls, so
+      // the same offset is never fetched twice for the same generation. A
+      // newer generation always fires its own request: a stale response can
+      // never satisfy it. Set force to bypass the cache for explicit refreshes.
+      function requestHistPage(offset, onDone, force) {
+        var cached = !force && histCache.pages[offset];
+        if (cached) { if (onDone) onDone(cached, true); return; }
+        var myGen = histGen;
+        histWaiters[offset] = histWaiters[offset] || [];
+        if (onDone) histWaiters[offset].push({ gen: myGen, fn: onDone });
+        if (histPending[offset] && histReqGen[offset] === myGen) return;
+        if (!hasBackend || !sessionToken) { flushHistWaiters(offset, null, myGen); return; }
+        histPending[offset] = true;
+        histReqGen[offset] = myGen;
+        var reqGen = myGen;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (histReqGen[offset] === reqGen) histPending[offset] = false;
+            if (reqGen !== histGen) { flushHistWaiters(offset, null, reqGen); return; }
+            res = res || {};
+            cacheHistPage(offset, res);
+            flushHistWaiters(offset, histCache.pages[offset], reqGen);
+            if (offset + (res.logs || []).length < (res.total || 0)) prefetchPage(offset + histLimit);
+          })
+          .withFailureHandler(function (err) {
+            if (histReqGen[offset] === reqGen) histPending[offset] = false;
+            flushHistWaiters(offset, { error: err }, reqGen);
+          })
+          .getRecentLogs(sessionToken, offset, histLimit);
+      }
+      function prefetchPage(offset) {
+        if (!hasBackend || !sessionToken) return;
+        if (histCache.pages[offset] || histPending[offset]) return;
+        requestHistPage(offset, null);
+      }
+      // Any successful mutation clears cached pages (offsets shift) and, when
+      // rows are currently shown, reloads them fresh. Failed mutations leave
+      // the cache alone. Same-scope callers use this directly; other scopes
+      // announce through the cf:history-changed event below.
+      function noteHistoryMutated() {
+        var visible = false;
+        try { visible = histOffset > 0; } catch (e) {}
+        invalidateHistCache();
+        if (visible) fetchHistory(true);
+      }
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('cf:history-changed', function () {
+          try { noteHistoryMutated(); } catch (e) {}
+        });
+      }
+      function announceHistoryChanged() {
+        try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+      }
+      function renderHistPage(res, append) {
+        var logs = res.logs || [];
+        renderLogs(logs, append);
+        if (!append) histOffset = 0;
+        histOffset += logs.length;
+        histSub.textContent = 'Showing ' + histOffset + ' of ' + (res.total || 0) + ' rows.';
+        if (res.hasMore) {
+          histMore.classList.remove('hidden');
+          histLoad.classList.add('hidden');
+        } else {
+          histMore.classList.add('hidden');
+          if (histOffset > 0) histLoad.classList.add('hidden');
+          if (histOffset === 0) histSub.textContent = 'No logged rows yet.';
+        }
+      }
       function fetchHistory(reset) {
         if (reset) histOffset = 0;
         if (!hasBackend) {
@@ -3836,41 +3964,75 @@
         }
         if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
         var btn = reset ? histLoad : histMore;
+        var wantOffset = reset ? 0 : histOffset;
+        var gen = histGen;
         cfBusyBtn(btn, true, 'Loading…');
         if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
-        google.script.run
-          .withSuccessHandler(function (res) {
-            cfBusyBtn(btn, false);
-            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
-            res = res || {};
-            var logs = res.logs || [];
-            renderLogs(logs, !reset);
-            histOffset += logs.length;
-            histSub.textContent = 'Showing ' + histOffset + ' of ' + (res.total || 0) + ' rows.';
-            if (res.hasMore) {
-              histMore.classList.remove('hidden');
-              histLoad.classList.add('hidden');
-            } else {
-              histMore.classList.add('hidden');
-              if (histOffset > 0) histLoad.classList.add('hidden');
-              if (histOffset === 0) histSub.textContent = 'No logged rows yet.';
-            }
-          })
-          .withFailureHandler(function (err) {
-            cfBusyBtn(btn, false);
-            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
+        function settle() {
+          cfBusyBtn(btn, false);
+          if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
+        }
+        requestHistPage(wantOffset, function (page) {
+          if (gen !== histGen) return;
+          settle();
+          if (!page || page.error) {
+            var err = page && page.error;
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               try { cfNoteAuthExpired(); } catch (e) {}
               try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
               return;
             }
-            try { setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e) {}
-          })
-          .getRecentLogs(sessionToken, reset ? 0 : histOffset, histLimit);
+            try { setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e3) {}
+            return;
+          }
+          renderHistPage(page, !reset);
+        }, true);
       }
-      if (histLoad) histLoad.addEventListener('click', function () { fetchHistory(true); });
-      if (histMore) histMore.addEventListener('click', function () { fetchHistory(false); });
-      if (histRefresh) histRefresh.addEventListener('click', function () { fetchHistory(true); });
+      // First page: reveal cached rows with a brief cue, or fetch for real.
+      function showFirstPage() {
+        histOffset = 0;
+        histGen++;
+        var gen = histGen;
+        if (!hasBackend) {
+          histSub.textContent = 'Preview mode — connect to Apps Script to load real logs.';
+          return;
+        }
+        if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
+        var cached = histCache.pages[0];
+        if (cached) {
+          cfBusyBtn(histLoad, true, 'Loading…');
+          if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
+          setTimeout(function () {
+            if (gen !== histGen) return;
+            cfBusyBtn(histLoad, false);
+            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
+            renderHistPage(cached, false);
+            prefetchPage(histLimit);
+          }, CACHED_REVEAL_MS);
+          return;
+        }
+        fetchHistory(true);
+      }
+      // Next page: cached rows render immediately, then warm the following page.
+      function showNextPage() {
+        var wantOffset = histOffset;
+        if (!hasBackend || !sessionToken) { fetchHistory(false); return; }
+        var cached = histCache.pages[wantOffset];
+        if (cached) {
+          renderHistPage(cached, true);
+          prefetchPage(wantOffset + histLimit);
+          return;
+        }
+        fetchHistory(false);
+      }
+      // Refresh always goes to the server, never to the cache.
+      function refreshHistory() {
+        invalidateHistCache();
+        fetchHistory(true);
+      }
+      if (histLoad) histLoad.addEventListener('click', function () { showFirstPage(); });
+      if (histMore) histMore.addEventListener('click', function () { showNextPage(); });
+      if (histRefresh) histRefresh.addEventListener('click', function () { refreshHistory(); });
 
       // Boot: PIN paints first (already visible). A stored unexpired token
       // auto-loads the actual page; otherwise stay on the PIN screen.
