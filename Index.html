@@ -1233,7 +1233,7 @@
     .pin-field { margin-bottom: 12px; text-align: left; }
     .pin-field label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 0 2px 6px; }
     .pin-field .pin-input { font-size: 20px; letter-spacing: 0.35em; }
-    #pin-submit, #pin-change-save, #api-save, #sheet-save, #confirm-ok {
+    #pin-submit, #pin-change-save, #api-save, #sheet-save, #sess-save, #confirm-ok {
       width: 100%;
       margin-top: 6px;
       padding: 14px 16px;
@@ -1247,7 +1247,14 @@
       cursor: pointer;
       box-shadow: 0 14px 26px -14px rgba(255, 106, 0, 0.65);
     }
-    #pin-submit:disabled, #api-save:disabled, #sheet-save:disabled, #confirm-ok:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
+    #pin-submit:disabled, #api-save:disabled, #sheet-save:disabled, #sess-save:disabled, #confirm-ok:disabled { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
+    .sess-count { font-variant-numeric: tabular-nums; color: var(--muted); }
+    .sess-count.warn { color: var(--accent); font-weight: 800; }
+    #sess-hours.pin-input { font-size: 16px; letter-spacing: normal; text-indent: 0; text-align: left; }
+    .pin-field.pin-check { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; }
+    .pin-field.pin-check input[type="checkbox"] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+    .pin-field.pin-check label { text-transform: none; letter-spacing: normal; font-size: 13.5px; margin: 0; }
+    .pin-field.pin-check .hint { grid-column: 2; font-size: 12px; color: var(--muted); line-height: 1.45; }
     #pin-change-cancel {
       width: 100%;
       margin-top: 10px;
@@ -1261,9 +1268,9 @@
       border-radius: 999px;
       cursor: pointer;
     }
-    #pin-error, #pin-change-error, #api-error, #sheet-error, #confirm-error { min-height: 20px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--err-ink); }
+    #pin-error, #pin-change-error, #api-error, #sheet-error, #sess-error, #confirm-error { min-height: 20px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--err-ink); }
     .api-input { font-size: 14px !important; letter-spacing: normal !important; text-indent: 0 !important; text-align: left !important; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #api-cancel, #sheet-cancel, #confirm-cancel, #trash-close {
+    #api-cancel, #sheet-cancel, #sess-cancel, #confirm-cancel, #trash-close {
       width: 100%;
       margin-top: 10px;
       padding: 12px 16px;
@@ -1278,7 +1285,7 @@
     }
     /* History */
     .history-card { width: 100%; max-width: 1040px; margin: 18px auto 0; }
-    /* PIN-first: app content stays hidden until a valid 12h session unlocks it */
+    /* PIN-first: app content stays hidden until a valid session unlocks it */
     body.locked .shell, body.locked #history-card, body.locked footer, body.locked .credit { display: none; }
     .history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .history-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
@@ -1333,6 +1340,7 @@
     </div>
     <div class="topbar-right">
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <div class="pill" id="session-pill"><span class="dot"></span>Private &middot; Gemini &middot; Sheets<span id="sess-count" class="sess-count hidden"></span></div>
       <div class="settings-wrap">
         <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
         <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
@@ -1341,11 +1349,11 @@
           <button type="button" class="menu-item hidden" id="pin-change-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="menu-label">Change PIN</span></button>
           <button type="button" class="menu-item hidden" id="api-key-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span class="menu-label">Set API key</span></button>
           <button type="button" class="menu-item hidden" id="sheet-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="menu-label">Set Sheet</span></button>
+          <button type="button" class="menu-item hidden" id="sess-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 13.5"/></svg><span class="menu-label">Session settings</span></button>
           <button type="button" class="menu-item hidden" id="trash-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg><span class="menu-label">Trash</span></button>
           <button type="button" class="menu-item danger hidden" id="pin-logout-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="menu-label">Log out</span></button>
         </div>
       </div>
-      <div class="pill"><span class="dot"></span>Private &middot; Gemini &middot; Sheets</div>
     </div>
   </div>
 
@@ -1598,6 +1606,18 @@
       <button type="button" id="sheet-save">Save Sheet</button>
       <button type="button" id="sheet-cancel">Later</button>
       <div id="sheet-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="sess-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Session settings">
+    <div class="lock-card">
+      <h2>Session settings</h2>
+      <p>Applies to everyone using this web app. A new duration only affects sessions created afterward — current sessions keep their recorded expiry.</p>
+      <div class="pin-field"><label for="sess-hours">Session duration (whole hours, 1–168)</label><input id="sess-hours" class="pin-input" type="number" min="1" max="168" step="1" inputmode="numeric" autocomplete="off"></div>
+      <div class="pin-field pin-check"><input id="sess-renew" type="checkbox" checked><label for="sess-renew">Refresh countdown on activity</label><span class="hint">When off, the session expires at its fixed time even while you are active.</span></div>
+      <button type="button" id="sess-save">Save session settings</button>
+      <button type="button" id="sess-cancel">Cancel</button>
+      <div id="sess-error" role="alert" aria-live="assertive"></div>
     </div>
   </div>
 
@@ -3073,12 +3093,22 @@
       var histOffset = 0;
       var histLimit = 10;
       var hasBackend = !!(window.google && google.script && google.script.run);
+      // Session countdown/renewal state. sessExpiresAt and sessRenew always
+      // mirror the last server validation; the server stays authoritative.
+      var sessExpiresAt = 0;
+      var sessRenew = true;
+      var sessWarned10 = false;
+      var sessTimer = null;
+      var sessLastTouch = 0;
+      var SESS_TOUCH_MIN_MS = 60000;
+      var SESS_WARN_MS = 10 * 60 * 1000;
+      var SESS_COUNTDOWN_MS = 30 * 60 * 1000;
 
       function setLockedUI(locked) {
         try { document.body.classList.toggle('locked', !!locked); } catch (e) {}
         if (locked) { lockEl.classList.remove('hidden'); }
         else { lockEl.classList.add('hidden'); }
-        [changeBtn, apiBtn, sheetBtn, trashBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
+        [changeBtn, apiBtn, sheetBtn, sessBtn, trashBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
         try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
         if (histCard) histCard.classList.toggle('hidden', !!locked);
         // Never leave another session's rows in memory: locking drops the cache.
@@ -3111,12 +3141,15 @@
         // Warm the first history page after the UI is interactive. Deferred
         // so unlock and the entry form never wait on it; silent by design.
         deferIdle(function () { prefetchPage(0); });
+        refreshSessionState();
       }
       function lockToLogin(msg) {
         mode = 'login';
         firstPin = '';
+        stopSessTimer();
         try { if (typeof closeApiModal === 'function') closeApiModal(); } catch (e) {}
         try { if (typeof closeSheetModal === 'function') closeSheetModal(); } catch (e) {}
+        try { if (typeof closeSessModal === 'function') closeSessModal(); } catch (e) {}
         try { if (typeof closeConfirmModal === 'function') closeConfirmModal(); } catch (e) {}
         try { if (typeof closeTrashModal === 'function') closeTrashModal(); } catch (e) {}
         setLockedUI(true);
@@ -3420,6 +3453,177 @@
             if (sheetError) sheetError.textContent = 'Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err));
           })
           .saveSpreadsheetId(v, sessionToken);
+      });
+
+      // ---- Global session countdown, renewal, and settings ----
+      // The server is authoritative: sessExpiresAt/sessRenew always mirror the
+      // last validateSession response. The 30s timer only enforces and
+      // displays that server-issued state; it never extends anything itself.
+      function sessRemainingMs() { return (sessExpiresAt || 0) - Date.now(); }
+      function paintSessPill() {
+        var el = document.getElementById('sess-count');
+        if (!el) return;
+        var left = sessRemainingMs();
+        var show = !sessRenew && sessExpiresAt > 0 && left > 0 && left <= SESS_COUNTDOWN_MS;
+        el.classList.toggle('hidden', !show);
+        if (!show) { el.textContent = ''; el.classList.remove('warn'); return; }
+        var mins = Math.max(1, Math.ceil(left / 60000));
+        el.textContent = 'expires in ' + mins + ' min';
+        el.classList.toggle('warn', left <= SESS_WARN_MS);
+      }
+      function stopSessTimer() {
+        try { if (sessTimer) clearInterval(sessTimer); } catch (e) {}
+        sessTimer = null;
+      }
+      function expireSession() {
+        stopSessTimer();
+        paintSessPill();
+        // Locking overlays the PIN gate without reloading: typed notes,
+        // table rows, and selected photos stay exactly as left. Lock directly
+        // rather than via the auth-expired event so the lock (and its message)
+        // cannot be lost if the event has no listener.
+        try { cfClearSession(); } catch (e) {}
+        try { lockToLogin('Your session has expired - please log in again.'); } catch (e2) {}
+      }
+      function checkSessExpiry() {
+        if (!sessionToken || !sessExpiresAt) return;
+        try {
+          if (document.body.classList.contains('locked')) { stopSessTimer(); return; }
+        } catch (e) {}
+        var left = sessRemainingMs();
+        if (left <= 0) { expireSession(); return; }
+        paintSessPill();
+        if (!sessRenew && left <= SESS_WARN_MS && !sessWarned10) {
+          sessWarned10 = true;
+          try { setStatus('Your session expires in ' + Math.max(1, Math.ceil(left / 60000)) + ' minutes. Finish up and log in again — your entries stay put.', 'error'); } catch (e2) {}
+        }
+      }
+      function startSessTimer() {
+        try {
+          if (sessTimer) return;
+          checkSessExpiry();
+          sessTimer = setInterval(function () { checkSessExpiry(); }, 30000);
+        } catch (e) {}
+      }
+      // Reconciles the display with the server's recorded expiry. Safe to
+      // call on unlock, tab visibility changes, and after settings saves.
+      function refreshSessionState() {
+        if (!hasBackend || !sessionToken) return;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (!res || !res.valid) { expireSession(); return; }
+            if (res.expiresAt !== sessExpiresAt) sessWarned10 = false;
+            sessExpiresAt = Number(res.expiresAt) || 0;
+            sessRenew = res.refreshOnActivity === true;
+            startSessTimer();
+            checkSessExpiry();
+          })
+          .withFailureHandler(function () {
+            // Transient failure: keep last-known state. The local-expiry
+            // rule in checkSessExpiry still locks on time.
+          })
+          .validateSession(sessionToken);
+      }
+      // Throttled activity renewal: trusted interaction events only (never
+      // timer ticks, never mousemove), at most one server call per minute.
+      // Each call revalidates server-side; failures keep last-known state.
+      function onUserActivity() {
+        if (!sessRenew || !sessionToken || !sessExpiresAt) return;
+        if (!hasBackend) return;
+        try { if (document.body.classList.contains('locked')) return; } catch (e) {}
+        var now = Date.now();
+        if (now - sessLastTouch < SESS_TOUCH_MIN_MS) return;
+        sessLastTouch = now;
+        try {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res && res.valid && res.expiresAt) {
+                if (res.expiresAt !== sessExpiresAt) sessWarned10 = false;
+                sessExpiresAt = Number(res.expiresAt) || sessExpiresAt;
+                paintSessPill();
+              } else if (res && !res.valid) {
+                expireSession();
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) expireSession();
+            })
+            .touchSession(sessionToken);
+        } catch (e2) {}
+      }
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        ['keydown', 'pointerdown', 'touchstart', 'click'].forEach(function (t) {
+          try { document.addEventListener(t, onUserActivity, { passive: true }); } catch (e) {}
+        });
+        document.addEventListener('visibilitychange', function () {
+          try { if (!document.hidden) refreshSessionState(); } catch (e) {}
+        });
+      }
+
+      // Global session settings (applies to every web-app user).
+      var sessModal = document.getElementById('sess-modal');
+      var sessHours = document.getElementById('sess-hours');
+      var sessRenewBox = document.getElementById('sess-renew');
+      var sessSave = document.getElementById('sess-save');
+      var sessCancel = document.getElementById('sess-cancel');
+      var sessError = document.getElementById('sess-error');
+      var sessBtn = document.getElementById('sess-btn');
+      function openSessModal() {
+        if (!sessModal) return;
+        if (sessError) sessError.textContent = '';
+        if (!hasBackend || !sessionToken) return;
+        cfBusyBtn(sessSave, true, 'Loading…');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            cfBusyBtn(sessSave, false);
+            if (!res || !res.valid) { expireSession(); return; }
+            if (sessHours) sessHours.value = (res.ttlHours != null ? res.ttlHours : 3);
+            if (sessRenewBox) sessRenewBox.checked = res.refreshOnActivity === true;
+            sessModal.classList.remove('hidden');
+            try { if (sessHours) sessHours.focus(); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            cfBusyBtn(sessSave, false);
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) { expireSession(); return; }
+            if (sessError) sessError.textContent = 'Could not load session settings: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            sessModal.classList.remove('hidden');
+          })
+          .validateSession(sessionToken);
+      }
+      function closeSessModal() { if (sessModal) sessModal.classList.add('hidden'); }
+      if (sessBtn) sessBtn.addEventListener('click', openSessModal);
+      if (sessCancel) sessCancel.addEventListener('click', closeSessModal);
+      if (sessModal) sessModal.addEventListener('click', function (e) { if (e.target === sessModal) closeSessModal(); });
+      if (sessSave) sessSave.addEventListener('click', function () {
+        var h = sessHours ? Number(String(sessHours.value || '').trim()) : NaN;
+        if (!isFinite(h) || Math.floor(h) !== h || h < 1 || h > 168) {
+          if (sessError) sessError.textContent = 'Enter a whole number of hours from 1 to 168.';
+          return;
+        }
+        var renew = !!(sessRenewBox && sessRenewBox.checked);
+        openConfirmModal({
+          title: 'Apply session settings for everyone?',
+          body: 'New sessions will last ' + h + (h === 1 ? ' hour' : ' hours') + ' and activity renewal will be ' + (renew ? 'on' : 'off') + ' for every user. Current sessions keep their recorded expiry.',
+          okLabel: 'Apply to everyone',
+          danger: false
+        }).then(function (yes) {
+          if (!yes) return;
+          if (sessError) sessError.textContent = '';
+          cfBusyBtn(sessSave, true, 'Saving…');
+          google.script.run
+            .withSuccessHandler(function () {
+              cfBusyBtn(sessSave, false);
+              closeSessModal();
+              try { setStatus('Session settings saved for everyone.', 'success'); } catch (e) {}
+              refreshSessionState();
+            })
+            .withFailureHandler(function (err) {
+              cfBusyBtn(sessSave, false);
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) { closeSessModal(); expireSession(); return; }
+              if (sessError) sessError.textContent = 'Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            })
+            .setSessionConfig(sessionToken, h, renew);
+        });
       });
 
       // Generic confirm dialog. Resolves true on explicit confirm, false on

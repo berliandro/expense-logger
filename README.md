@@ -78,7 +78,7 @@ Script Properties (**Project Settings → Script Properties** in the Apps Script
 | `GEMINI_API_KEY` | Your Gemini key (AI Studio). Also settable in-app via Settings.    |
 | `SPREADSHEET_ID` | Manual fallback for the sheet ID; the in-app Set Sheet prompt is preferred. |
 
-No keys ever live in this repo — they stay in Script Properties, and the browser holds only a random 12h session token, never the PIN or keys.
+No keys ever live in this repo — they stay in Script Properties, and the browser holds only a random session token (configurable lifetime, see below), never the PIN or keys.
 
 Month sheets are created automatically from the hidden `Template` sheet with headers
 `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`.
@@ -123,7 +123,8 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 
 ## Security and privacy
 
-- The raw PIN is never stored on the device and is never accepted by sensitive backend calls — login exchanges it for a random 256-bit session token valid 12h, stored hashed server-side. Wrong PINs are rate-limited (5 fails / 10 min).
+- The raw PIN is never stored on the device and is never accepted by sensitive backend calls — login exchanges it for a random 256-bit session token, stored hashed server-side. Wrong PINs are rate-limited (5 fails / 10 min).
+- Session lifetime is globally configurable (Settings menu → Session settings): whole hours from 1 to 168, default 3 hours, with activity-based renewal ON by default. New durations apply to sessions created afterward; current sessions keep their recorded expiry. When renewal is off and 30 minutes or less remain, the header pill shows a countdown; at 10 minutes a warning appears. Expiry locks the app back behind the PIN gate without reloading, so typed notes, table rows, and selected photos are preserved.
 - `PIN_HASH` / `PIN_SALT` / hashed sessions live in Script Properties.
 - Receipt photos are sent to Gemini for extraction and are never stored in the Trash ledger or logs beyond the review flow; financial rows live only in your own Google Sheet.
 - `.clasp.json` (Script ID binding), `.clasprc.json` (personal clasp OAuth tokens), `.cashlogger-deployment-id` (Web App deployment ID), and `.opencode/` (agent session state) are git-ignored — never commit them.
