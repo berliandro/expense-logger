@@ -779,6 +779,8 @@
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
     }
+    /* Quick-Input explainer stays visible on mobile: capture happens on phones. */
+    #tab-standard > .tip.qi-note { display: block !important; margin: 0 0 14px; }
     .upload-zone, textarea {
       background: var(--field);
       border: 1px solid var(--glass-border);
@@ -1424,6 +1426,7 @@
       </fieldset>
 
       <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
+      <p class="tip qi-note">Quick-Input logs fast: receipts that pass the check are saved at once, and mismatches get a clearly labeled balancing line automatically. For fully detailed line-item logging, use Table Layout.</p>
       <form id="expense-form" novalidate>
         <div class="form-group">
           <label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label>
@@ -2015,10 +2018,32 @@
         cfEngineSubmit({
           rows: rows,
           sessionToken: sessionToken,
+          // Quick-Input (this panel) always force-saves; see cfEngineSubmit.
+          quickForce: true,
           progress: function (t) { setStatus(t, ''); }
         }).then(function (report) {
           var counts = (report && report.summary) || {};
           var doneN = (counts.logged || 0) + (counts.duplicates || 0);
+          var committedById = {};
+          (report.rows || []).forEach(function (r) {
+            if (r.status === 'logged' || r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted' || r.duplicate) {
+              committedById[r.row_id] = true;
+            }
+          });
+          // Remove only the photos the server confirmed (logged or safely
+          // recognized duplicate). Photos for review/error rows stay, with
+          // their note text, so nothing unconfirmed is ever lost. rows[i]
+          // aligns with images[i] and selectedFiles[i] for photo submissions.
+          var keptIdx = [];
+          rows.forEach(function (r, i) {
+            if (!committedById[r.row_id] && i < selectedFiles.length) keptIdx.push(i);
+          });
+          if (keptIdx.length < selectedFiles.length) {
+            var remaining = keptIdx.map(function (i) { return selectedFiles[i]; });
+            selectedFiles.length = 0;
+            remaining.forEach(function (f) { selectedFiles.push(f); });
+            renderPreviews();
+          }
           var parts = [];
           (report.rows || []).forEach(function (r) {
             if (r.status === 'logged' || r.duplicate) return;
@@ -2034,7 +2059,10 @@
             if (counts.forceAdjusted || counts.discountAdjusted) msg += ' (includes clearly marked placeholders - please verify)';
             msg += '.';
             if (parts.length) msg += ' ' + parts.join(' ');
-            onSuccess(msg);
+            var hasUnresolved = (report.rows || []).some(function (r) {
+              return r.status === 'review' || r.status === 'error';
+            });
+            onSuccess(msg, hasUnresolved);
           } else {
             onFailure({ message: parts.join(' ') || 'Nothing was logged.' });
             return;
@@ -2050,15 +2078,19 @@
       }
     }
 
-    function onSuccess(summary) {
+    function onSuccess(summary, keepForm) {
       submitBtn.disabled = false;
       submitLabel.textContent = 'Log entry';
       var isIncome = /^income/i.test(summary || '');
       setStatus(summary, isIncome ? 'success income' : 'success');
-      form.reset();
+      // When receipts remain for review, their photos were kept above: keep
+      // the note too so the user can resubmit or adjust. Otherwise reset.
+      if (!keepForm) {
+        form.reset();
+        clearPreview();
+      }
       clearChipState();
       updateCounter();
-      clearPreview();
       try { maybeTrashCleanup(sessionToken); } catch (e) {}
       try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e2) {}
     }
@@ -2355,7 +2387,10 @@
       var token = opts.sessionToken;
       var progress = opts.progress || function () {};
       var submissionId = cfUuid();
-      var tg = cfReadToggles();
+      // Quick-Input always force-saves: the mode is for speed, not detailed
+      // ledgers. The saved toggle preferences are never touched; the override
+      // applies to this submission only.
+      var tg = opts.quickForce ? { forceLog: true, autoDiscount: false } : cfReadToggles();
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
       var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
       function needBackend() {
