@@ -599,7 +599,7 @@ function processExpenses(images, noteText, sessionToken, opts) {
   // Text-only: the note IS the source data (no Phase 1, no invented total).
   if (images.length === 0) {
     var promptText = buildPrompt(noteText, 0);
-    var txn = sanitizeTransaction(callGemini(promptText, noteText, [], TRANSACTION_SCHEMA));
+    var txn = sanitizeTransaction(callGemini_(promptText, noteText, [], TRANSACTION_SCHEMA));
     var report = commitReceiptRows({ submission_id: submissionId, forceLog: toggles.forceLog, autoDiscount: toggles.autoDiscount },
       [{ row_id: Utilities.getUuid(), origNum: 1, forcedType: null, note: '',
          hasPhoto: false, phase1: null, txn: txn, repaired: false }], sessionToken);
@@ -1331,7 +1331,10 @@ function getRecentLogs(sessionToken, offset, limit) {
 
 // ---------- GEMINI (with model fallback) ----------
 
-function callGemini(promptText, sourceText, images, schema) {
+// Text-prompt generation helper (private: must never be client-callable, or
+// anyone with the app URL could burn the owner's Gemini quota without a PIN).
+// All phased ops call callGeminiRaw_ directly; only the text-only path uses this.
+function callGemini_(promptText, sourceText, images, schema) {
   var parts = [{ text: promptText }];
   if (sourceText) {
     parts.push({ text: 'Message text: ' + sourceText });
@@ -1353,7 +1356,7 @@ function callGemini(promptText, sourceText, images, schema) {
 // Raw generation call with model fallback. Returns {data, model, usage} where
 // usage is the response usageMetadata when the API provides it (used to
 // improve batch estimates; never used to alter row mapping).
-// Throws the same aggregated/fast-fail errors callGemini() always produced.
+// Throws the same aggregated/fast-fail errors callGemini_() always produced.
 function callGeminiRaw_(parts, schema) {
   var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!apiKey) {
