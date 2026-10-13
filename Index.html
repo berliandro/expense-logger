@@ -1510,7 +1510,7 @@
           </div>
         </div>
 
-        <div class="one-row-switch" style="margin-top:12px">
+        <div class="switch one-row-switch" style="margin-top:12px">
           <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>One row per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="Information about one row per receipt">i</button></span></span>
           <input type="checkbox" id="toggle-onerow" aria-label="One row per receipt">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
@@ -2974,17 +2974,16 @@
         updateRetryVisibility();
         // Deferred sort: committed rows stay unsorted while reviews remain.
         // Sorting runs once the last review row is resolved or discarded.
-        if (!report.sortEligible && ((counts.logged || 0) + (counts.forceAdjusted || 0) + (counts.discountAdjusted || 0) > 0)) {
+        if (!report.sortEligible && ((counts.logged || 0) + (counts.forceAdjusted || 0) > 0)) {
           pendingSort = true;
         }
         var parts = [];
         if (counts.logged) parts.push(counts.logged + ' logged');
         if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' force-logged (verify receipts)');
-        if (counts.discountAdjusted) parts.push(counts.discountAdjusted + ' discount-adjusted (verify receipts)');
         if (counts.review) parts.push(counts.review + ' left for review');
         if (counts.errors) parts.push(counts.errors + ' failed');
         var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
-        if (counts.forceAdjusted || counts.discountAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
+        if (counts.forceAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
         setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
         return loggedN;
       }
@@ -3061,7 +3060,7 @@
           try { maybeTrashCleanup(sessionToken); } catch (e) {}
           try {
             var sc = (report && report.summary) || {};
-            if ((sc.logged || 0) + (sc.forceAdjusted || 0) + (sc.discountAdjusted || 0) > 0) {
+            if ((sc.logged || 0) + (sc.forceAdjusted || 0) > 0) {
               window.dispatchEvent(new CustomEvent('cf:history-changed'));
             }
           } catch (e2) {}

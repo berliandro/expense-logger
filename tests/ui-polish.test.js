@@ -31,7 +31,8 @@ assert.match(html, /Escape[\s\S]{0,180}closeSessModal\(\)/, 'session modal Escap
 assert.match(html, /id="recon-options"/, 'reconciliation fieldset');
 assert.match(html, /recon\.classList\.toggle\('hidden', isStd\)/, 'Quick-Input hides settings');
 assert.match(html, /id="toggle-force"/, 'Force-save toggle');
-assert.doesNotMatch(html, /toggle-discount|discount-note|Auto-discount|autoDiscount|auto-discount-adjusted/i, 'no Auto-discount UI/client feature');
+assert.doesNotMatch(html, /toggle-discount|discount-note|Auto-discount|autoDiscount|auto-discount-adjusted|discountAdjusted/i, 'no Auto-discount UI/client feature or stale summary counter');
+assert.match(html, /class="switch one-row-switch"/, 'one-row toggle must reuse shared switch styling');
 assert.doesNotMatch(readme, /Auto-discount/i, 'README does not advertise Auto-discount');
 
 for (const key of ['entry', 'reconciliation', 'photos', 'note', 'one-row']) {
