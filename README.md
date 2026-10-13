@@ -18,7 +18,8 @@ Cashflow Log removes the spreadsheet chore from expense tracking. Photograph a r
 
 It is useful for anyone who already lives in Google Sheets and wants receipt logging without another paid service, another account, or data leaving their own Google account — plus a one-click Windows installer so non-technical family members can run their own copy.
 
-## Key features
+- **One row per receipt** (Quick-Input only) — writes exactly one spreadsheet row per receipt at its verified signed total. The Description uses the receipt's own printed title when there is one, otherwise the item description, or `Merchant · Category (N items)`. Notes carry your shared note plus that receipt's own items, written as `Item ×qty @ unit price = line total` whenever the printed quantity and unit price were legible — and as `Item: line total` when they were not, so nothing is ever invented. Each receipt repeats your note but never mixes in another photo's items.
+- **Optional balancing rules**
 
 - **Receipt extraction** — Gemini reads dates, merchants, line items, categories, and Expense/Income type from JPG, PNG, WEBP, or HEIC photos; a typed note works with no photo at all.
 - **Two-phase total reconciliation** — Phase 1 reads each photo's printed total, Phase 2 extracts every line item, and each receipt's item sum must match its printed total exactly.
@@ -34,7 +35,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 
 ## How it works
 
-1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Quick-Input** tab, then submit. Quick-Input always force-saves (receipts that pass the check are logged at once; only unconfirmed photos stay), while Table Layout follows your own reconciliation toggles. Quick-Input also offers **One row per receipt**: one spreadsheet row per receipt at its verified total, with that receipt's item detail (discounts included) preserved in Notes.
+1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Quick-Input** tab, then submit. Quick-Input always force-saves (receipts that pass the check are logged at once; only unconfirmed photos stay), while Table Layout follows your own reconciliation toggles. Quick-Input's decision rule is the **printed final Total**, not how complete the line list looks. If that total is readable, the receipt is saved under it — even when the extractor flags the item list as possibly incomplete, in which case the gap is disclosed in that receipt's Notes and status line. A receipt is held back for review only when the total itself cannot be read reliably (missing, uncertain, or not visible), or when the total is readable but the items still do not reconcile after the bounded repair attempts. Table Layout keeps its stricter behaviour and still holds an incomplete line list back for review.
 2. The app **plans** the submission, then runs **Phase 1** (printed totals) and **Phase 2** (line items) in sequential batches.
 3. Rows are **triaged**: exact matches log immediately, mismatches get **one repair pass**, and leftovers wait for **review** with their photos.
 4. **Commit** appends verified rows with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
@@ -128,6 +129,22 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 - `PIN_HASH` / `PIN_SALT` / hashed sessions live in Script Properties.
 - Receipt photos are sent to Gemini for extraction and are never stored in the Trash ledger or logs beyond the review flow; financial rows live only in your own Google Sheet.
 - `.clasp.json` (Script ID binding), `.clasprc.json` (personal clasp OAuth tokens), `.cashlogger-deployment-id` (Web App deployment ID), and `.opencode/` (agent session state) are git-ignored — never commit them.
+
+### Deployment visibility (read-only, verified)
+
+The header pill reports the deployment's access state **only when the server can positively prove it**. A running Apps Script cannot read a deployment's access setting (there is no getter for it, and `appsscript.json` only describes *new* deployments), so the pill is conservative by design — it shows `Access unknown` far more often than `Public`:
+
+| Pill shows | When the server proves it |
+|---|---|
+| **Public** (green dot) | **Only** when the active user is positively identified as a *different* account than the deploying owner. A verified non-owner who can execute this endpoint proves the deployment is not owner-only. |
+| **Private** (red dot) | **Never from this endpoint.** Nothing inside a running script can verify an owner-only deployment, so this state is never shown. |
+| **Access unknown** (grey dot) | Everything else — the caller is the deploying owner, the caller carries **no identity** (the app runs in a sandboxed iframe, so the Google session may not propagate; a blank email proves nothing), the owner identity could not be read, or the identity API failed. |
+
+So with the normal anonymous/public deployment most users will see **Access unknown**, which is the honest answer: the app cannot tell you who else can open it. Ask the owner, or check *Deploy → Manage deployments*. No email address, token, or owner credential is ever sent to the browser — only a boolean and a source label.
+
+**There is deliberately no visibility toggle in Settings.** Changing Google deployment access needs an owner OAuth token with the `script.deployments` scope, which must never be sent to a browser or stored in this app; Apps Script also exposes no API to read or write an existing deployment's access mode. Shipping a switch that could not be owner-authorized would let anyone who knows the family PIN lock every other user out.
+
+**Manual process (owner only):** Apps Script editor → **Deploy → Manage deployments →** edit the deployment → *Who has access* → save. This creates a new version on the **same deployment ID**, so the `/exec` URL keeps working. Note *Private/MYSELF* immediately stops other family members from opening the app; the owner re-opens it with their own Google account. Keep the previous version noted in Manage deployments for rollback.
 
 ## Project layout
 

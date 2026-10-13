@@ -158,6 +158,30 @@
       white-space: nowrap;
     }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,0.15); }
+    /* Access state comes from the server only. Green = verified reachable by
+       non-owners, red = verified owner-only, grey = not verifiable. */
+    .dot.public { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,0.15); }
+    .dot.private { background: #b4232a; box-shadow: 0 0 0 4px rgba(180,35,42,0.18); }
+    .dot.unknown { background: #8d8b8a; box-shadow: 0 0 0 4px rgba(141,139,138,0.18); }
+    .pill-sep { opacity: 0.55; }
+    #pill-access { color: var(--ink); }
+    #pill-access.pending { color: var(--muted); font-style: italic; }
+    /* Discreet, non-blocking configuration-check status. It never covers or
+       disables the entry form. */
+    .cfg-note {
+      max-width: 1180px;
+      margin: 10px auto 0;
+      padding: 8px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
     .theme-toggle {
       flex: none;
@@ -1342,7 +1366,7 @@
     </div>
     <div class="topbar-right">
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
-      <div class="pill" id="session-pill"><span class="dot"></span>Private &middot; Gemini &middot; Sheets<span id="sess-count" class="sess-count hidden"></span></div>
+      <div class="pill" id="session-pill" title="App access status is confirmed by the server on unlock."><span class="dot unknown" id="pill-dot" aria-hidden="true"></span><span id="pill-access">Access unknown</span><span class="pill-sep" aria-hidden="true">&middot;</span><span id="pill-env">Gemini &middot; Sheets</span><span id="sess-count" class="sess-count hidden"></span></div>
       <div class="settings-wrap">
         <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
         <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
@@ -1358,6 +1382,8 @@
       </div>
     </div>
   </div>
+
+  <div class="cfg-note hidden" id="cfg-note" role="status" aria-live="polite"></div>
 
   <div class="shell">
     <!-- Reference: Pinterest "Minimal Finance App UI" / "Expense Tracker UI" —
@@ -2055,6 +2081,12 @@
             renderPreviews();
           }
           var parts = [];
+          // Server disclosures ride along even for rows that saved cleanly, so
+          // an incomplete line list saved under a verified total is never
+          // silent. The same text is already stored in that receipt's Notes.
+          (report.rows || []).forEach(function (r) {
+            if (r.disclosure) parts.push('Receipt ' + (r.transactionId || r.origNum || '?') + ': ' + r.disclosure);
+          });
           (report.rows || []).forEach(function (r) {
             if (r.status === 'logged' || r.duplicate) return;
             if (r.status === 'force-adjusted' || r.status === 'auto-discount-adjusted') {
@@ -2405,6 +2437,9 @@
       // never changes triage, repair, or toggle policy, only how commit
       // writes verified rows to the sheet.
       var oneRowFlag = !!opts.oneRowPerReceipt;
+      // Quick-Input policy travels with every server call so the authoritative
+      // triage/commit layer - not the client - decides what may be saved.
+      var quickMode = !!opts.quickForce;
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
       var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
       function needBackend() {
@@ -2526,7 +2561,7 @@
                    hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
                    txn: st.okById[r.row_id] || null, repaired: false };
         });
-        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, items, token])
+        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, quickMode: quickMode }, items, token])
           .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
       }).then(function (tri) {
         // 5. bounded repair for eligible mismatches (grouped, budget-aware).
@@ -2575,7 +2610,7 @@
                      txn: st.repairedTxnById[id], repaired: true };
           }).filter(function (it) { return !!it.txn; });
           if (!re.length) return Promise.resolve([]);
-          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, re, token])
+          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, quickMode: quickMode }, re, token])
             .then(function (res) { return res.rows || []; })
             .catch(function (err) {
               if (cfAuthError(err)) throw err;
@@ -2608,7 +2643,7 @@
                    preError: it.preError || '' };
         });
         progress('Writing validated rows…');
-        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, oneRowPerReceipt: oneRowFlag }, finals, token]);
+        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount, oneRowPerReceipt: oneRowFlag, quickMode: quickMode }, finals, token]);
       });
       return chain;
     }
@@ -3198,7 +3233,12 @@
         try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
         if (histCard) histCard.classList.toggle('hidden', !!locked);
         // Never leave another session's rows in memory: locking drops the cache.
-        if (locked) { try { invalidateHistCache(); } catch (e) {} }
+        if (locked) {
+          try { invalidateHistCache(); } catch (e) {}
+          // Access state is session-scoped: never keep showing the previous
+          // session's verified status behind the PIN gate.
+          try { if (typeof paintAccessPill === 'function') paintAccessPill({ verified: false, access: 'unknown', detail: 'Sign in to verify access.' }); } catch (e2) {}
+        }
       }
       function setError(msg) { if (pinError) pinError.textContent = msg || ''; }
       function paintMode(msg) {
@@ -3224,6 +3264,9 @@
       function onUnlocked() {
         setLockedUI(false);
         checkSpreadsheetAndKey();
+        // Access state is only ever shown after the server confirms it. Until
+        // then the pill reads "Access unknown" (see paintAccessPill).
+        refreshAccessStatus();
         // Warm the first history page after the UI is interactive. Deferred
         // so unlock and the entry form never wait on it; silent by design.
         deferIdle(function () { prefetchPage(0); });
@@ -3399,21 +3442,28 @@
       function checkGeminiKey() {
         if (!hasBackend) return;
         if (!sessionToken) return;
+        var tok = arguments.length ? arguments[0] : sessionToken;
+        if (tok !== sessionToken) return;
         try {
           google.script.run
             .withSuccessHandler(function (has) {
+              cfgFinish();
+              if (cfgStale(tok)) return;
               setApiKeyLabel(!!has);
               if (!has) openApiModal('');
             })
             .withFailureHandler(function (err) {
+              cfgFinish();
+              if (cfgStale(tok)) return;
               if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
                 try { cfNoteAuthExpired(); } catch (e) {}
                 return;
               }
-              // Non-auth errors (e.g. transient) should not block the app.
+              // Non-auth errors (e.g. transient) must not block the app and
+              // must not be reported as a missing configuration.
             })
-            .hasGeminiKey(sessionToken);
-        } catch (e) {}
+            .hasGeminiKey(tok);
+        } catch (e) { cfgFinish(); }
       }
       window.addEventListener('cf:missing-key', function () { openApiModal(''); });
       if (apiBtn) apiBtn.addEventListener('click', function () { openApiModal(''); });
@@ -3476,38 +3526,120 @@
         if (label) label.textContent = text;
         else sheetBtn.textContent = text;
       }
+      // ---------- Access status (server-verified, never assumed) ----------
+      // The pill NEVER claims Private on its own. It starts unknown and is
+      // only repainted from a server response; a failed or stale response
+      // leaves the honest neutral state in place.
+      var accessPillPending = false;
+      function paintAccessPill(state) {
+        var dot = document.getElementById('pill-dot');
+        var label = document.getElementById('pill-access');
+        var pill = document.getElementById('session-pill');
+        var s = state || {};
+        var mode = s.verified && s.access === 'public' ? 'public'
+          : (s.verified && s.access === 'private' ? 'private' : 'unknown');
+        var text = mode === 'public' ? 'Public'
+          : (mode === 'private' ? 'Private' : 'Access unknown');
+        if (dot) dot.className = 'dot ' + mode;
+        if (label) {
+          label.textContent = text;
+          label.classList.toggle('pending', mode === 'unknown');
+        }
+        if (pill) {
+          pill.title = mode === 'unknown'
+            ? 'Access mode could not be verified from inside the app. ' +
+              (s.detail || 'Only the deployment owner can read it in Apps Script > Deploy > Manage deployment.')
+            : (s.detail || '');
+        }
+        return mode;
+      }
+      function refreshAccessStatus() {
+        if (!hasBackend || !sessionToken) return;
+        if (document.body.classList.contains('locked')) return;
+        if (accessPillPending) return; // never fire duplicate checks
+        accessPillPending = true;
+        var tokenAtCall = sessionToken;
+        paintAccessPill({ verified: false, access: 'unknown', detail: 'Checking…' });
+        cfCall('getAccessStatus', [tokenAtCall]).then(function (res) {
+          accessPillPending = false;
+          // Ignore a response that belongs to a session we already left.
+          if (tokenAtCall !== sessionToken) return;
+          paintAccessPill(res || { verified: false, access: 'unknown' });
+        }).catch(function (err) {
+          accessPillPending = false;
+          if (tokenAtCall !== sessionToken) return;
+          if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+            try { cfNoteAuthExpired(); } catch (e) {}
+            return;
+          }
+          // Transient failure stays honest and neutral.
+          paintAccessPill({ verified: false, access: 'unknown', detail: 'Access check failed; showing unknown.' });
+        });
+      }
+      // ---------- Configuration check (discreet pending state) ----------
+      // Unlock silently starts two backend calls (Sheet configured? Gemini key
+      // present?). This shows one small, non-blocking status for that work: the
+      // entry form stays fully usable, and every terminal path - success,
+      // missing configuration, auth expiry, transient failure - clears it.
+      // A missing Sheet/API key modal opens ONLY when the server confirmed the
+      // value is absent; a transient error is never reported as "not set up".
+      var cfgBusy = false;
+      function setCfgNote(text) {
+        var el = document.getElementById('cfg-note');
+        if (!el) return;
+        if (text) { el.textContent = text; el.classList.remove('hidden'); }
+        else { el.textContent = ''; el.classList.add('hidden'); }
+      }
+      function cfgStale(tok) {
+        // A response that belongs to a session we already left (logout, PIN
+        // change, expiry) must never open a modal or repaint the new session.
+        return tok !== sessionToken || document.body.classList.contains('locked');
+      }
+      function cfgFinish() { cfgBusy = false; setCfgNote(''); }
       function checkSpreadsheetAndKey() {
         if (!hasBackend) return;
         if (!sessionToken) return;
+        if (document.body.classList.contains('locked')) return;
+        if (cfgBusy) return; // never fire duplicate configuration checks
+        cfgBusy = true;
+        var tok = sessionToken;
+        setCfgNote('Checking configuration…');
         try {
           google.script.run
             .withSuccessHandler(function (hasSheet) {
+              if (cfgStale(tok)) { cfgFinish(); return; }
               setSheetLabel(!!hasSheet);
               if (!hasSheet) {
+                cfgFinish();
                 openSheetModal('');
                 checkGeminiKeyQuiet();
                 return;
               }
-              checkGeminiKey();
+              checkGeminiKey(tok);
             })
             .withFailureHandler(function (err) {
+              if (cfgStale(tok)) { cfgFinish(); return; }
+              cfgFinish();
               if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
                 try { cfNoteAuthExpired(); } catch (e) {}
                 return;
               }
-              checkGeminiKey();
+              // Transient failure: say so plainly, claim nothing about setup.
+              try { setStatus('Configuration check could not finish — you can still try logging.', ''); } catch (e2) {}
+              checkGeminiKeyQuiet();
             })
-            .hasSpreadsheet(sessionToken);
-        } catch (e) {}
+            .hasSpreadsheet(tok);
+        } catch (e) { cfgFinish(); }
       }
       function checkGeminiKeyQuiet() {
         if (!hasBackend) return;
         if (!sessionToken) return;
+        var tok = sessionToken;
         try {
           google.script.run
-            .withSuccessHandler(function (has) { setApiKeyLabel(!!has); })
+            .withSuccessHandler(function (has) { if (!cfgStale(tok)) setApiKeyLabel(!!has); })
             .withFailureHandler(function () {})
-            .hasGeminiKey(sessionToken);
+            .hasGeminiKey(tok);
         } catch (e) {}
       }
       window.addEventListener('cf:missing-sheet', function () { openSheetModal(''); });
