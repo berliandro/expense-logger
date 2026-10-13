@@ -878,14 +878,19 @@ function setHeroHidden(hidden) {
 
 // The raw PIN is never returned to the client and never compared on the
 // client. A correct PIN is exchanged (via login/setupPin) for a random
-// session token valid for 12 hours. Sensitive calls present ONLY the session
-// token, verified here on Google's backend. Tokens are stored hashed, so a
-// Script Properties dump yields no usable session.
+// session token valid for the globally configured duration. Sensitive calls
+// present ONLY the session token, verified here on Google's backend. Tokens
+// are stored hashed, so a Script Properties dump yields no usable session.
 var PIN_HASH_KEY = 'PIN_HASH';
 var PIN_SALT_KEY = 'PIN_SALT';
 var SESSIONS_KEY = 'SESSIONS_JSON';
 var PIN_FAIL_KEY = 'PIN_FAIL_JSON';
-var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+// Global session policy (shared by every web-app user). Duration choices are
+// whole hours from 1 to 168; activity renewal defaults ON.
+var SESSION_CONFIG_KEY = 'SESSION_CONFIG_JSON';
+var SESSION_TTL_DEFAULT_HOURS = 3;
+var SESSION_TTL_MIN_HOURS = 1;
+var SESSION_TTL_MAX_HOURS = 168;
 var LOGIN_MAX_FAILS = 5;
 var LOGIN_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -958,8 +963,8 @@ function resetLoginFails_() {
 }
 
 // ---- Sessions: stored as { sha256(token): expiryMs }. ----
-function loadSessions_() {
-  var map = {};
+
+function loadSessions_() {  var map = {};
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(SESSIONS_KEY);
     if (raw) {
@@ -995,6 +1000,80 @@ function clearAllSessions_() {
   } catch (e) {}
 }
 
+// ---- Global session policy: validated TTL + activity-renewal toggle,
+// shared by every web-app user. Invalid or absent stored values fall back
+// to the defaults; individual fields degrade independently.
+function readSessionConfig_() {
+  var cfg = { ttlHours: SESSION_TTL_DEFAULT_HOURS, refreshOnActivity: true };
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(SESSION_CONFIG_KEY);
+    if (raw) {
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        var h = Number(o.ttlHours);
+        if (isFinite(h) && Math.floor(h) === h && h >= SESSION_TTL_MIN_HOURS && h <= SESSION_TTL_MAX_HOURS) cfg.ttlHours = h;
+        if (typeof o.refreshOnActivity === 'boolean') cfg.refreshOnActivity = o.refreshOnActivity;
+      }
+    }
+  } catch (e) {}
+  return cfg;
+}
+
+function sessionTtlMs_() {
+  return readSessionConfig_().ttlHours * 60 * 60 * 1000;
+}
+
+// Serializes session-map writes so overlapping logins, renewals, and
+// logouts cannot silently drop each other's entries.
+function withSessionWriteLock_(fn) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); }
+  catch (e) { throw new Error('Session storage is busy - try again in a few seconds.'); }
+  try { return fn(); }
+  finally { try { lock.releaseLock(); } catch (e) {} }
+}
+
+// Session-gated: change the global session policy. Affects only sessions
+// minted afterwards; existing sessions keep their recorded expiry.
+function setSessionConfig(sessionToken, ttlHours, refreshOnActivity) {
+  requireSession_(sessionToken);
+  var n = Number(ttlHours);
+  if (!isFinite(n) || Math.floor(n) !== n || n < SESSION_TTL_MIN_HOURS || n > SESSION_TTL_MAX_HOURS) {
+    throw new Error('Session duration must be a whole number of hours from 1 to 168.');
+  }
+  if (typeof refreshOnActivity !== 'boolean') {
+    throw new Error('Activity-renewal preference must be true or false.');
+  }
+  var cfg = { ttlHours: n, refreshOnActivity: refreshOnActivity };
+  withSessionWriteLock_(function () {
+    PropertiesService.getScriptProperties().setProperty(SESSION_CONFIG_KEY, JSON.stringify(cfg));
+  });
+  return cfg;
+}
+
+// Session-gated activity renewal. Extends only the caller's own session to a
+// fresh TTL when renewal is enabled; otherwise returns the fixed expiry
+// untouched. Never resurrects expired or unknown sessions.
+function touchSession(sessionToken) {
+  requireSession_(sessionToken);
+  var tok = String(sessionToken || '');
+  var cfg = readSessionConfig_();
+  if (!cfg.refreshOnActivity) {
+    var map = loadSessions_();
+    return { valid: true, expiresAt: map[sha256Hex_(tok)] };
+  }
+  return withSessionWriteLock_(function () {
+    var live = loadSessions_();
+    if (typeof live[sha256Hex_(tok)] !== 'number' || live[sha256Hex_(tok)] <= Date.now()) {
+      throw new Error('Session expired - please log in again.');
+    }
+    var expiresAt = Date.now() + cfg.ttlHours * 60 * 60 * 1000;
+    live[sha256Hex_(tok)] = expiresAt;
+    saveSessions_(live);
+    return { valid: true, expiresAt: expiresAt };
+  });
+}
+
 // Pure PIN comparison, no side effects (callers own rate limiting).
 function checkPinSilent_(pin) {
   if (!isPinSetup()) return false;
@@ -1007,12 +1086,15 @@ function checkPinSilent_(pin) {
 }
 
 function createSession_() {
-  var map = loadSessions_(); // prunes expired first
-  var token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
-  var expiresAt = Date.now() + SESSION_TTL_MS;
-  map[sha256Hex_(token)] = expiresAt;
-  saveSessions_(map);
-  return { token: token, expiresAt: expiresAt };
+  var ttlMs = sessionTtlMs_();
+  return withSessionWriteLock_(function () {
+    var map = loadSessions_(); // prunes expired first
+    var token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    var expiresAt = Date.now() + ttlMs;
+    map[sha256Hex_(token)] = expiresAt;
+    saveSessions_(map);
+    return { token: token, expiresAt: expiresAt };
+  });
 }
 
 // First run: create the 6-digit PIN and immediately receive a session.
@@ -1031,7 +1113,8 @@ function setupPin(pin) {
   return createSession_();
 }
 
-// Exchange a correct PIN for a 12h session. Wrong attempts are rate-limited.
+// Exchange a correct PIN for a session valid for the configured duration.
+// Wrong attempts are rate-limited.
 function login(pin) {
   if (!isPinSetup()) {
     throw new Error('PIN is not set up yet.');
@@ -1046,13 +1129,16 @@ function login(pin) {
 }
 
 // Validate a session token. Expired entries are deleted server-side on sight.
+// Valid responses also carry the global session policy so the client can
+// paint countdowns and renewal UI without an extra call.
 function validateSession(token) {
   var tok = String(token || '');
   if (!tok) return { valid: false };
   var map = loadSessions_(); // prunes expired, deleting them
   var exp = map[sha256Hex_(tok)];
   if (typeof exp === 'number' && exp > Date.now()) {
-    return { valid: true, expiresAt: exp };
+    var cfg = readSessionConfig_();
+    return { valid: true, expiresAt: exp, ttlHours: cfg.ttlHours, refreshOnActivity: cfg.refreshOnActivity };
   }
   return { valid: false };
 }
@@ -1060,12 +1146,14 @@ function validateSession(token) {
 function logout(token) {
   var tok = String(token || '');
   if (!tok) return true;
-  var map = loadSessions_();
-  var h = sha256Hex_(tok);
-  if (map[h] !== undefined) {
-    delete map[h];
-    saveSessions_(map);
-  }
+  withSessionWriteLock_(function () {
+    var map = loadSessions_();
+    var h = sha256Hex_(tok);
+    if (map[h] !== undefined) {
+      delete map[h];
+      saveSessions_(map);
+    }
+  });
   return true;
 }
 
