@@ -1234,41 +1234,79 @@ function requireSession_(token) {
 // script.deployments; that credential must never be sent to this web app, a
 // browser, or a log.
 //
-// What IS provable: with executeAs USER_DEPLOYING, Session identity is only
-// available to the deploying owner - every other caller is anonymous. So an
-// anonymous caller that is executing this function proves the deployment is
-// reachable by non-owners, i.e. it is NOT owner-only. A caller WITH an
-// identity is the owner, which says nothing about who else can open the app.
+// What this endpoint treats as PROOF, deliberately narrow:
 //
-// Consequently this endpoint never returns 'private': nothing inside the
-// script can verify an owner-only deployment, and an unverified value must
-// never be presented as Private.
+//   public  - only when Session positively identifies the caller as somebody
+//             OTHER than the deploying owner. Under executeAs USER_DEPLOYING
+//             the effective user IS the deployer, so comparing the active
+//             user against the effective user is a real, server-side check
+//             that the caller is a non-owner - and a non-owner who can run
+//             this endpoint proves the deployment is not owner-only.
+//
+//   unknown - for every other case. A BLANK active-user email is NOT proof of
+//             anything: identity can be unavailable for the owner too (the
+//             app is served in a sandboxed iframe, so the Google session may
+//             not propagate). Blank, an identity equal to the deployer, or an
+//             unavailable/blank owner identity all stay unknown.
+//
+//   private - never returned here. Nothing inside a running script can verify
+//             an owner-only deployment, and an unverified value must never be
+//             presented as Private.
+//
+// Only a boolean (ownerSession) and the source string are returned; no email
+// address, token, or owner credential ever leaves the server.
 function getAccessStatus(sessionToken) {
   requireSession_(sessionToken);
-  var identity = '';
-  try {
-    var u = Session.getActiveUser();
-    if (u && u.getEmail) identity = String(u.getEmail() || '');
-  } catch (e) {}
-  if (identity) {
-    return {
-      access: 'unknown',
-      verified: false,
-      ownerSession: true,
-      source: 'owner-identity',
-      detail: 'Signed in as the deploying owner. A running script cannot read its own ' +
-        "deployment's access setting, so visibility is not shown as Private."
-    };
+
+  function emailOf(getter) {
+    try {
+      if (!Session || typeof Session[getter] !== 'function') return null; // data unavailable
+      var u = Session[getter]();
+      if (!u || typeof u.getEmail !== 'function') return null;
+      var v = String(u.getEmail() || '').trim();
+      return v.toLowerCase(); // '' means no identity available
+    } catch (e) {
+      return null; // Session API threw: identity data unavailable
+    }
   }
-  return {
-    access: 'public',
-    verified: true,
-    ownerSession: false,
-    source: 'anonymous-reachability',
-    detail: 'This request ran without a verified owner identity. An owner-only ' +
-      '(MYSELF) deployment blocks non-owners before the script executes, so this ' +
-      'deployment is reachable by non-owners.'
-  };
+
+  var owner = emailOf('getEffectiveUser');   // the deploying owner (executeAs USER_DEPLOYING)
+  var active = emailOf('getActiveUser');    // who is calling right now
+  var base = { ownerSession: false, verified: false, access: 'unknown' };
+
+  if (owner === null || active === null) {
+    base.source = 'identity-unavailable';
+    base.detail = 'Identity information is unavailable for this request, so access ' +
+      'visibility cannot be verified. Check Deploy > Manage deployments as the owner.';
+    return base;
+  }
+  if (!owner) {
+    base.source = 'owner-unverifiable';
+    base.detail = 'The deploying owner could not be identified from the server, so ' +
+      'this request cannot be classified as owner or non-owner.';
+    return base;
+  }
+  if (!active) {
+    base.source = 'identity-blank';
+    base.detail = 'This request carries no verified identity. That can happen for the ' +
+      'owner as well as for anyone else, so visibility is not shown as Private or Public.';
+    return base;
+  }
+  if (active === owner) {
+    base.ownerSession = true;
+    base.source = 'owner-session';
+    base.detail = 'Signed in as the deploying owner. A running script cannot read its own ' +
+      "deployment's access setting, so visibility is not shown as Private.";
+    return base;
+  }
+  // Positively identified non-owner executing this endpoint.
+  base.ownerSession = false;
+  base.verified = true;
+  base.access = 'public';
+  base.source = 'non-owner-identity';
+  base.detail = 'This request was made by a verified account that is not the deploying ' +
+    'owner, which proves the deployment is reachable by non-owners.';
+  return base;
 }
 
 // ---------- GEMINI API KEY (session-gated, prompted after PIN) ----------

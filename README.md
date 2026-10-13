@@ -132,13 +132,15 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 
 ### Deployment visibility (read-only, verified)
 
-The header pill reports the deployment's access state **only after the server proves it**, and it never claims *Private* unless the server actually verified an owner-only deployment:
+The header pill reports the deployment's access state **only when the server can positively prove it**. A running Apps Script cannot read a deployment's access setting (there is no getter for it, and `appsscript.json` only describes *new* deployments), so the pill is conservative by design — it shows `Access unknown` far more often than `Public`:
 
-| Pill shows | When |
+| Pill shows | When the server proves it |
 |---|---|
-| **Public** (green dot) | Your request reached the script with no verified owner identity. An owner-only (MYSELF) deployment blocks non-owners before the script runs, so this proves the deployment is reachable by non-owners. |
-| **Private** (red dot) | Only if the server verified an owner-only deployment. Nothing inside a running script can currently verify this, so this state is normally never shown. |
-| **Access unknown** (grey dot) | Signed in as the deploying owner, or the check failed. Visibility is genuinely unknown, not silently assumed. |
+| **Public** (green dot) | **Only** when the active user is positively identified as a *different* account than the deploying owner. A verified non-owner who can execute this endpoint proves the deployment is not owner-only. |
+| **Private** (red dot) | **Never from this endpoint.** Nothing inside a running script can verify an owner-only deployment, so this state is never shown. |
+| **Access unknown** (grey dot) | Everything else — the caller is the deploying owner, the caller carries **no identity** (the app runs in a sandboxed iframe, so the Google session may not propagate; a blank email proves nothing), the owner identity could not be read, or the identity API failed. |
+
+So with the normal anonymous/public deployment most users will see **Access unknown**, which is the honest answer: the app cannot tell you who else can open it. Ask the owner, or check *Deploy → Manage deployments*. No email address, token, or owner credential is ever sent to the browser — only a boolean and a source label.
 
 **There is deliberately no visibility toggle in Settings.** Changing Google deployment access needs an owner OAuth token with the `script.deployments` scope, which must never be sent to a browser or stored in this app; Apps Script also exposes no API to read or write an existing deployment's access mode. Shipping a switch that could not be owner-authorized would let anyone who knows the family PIN lock every other user out.
 
