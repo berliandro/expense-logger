@@ -1464,7 +1464,7 @@
             </div>
           </div>
 
-          <input type="file" id="cameraInput" class="hidden-input" accept="image/*" capture="environment" multiple>
+          <input type="file" id="cameraInput" class="hidden-input" accept="image/*" capture="environment">
           <input type="file" id="galleryInput" class="hidden-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/*" multiple>
           <div id="selected-file"></div>
         </div>
@@ -1829,6 +1829,7 @@
       if (selectedFiles.length === 0) {
         previewWrap.classList.add('hidden');
         uploadPlaceholder.classList.remove('hidden');
+        previewCount.textContent = '0 photos';
         photoCountLabel.textContent = 'JPG · PNG · WEBP · HEIC';
         return;
       }
