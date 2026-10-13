@@ -2515,39 +2515,76 @@
         return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, items, token])
           .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
       }).then(function (tri) {
-        // 5. one bounded repair for eligible mismatches (grouped, budget-aware)
+        // 5. bounded repair for eligible mismatches (grouped, budget-aware).
+        // Base pipeline runs one pass. Quick-Input retries rows that are
+        // still mismatched up to two extra times; each extra round re-triages
+        // the repaired results and only continues for readable-total
+        // mismatches (server verdict), never for uncertain/review rows.
         var byId = {};
         tri.items.forEach(function (it) { byId[it.row_id] = it; });
-        var eligible = tri.verdicts.filter(function (v) { return v.repairEligible; });
-        if (!eligible.length) return { items: tri.items, repairedTxnById: {} };
-        progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
-        var rjobs = [];
-        for (var i = 0; i < eligible.length; i += 12) rjobs.push(eligible.slice(i, i + 12));
-        return cfRunBatchQueue(rjobs, function (job, canSplit) {
-          var g = job.rows;
-          var reads = g.map(function (v) {
-            var r = rows.filter(function (x) { return x.row_id === v.row_id; })[0];
-            var getData = (r && r.file) ? cfReadFileBase64(r.file) : Promise.resolve((r && r.data) || '');
-            return getData.then(function (b64) {
-              return { row_id: v.row_id, origNum: v.origNum, forcedType: r ? r.type : null,
-                       note: r ? r.note : '', hasPhoto: true, data: b64,
-                       mimeType: (r && r.mimeType) || 'image/jpeg',
-                       expectedTotal: v.expectedTotal, calculatedTotal: v.calculatedTotal, difference: v.difference };
+        var QUICK_EXTRA_REPAIRS = 2;
+        function runRepairBatch(list, label) {
+          progress(label + ': re-checking ' + list.length + ' mismatched row(s)…');
+          var rjobs = [];
+          for (var i = 0; i < list.length; i += 12) rjobs.push(list.slice(i, i + 12));
+          return cfRunBatchQueue(rjobs, function (job, canSplit) {
+            var g = job.rows;
+            var reads = g.map(function (v) {
+              var r = rows.filter(function (x) { return x.row_id === v.row_id; })[0];
+              var getData = (r && r.file) ? cfReadFileBase64(r.file) : Promise.resolve((r && r.data) || '');
+              return getData.then(function (b64) {
+                return { row_id: v.row_id, origNum: v.origNum, forcedType: r ? r.type : null,
+                         note: r ? r.note : '', hasPhoto: true, data: b64,
+                         mimeType: (r && r.mimeType) || 'image/jpeg',
+                         expectedTotal: v.expectedTotal, calculatedTotal: v.calculatedTotal, difference: v.difference };
+              });
             });
-          });
-          return Promise.all(reads).then(function (payload) {
-            return cfCall('repairReceiptRows', [submissionId, payload, token]).then(function (res) {
-              (res.ok || []).forEach(function (o) { st.repairedTxnById[o.row_id] = o.txn; });
-              progress('Repair pass: re-checked ' + payload.length + ' row(s).');
-              return {};
-            }).catch(function (err) {
+            return Promise.all(reads).then(function (payload) {
+              return cfCall('repairReceiptRows', [submissionId, payload, token]).then(function (res) {
+                (res.ok || []).forEach(function (o) { st.repairedTxnById[o.row_id] = o.txn; });
+                progress(label + ': re-checked ' + payload.length + ' row(s).');
+                return {};
+              }).catch(function (err) {
+                if (cfAuthError(err)) throw err;
+                if (cfSizeError(err) && canSplit) return { split: true };
+                progress(label + ': a group failed; keeping originals for review.');
+                return {};
+              });
+            });
+          }, progress);
+        }
+        function retriageRepaired() {
+          var re = Object.keys(st.repairedTxnById).map(function (id) {
+            var orig = byId[id] || {};
+            return { row_id: id, origNum: orig.origNum || 0, forcedType: orig.forcedType || null, note: orig.note || '',
+                     hasPhoto: !!orig.hasPhoto, phase1: orig.phase1 || null,
+                     txn: st.repairedTxnById[id], repaired: true };
+          }).filter(function (it) { return !!it.txn; });
+          if (!re.length) return Promise.resolve([]);
+          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, autoDiscount: tg.autoDiscount }, re, token])
+            .then(function (res) { return res.rows || []; })
+            .catch(function (err) {
               if (cfAuthError(err)) throw err;
-              if (cfSizeError(err) && canSplit) return { split: true };
-              progress('Repair pass: a group failed; keeping originals for review.');
-              return {};
+              progress('Repair re-check skipped; keeping latest results for review.');
+              return [];
             });
+        }
+        function done() { return { items: tri.items, repairedTxnById: st.repairedTxnById }; }
+        var eligible = tri.verdicts.filter(function (v) { return v.repairEligible; });
+        if (!eligible.length) return done();
+        var extraLeft = opts.quickForce ? QUICK_EXTRA_REPAIRS : 0;
+        function extraRound() {
+          if (extraLeft <= 0) return Promise.resolve();
+          return retriageRepaired().then(function (verdicts) {
+            var still = verdicts.filter(function (v) { return v.status === 'mismatch'; });
+            if (!still.length) return;
+            extraLeft--;
+            progress('Quick-Input retry (' + (QUICK_EXTRA_REPAIRS - extraLeft) + ' of ' + QUICK_EXTRA_REPAIRS + ')…');
+            return runRepairBatch(still, 'Quick-Input retry').then(extraRound);
           });
-        }, progress).then(function () { return { items: tri.items, repairedTxnById: st.repairedTxnById }; });
+        }
+        progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
+        return runRepairBatch(eligible, 'Repair pass').then(extraRound).then(done);
       }).then(function (pre) {
         // 6. commit (server reconciles authoritatively, applies toggles, appends)
         var finals = pre.items.map(function (it) {
