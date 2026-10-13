@@ -66,6 +66,7 @@ const TRANSACTION_SCHEMA = {
       enum: ['Expense', 'Income'],
       description: 'Classify as "Income" if the transaction/note represents incoming money (salary, sales, freelance, payment received, refunds, transfers in). Classify as "Expense" for purchases, bills, or money spent.'
     },
+    receipt_title: { type: 'STRING', description: 'OPTIONAL. The receipt\'s own printed title/header (e.g. "STRUK PEMBELIAN", store receipt name) when one is clearly legible. OMIT when there is none. Never invent or paraphrase one.' },
     items: {
       type: 'ARRAY',
       items: {
@@ -73,6 +74,8 @@ const TRANSACTION_SCHEMA = {
         properties: {
           description: { type: 'STRING' },
           amount: { type: 'NUMBER', description: 'In IDR, plain number, no symbol or separators. Regular charges are positive. Discounts, deductions, rebates, voucher/promo cuts, cashback applied as a deduction (diskon, potongan, pengurangan) MUST be negative numbers. Income amounts are normally positive, but discount/deduction lines (diskon, potongan, voucher, promo, cashback, withheld fees) MUST be negative like expenses.' },
+          quantity: { type: 'NUMBER', description: 'OPTIONAL. Count of this line as printed (e.g. "2" for 2 pcs, "0.5" kg). OMIT when no count is shown or it is not reliably readable. Never derive it by dividing prices.' },
+          unit_price: { type: 'NUMBER', description: 'OPTIONAL. Price of ONE unit as printed, distinct from the extended line total. OMIT when not printed or not reliably readable. Never derive it by dividing.' },
           category: { type: 'STRING', enum: EXPENSE_CATEGORIES },
           spending_type: { type: 'STRING', enum: SPENDING_TYPES, description: 'Expense items ONLY. MUST be omitted for Income items.' }
         },
@@ -312,6 +315,7 @@ var PHASE2_TXN_SCHEMA = {
     line_list_complete: { type: 'STRING', enum: ['complete', 'possibly_incomplete', 'illegible'],
       description: 'Whether every visible charged line was transcribed.' },
     extraction_notes: { type: 'STRING', description: 'Concise flags (hidden items, duplicates avoided, ambiguous lines), else empty.' },
+    receipt_title: { type: 'STRING', description: 'OPTIONAL. The receipt\'s own printed title when clearly legible; omit when there is none. Never invent one.' },
     items: TRANSACTION_SCHEMA.properties.items
   },
   required: ['row_id', 'transaction_date', 'merchant', 'transaction_type', 'line_list_complete', 'items']
@@ -358,6 +362,9 @@ function buildPhase2Prompt(rows) {
     'target only - never invent a balancing line, item, price, or discount to reach it. If the receipt shows a ' +
     'single final total with no itemized breakdown, use one clearly described receipt-level line; do NOT use that ' +
     'fallback when an item list is visible but partly hidden, cropped, or unreadable - flag possibly_incomplete instead. ' +
+    'Also return, ONLY when they are clearly printed: the receipt\'s own title in receipt_title, and per item the ' +
+    'printed count in quantity and the printed price of one unit in unit_price. Omit any of these when they are not ' +
+    'legible; never derive a unit price by dividing and never infer a count. ' +
     'Rows: ';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -377,6 +384,7 @@ function buildRepairPrompt(rows) {
     'wrong digits or signs; quantity x unit-price mistakes; the same line extracted twice; subtotal mistaken for an ' +
     'item. The difference shown is (expected - calculated). It is FORBIDDEN to invent a balancing amount, item, ' +
     'price, or discount to force a match - return only lines actually visible, or flag possibly_incomplete/illegible. ' +
+    'Keep quantity and unit_price only when printed and legible; never derive them. ' +
     'Rows: ';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -1213,6 +1221,56 @@ function requireSession_(token) {
   }
 }
 
+// ---------- DEPLOYMENT ACCESS STATUS (read-only, honest) ----------
+//
+// Reports only what can actually be PROVEN about this deployment's access
+// configuration from inside the running script, and nothing more.
+//
+// Apps Script cannot read a deployment's access setting from the script:
+// ScriptApp exposes no access-mode getter, and appsscript.json describes the
+// access value used for NEW deployments created from that manifest - it does
+// not describe the access mode of an existing deployment. The Deployment REST
+// API could read (and change) it, but only with an owner OAuth token carrying
+// script.deployments; that credential must never be sent to this web app, a
+// browser, or a log.
+//
+// What IS provable: with executeAs USER_DEPLOYING, Session identity is only
+// available to the deploying owner - every other caller is anonymous. So an
+// anonymous caller that is executing this function proves the deployment is
+// reachable by non-owners, i.e. it is NOT owner-only. A caller WITH an
+// identity is the owner, which says nothing about who else can open the app.
+//
+// Consequently this endpoint never returns 'private': nothing inside the
+// script can verify an owner-only deployment, and an unverified value must
+// never be presented as Private.
+function getAccessStatus(sessionToken) {
+  requireSession_(sessionToken);
+  var identity = '';
+  try {
+    var u = Session.getActiveUser();
+    if (u && u.getEmail) identity = String(u.getEmail() || '');
+  } catch (e) {}
+  if (identity) {
+    return {
+      access: 'unknown',
+      verified: false,
+      ownerSession: true,
+      source: 'owner-identity',
+      detail: 'Signed in as the deploying owner. A running script cannot read its own ' +
+        "deployment's access setting, so visibility is not shown as Private."
+    };
+  }
+  return {
+    access: 'public',
+    verified: true,
+    ownerSession: false,
+    source: 'anonymous-reachability',
+    detail: 'This request ran without a verified owner identity. An owner-only ' +
+      '(MYSELF) deployment blocks non-owners before the script executes, so this ' +
+      'deployment is reachable by non-owners.'
+  };
+}
+
 // ---------- GEMINI API KEY (session-gated, prompted after PIN) ----------
 
 // True when a Gemini key is stored in Script Properties. Session-gated so the
@@ -1738,13 +1796,27 @@ function sanitizeTransaction(txn) {
     } else if (SPENDING_TYPES.indexOf(spendingType) === -1) {
       spendingType = '';
     }
-    return {
+    var clean = {
       description: item.description || txn.merchant,
       amount: amount,
       category: category,
       spending_type: spendingType
     };
+    // Optional structured fields, kept ONLY when the model actually returned a
+    // usable number. Never derived, never guessed, never defaulted - a missing
+    // quantity/unit price stays absent so no price detail is ever fabricated.
+    var qty = Number(item.quantity);
+    if (isFinite(qty) && qty > 0) clean.quantity = qty;
+    var unit = Number(item.unit_price);
+    if (isFinite(unit) && unit !== 0) clean.unit_price = unit;
+    return clean;
   });
+  // Optional printed receipt title: trimmed, length-capped, and dropped when
+  // the model had none. Never synthesised here - condenseTxn_ falls back to
+  // facts already present on the transaction.
+  var title = String(txn.receipt_title || '').trim().slice(0, 120);
+  if (title) txn.receipt_title = title;
+  else delete txn.receipt_title;
   return txn;
 }
 
@@ -1757,8 +1829,17 @@ function idr_(n) {
 
 // Server-side row verdict. Never trusts batch totals - strictly per row.
 // verdicts: ok | mismatch | uncertain | not_applicable | invalid
+//
+// opts.quickMode switches on the Quick-Input policy ONLY (Table Layout is
+// untouched): there, a reliably read final Total is the decisive check. A
+// matching item sum is saved under that verified total even when the model
+// flagged the line list as possibly incomplete - the incompleteness is
+// disclosed in the row message (which lands in Notes), never invented away.
+// An unreadable/uncertain total is still `uncertain`, so it stays reviewable
+// regardless of Force-save (applyTogglePolicy_ only acts on `mismatch`).
 function reconcileRow_(phase1, txn, opts) {
   opts = opts || {};
+  var quickMode = !!opts.quickMode;
   var hasPhoto = !!opts.hasPhoto;
   if (!hasPhoto) return { verdict: 'not_applicable', expectedTotal: null, calculatedTotal: null, difference: null, message: '' };
   if (!phase1) {
@@ -1791,9 +1872,21 @@ function reconcileRow_(phase1, txn, opts) {
     return { verdict: 'ok', expectedTotal: expected, calculatedTotal: calc, difference: 0, message: '' };
   }
   if (diff === 0) {
+    // Item list flagged as possibly incomplete/illegible but the extracted
+    // sum still equals the reliable printed total.
+    var incompleteMsg = 'Totals match (' + idr_(expected) + ') but the line list may be incomplete' +
+      (flags ? ': ' + flags : '.');
+    if (quickMode) {
+      // Quick-Input: the printed total is the decisive check. Save under it and
+      // disclose the incompleteness instead of holding the receipt for review.
+      // No item or price is invented to close the gap.
+      return { verdict: 'ok', expectedTotal: expected, calculatedTotal: calc, difference: 0,
+               disclosure: 'QUICK-INPUT INCOMPLETE LINE LIST: ' + incompleteMsg.slice(6),
+               message: incompleteMsg };
+    }
+    // Table Layout keeps its original, stricter behaviour.
     return { verdict: 'uncertain', expectedTotal: expected, calculatedTotal: calc, difference: 0,
-             message: 'Totals match (' + idr_(expected) + ') but the line list may be incomplete' +
-               (flags ? ': ' + flags : '.') + ' Expand the item list and verify before logging.' };
+             message: incompleteMsg + ' Expand the item list and verify before logging.' };
   }
   if (diff > 0) {
     return { verdict: 'mismatch', expectedTotal: expected, calculatedTotal: calc, difference: diff,
@@ -2810,10 +2903,12 @@ function triageRow_(it, toggles) {
   try {
     if (it.forcedType === 'Income' || it.forcedType === 'Expense') raw.transaction_type = it.forcedType;
     var txn = sanitizeTransaction(JSON.parse(JSON.stringify(raw)));
-    var rec = reconcileRow_(it.phase1 || null, txn, { hasPhoto: !!it.hasPhoto });
+    var rec = reconcileRow_(it.phase1 || null, txn, { hasPhoto: !!it.hasPhoto, quickMode: !!(toggles && toggles.quickMode) });
     if (rec.verdict === 'ok' || rec.verdict === 'not_applicable') {
+      // A Quick-Input save under a verified total still carries the
+      // incomplete-line-list disclosure so it reaches Notes verbatim.
       return { row_id: rowId, origNum: origNum, txn: txn, rec: rec, status: 'verified',
-               message: '', repairEligible: false };
+               message: rec.disclosure || '', repairEligible: false };
     }
     if (rec.verdict === 'mismatch') {
       return { row_id: rowId, origNum: origNum, txn: txn, rec: rec, status: 'mismatch',
@@ -2831,7 +2926,7 @@ function triageRow_(it, toggles) {
 function reconcileReceiptRows(submission, items, sessionToken) {
   requireSession_(sessionToken);
   submission = submission || {};
-  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount };
+  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount, quickMode: !!submission.quickMode };
   items = items || [];
   return {
     rows: items.map(function (it) {
@@ -2853,7 +2948,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
   submission = submission || {};
   var submissionId = String(submission.submission_id || '').trim();
   if (!submissionId) throw new Error('Submission is missing its stable ID.');
-  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount };
+  var toggles = { forceLog: !!submission.forceLog, autoDiscount: !!submission.autoDiscount, quickMode: !!submission.quickMode };
   finals = finals || [];
   if (!Array.isArray(finals) || finals.length === 0) {
     throw new Error('Nothing to commit - no final rows were provided.');
@@ -2883,7 +2978,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
       }
       var t = triageRow_(it, toggles);
       if (t.status === 'verified') {
-        staged.push({ final: it, txn: t.txn, triage: t, status: 'logged', message: '' });
+        staged.push({ final: it, txn: t.txn, triage: t, status: 'logged', message: t.message || '' });
         allocDates.push(t.txn.transaction_date);
       } else if (t.status === 'mismatch') {
         var pol = applyTogglePolicy_(t.txn, t.rec, toggles);
@@ -2927,6 +3022,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
       rowsOut.push({ row_id: st2.final.row_id, origNum: st2.final.origNum, status: st2.status,
         transactionId: txnId, type: st2.txn.transaction_type, merchant: st2.txn.merchant,
         itemCount: appendTxn.items.length, total: total,
+        disclosure: (st2.triage && st2.triage.rec && st2.triage.rec.disclosure) || '',
         message: st2.status === 'logged' ? '' : st2.message });
     }
     ledgerWrite_(ss, ledgerEntries);
@@ -2951,17 +3047,36 @@ function commitReceiptRows(submission, finals, sessionToken) {
 // Condenses one reconciled receipt into a single spreadsheet row for
 // one-row-per-receipt mode. Amount is the verified signed total; the full
 // item list (including any balancing adjustment, negatives preserved) moves
-// into the notes summary. Nothing is fabricated: without a title the
-// description falls back to merchant plus item count. IDs, dates, and types
-// pass through untouched.
+// into the notes summary.
+//
+// Nothing is fabricated here:
+//  - Description prefers the receipt's own printed title; otherwise a single
+//    item uses its own description, and several items use merchant plus the
+//    dominant category and item count - all facts already on the transaction.
+//  - Quantities and unit prices appear only when the model returned them as
+//    structured numbers (sanitizeTransaction_ drops everything else). A
+//    missing unit price is never derived by division and never invented.
+//  - Original items stay on the transaction for debugging/review; exactly one
+//    spreadsheet row is written.
 function condenseTxn_(txn) {
   var items = (txn && txn.items) || [];
   var total = Math.round(items.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
-  var desc = items.length === 1
-    ? String(items[0].description || txn.merchant || 'Unknown')
-    : String(txn.merchant || 'Unknown') + ' (' + items.length + ' items)';
+  var merchant = String(txn.merchant || 'Unknown');
+  var printed = String(txn.receipt_title || '').trim();
+  var category = dominantCategory_(txn);
+  var desc;
+  if (printed) desc = printed;
+  else if (items.length === 1) desc = String(items[0].description || merchant);
+  else desc = merchant + ' · ' + category + ' (' + items.length + ' items)';
   var lines = items.map(function (it) {
-    return '- ' + String(it.description || '') + ': ' + idr_(Number(it.amount || 0));
+    var label = String(it.description || '');
+    var parts = [];
+    var qty = Number(it.quantity);
+    if (isFinite(qty) && qty > 0) parts.push('×' + (qty + '').replace(/\.0+$/, ''));
+    var unit = Number(it.unit_price);
+    if (isFinite(unit) && unit !== 0) parts.push('@ ' + idr_(unit));
+    var amount = idr_(Number(it.amount || 0));
+    return '- ' + label + (parts.length ? ' ' + parts.join(' ') + ' = ' + amount : ': ' + amount);
   });
   var isIncome = txn.transaction_type === 'Income';
   return {
@@ -2971,11 +3086,12 @@ function condenseTxn_(txn) {
       transaction_type: txn.transaction_type,
       line_list_complete: txn.line_list_complete,
       extraction_notes: txn.extraction_notes,
+      receipt_title: txn.receipt_title,
       transactionId: txn.transactionId,
       items: [{
         description: desc,
         amount: total,
-        category: dominantCategory_(txn),
+        category: category,
         spending_type: isIncome ? '' : dominantSpendingType_(txn)
       }]
     },
