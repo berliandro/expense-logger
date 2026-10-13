@@ -11,7 +11,10 @@ const count = (s, re) => (s.match(re) || []).length;
 
 assert.equal(count(html, /<\/body>/gi), 1, 'one body closer');
 assert.equal(count(html, /<\/html>/gi), 1, 'one html closer');
-assert.doesNotMatch(html.trimEnd(), />\s*<\/body>\s*<\/html>\s*$/i, 'no stray >');
+// A stray '>' is a character standing alone on its own line, so the pattern must
+// anchor to a line break. A loose />\s*<\/body>/ would also match the legitimate
+// "</script>" line that correctly precedes </body>.
+assert.doesNotMatch(html.trimEnd(), /(?:^|\r?\n)[ \t]*>[ \t]*\r?\n[ \t]*<\/body>/i, 'no stray >');
 assert.match(html.trimEnd(), /<\/body>\s*<\/html>$/i, 'correct close order');
 
 const pillAt = html.indexOf('id="session-pill"');
@@ -57,8 +60,10 @@ assert.match(code, /prior\.status === 'auto-discount-adjusted'/, 'historical led
 assert.match(code, /var st = 'force-adjusted';/, 'only Force-save generates adjusted status');
 assert.doesNotMatch(code, /discountAdjusted/, 'no obsolete summary counter');
 
-const reconcileMatch = code.match(/function reconcileRow_\([\s\S]*?\n\}\n(?=\nfunction dominantCategory_\()/);
-const policyMatch = code.match(/function applyTogglePolicy_\([\s\S]*?\n\}\n(?=\n\/\/ ---------- SHEET WRITING ----------)/);
+// Code.js is stored with CRLF endings, so every line anchor here must tolerate
+// either convention instead of assuming LF.
+const reconcileMatch = code.match(/function reconcileRow_\([\s\S]*?\r?\n\}\r?\n(?=\r?\nfunction dominantCategory_\()/);
+const policyMatch = code.match(/function applyTogglePolicy_\([\s\S]*?\r?\n\}\r?\n(?=\r?\n\/\/ ---------- SHEET WRITING ----------)/);
 assert.ok(reconcileMatch, 'find reconcileRow_');
 assert.ok(policyMatch, 'find applyTogglePolicy_');
 const context = {
