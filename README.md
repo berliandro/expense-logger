@@ -30,7 +30,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Google Sheets integration** — Rows append to `MMMM yyyy` month sheets copied from an auto-created `Template`; missing system headers are migrated idempotently.
 - **Recoverable Trash** — Deleted entries and whole receipts move to a hidden `_CF_Trash` sheet with typed payloads and deletion timestamps.
 - **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
-- **Desktop and mobile UI** — Dark default with light mode, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to narrow phone screens.
+- **Light default, dark mode included** — flat paper-white surfaces, editorial serif headings, small radii, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to 320px.
 
 ## How it works
 
@@ -64,7 +64,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 git clone https://github.com/berliandro/expense-logger.git
 cd expense-logger
 clasp login          # opens Google OAuth in your browser (auth stays local)
-clasp push           # uploads Code.js + Index.html + appsscript.json
+clasp push           # uploads Code.js, Index.html, the template partials, and appsscript.json
 ```
 
 Then open the web-app `/exec` URL, set a 6-digit PIN on first run, and add the Gemini API key (Settings menu → Set API key) and Google Sheet (Settings menu → Set Sheet) when prompted. If the script was copied from an existing Sheet (container-bound), that sheet is used automatically.
@@ -116,13 +116,29 @@ clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
 
 ## Tests
 
-Run the source-contract and isolated reconciliation-policy regressions with Node.js:
+Run the source-contract, isolated reconciliation-policy, and design/performance guards with Node.js:
+
+```sh
+npm test
+```
+
+Or run the suites directly:
 
 ```sh
 node tests/ui-polish.test.js
+node tests/design-perf.test.js
 ```
 
-These tests cover source contracts and isolated backend policy functions. Browser layout and physical Android testing should be reported separately when available.
+`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. Browser layout and physical Android testing are reported separately when available.
+
+## Performance and design notes
+
+- **Flat surfaces, not glass.** There are no `backdrop-filter` layers and no decorative background gradients. The layout stays flat and light while borders, spacing, and type carry the hierarchy. Phones do not composite blur while scrolling.
+- **System fonts only.** The external Google Fonts request was removed; first paint no longer waits on a third-party stylesheet or font files.
+- **Recent-logs cache.** `getRecentLogs` caches the first pages in `CacheService` for 120 seconds. Every append, delete, restore, and re-sort bumps a version key, so a caller never reads a stale page after its own mutation.
+- **Perceived latency.** The first history page preloads after unlock; cached pages reveal immediately, and later pages prefetch in the background.
+- **Rendering.** History pages are inserted in one `insertAdjacentHTML` write, photo thumbnails reuse one object URL per file, and nonessential cloud preferences wait for the `cf:unlocked` event.
+- **Measured locally.** Chromium emulating a 390×844 phone at 3× DPR, 8× CPU throttle, with 80 history rows: median 47.6 FPS during continuous scrolling over three runs, versus 14.0 FPS on the previous build. The structural change is 17 `backdrop-filter` declarations and 2 external font requests removed. This is browser emulation; physical Android testing remains a manual check.
 
 ## Troubleshooting
 
@@ -159,11 +175,19 @@ So with the normal anonymous/public deployment most users will see **Access unkn
 
 | Path | Purpose |
 |------|---------|
-| `Code.js` | Apps Script backend: serves the page, calls Gemini, writes Sheets, owns Trash/IDs/sort |
-| `Index.html` | Single-page frontend (dark default + light mode, Table Layout + Quick-Input tabs) |
+| `Code.js` | Apps Script backend: serves the page, calls Gemini, writes Sheets, owns Trash/IDs/sort, and caches recent-log pages |
+| `Index.html` | Thin template shell; composes the partials below with `HtmlService` includes |
+| `Styles.html` | Flat light/dark design system: paper surfaces, orange accent, serif display type, small radii |
+| `Layout.html` | Body markup: top bar, entry panel, history, dialogs |
+| `AppCore.html` | Shared client helpers, photo previews, lightboxes, submission engine |
+| `AppEntry.html` | Table Layout rows and batch submission |
+| `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent Logs |
 | `appsscript.json` | Timezone, runtime, and web-app access settings |
 | `docs/screenshots/` | Desktop and mobile product screenshots shown above |
+| `docs/feature-backlog.md` | Prioritized product and reliability backlog |
 | `Install and Tutorial Berliandro Cash Log.bat` | Family Windows installer |
 | `Update.bat` | Updater that preserves the Web App URL |
 
-There is no build step and no test runner shipped in the repo — `Code.js` and `Index.html` deploy directly with `clasp push`.
+There is no build step: `clasp push` uploads `Code.js`, the HTML partials, and `appsscript.json` directly. `Index.html` is evaluated as an Apps Script template, so the partials are composed at serve time.
+
+Product ideas and the suggested next milestone are in [`docs/feature-backlog.md`](docs/feature-backlog.md).

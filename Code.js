@@ -533,18 +533,30 @@ function getSpreadsheet_() {
 
 // True when logging can proceed: container-bound sheet OR a valid saved ID.
 // Session-gated like hasGeminiKey so config presence is only revealed logged-in.
+// A short script-cache entry avoids re-opening the spreadsheet on every unlock;
+// saveSpreadsheetId clears it so a changed Sheet is re-verified immediately.
+var HAS_SHEET_CACHE_KEY = 'CF_HAS_SHEET_V1';
 function hasSpreadsheet(sessionToken) {
   requireSession_(sessionToken);
   try {
-    if (getBoundSpreadsheet_()) return true;
-    var raw = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-    var id = extractSpreadsheetId_(raw);
-    if (!id) return false;
-    SpreadsheetApp.openById(id).getId();
-    return true;
-  } catch (e) {
-    return false;
+    var cache = CacheService.getScriptCache();
+    var hit = cache.get(HAS_SHEET_CACHE_KEY);
+    if (hit === '1') return true;
+    if (hit === '0') return false;
+  } catch (e) {}
+  var ok = false;
+  try {
+    if (getBoundSpreadsheet_()) ok = true;
+    else {
+      var raw = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+      var id = extractSpreadsheetId_(raw);
+      if (id) { SpreadsheetApp.openById(id).getId(); ok = true; }
+    }
+  } catch (e2) {
+    ok = false;
   }
+  try { CacheService.getScriptCache().put(HAS_SHEET_CACHE_KEY, ok ? '1' : '0', 300); } catch (e3) {}
+  return ok;
 }
 
 // Stores the Sheet ID (or full Sheet URL) for standalone scripts. Session-gated.
@@ -566,10 +578,18 @@ function saveSpreadsheetId(sheetIdOrUrl, sessionToken) {
   } catch (e) {
     throw new Error('Could not save Sheet ID - try again.');
   }
+  try { CacheService.getScriptCache().remove(HAS_SHEET_CACHE_KEY); } catch (e2) {}
+  bumpHistoryCacheVersion_();
   return true;
 }
 
 // ---------- ENTRY POINT (serves the form) ----------
+
+// Template partial loader. Index.html is a thin shell; Styles/Layout/App*
+// are composed here so each concern stays editable without a build step.
+function include_(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
 
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
@@ -862,7 +882,8 @@ function formatSummaryFromParts(single) {
 // instant-paint fallback in the frontend.
 var HERO_HIDDEN_KEY = 'HERO_HIDDEN';
 
-function getHeroHidden() {
+function getHeroHidden(sessionToken) {
+  requireSession_(sessionToken);
   try {
     var v = PropertiesService.getUserProperties().getProperty(HERO_HIDDEN_KEY);
     return v === '1';
@@ -871,7 +892,8 @@ function getHeroHidden() {
   }
 }
 
-function setHeroHidden(hidden) {
+function setHeroHidden(hidden, sessionToken) {
+  requireSession_(sessionToken);
   var isHidden = !!hidden;
   try {
     PropertiesService.getUserProperties().setProperty(HERO_HIDDEN_KEY, isHidden ? '1' : '0');
@@ -1347,12 +1369,37 @@ function saveGeminiKey(apiKey, sessionToken) {
 // ---------- RECENT LOGS (PIN-gated, newest first across all month sheets) ----------
 
 // Session token verified server-side via requireSession_. Returns newest-first page.
+// Recent-logs page cache. The sheet scan is the slowest read in the app; a
+// short TTL makes the first page feel instant while every write bumps the
+// version so a caller can never read a stale page after its own mutation.
+var HISTORY_CACHE_VERSION_KEY = 'CF_HISTORY_VERSION';
+var HISTORY_CACHE_TTL_SECONDS = 120;
+function bumpHistoryCacheVersion_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var next = (Number(props.getProperty(HISTORY_CACHE_VERSION_KEY)) || 0) + 1;
+    props.setProperty(HISTORY_CACHE_VERSION_KEY, String(next));
+  } catch (e) {}
+}
+
 function getRecentLogs(sessionToken, offset, limit) {
   requireSession_(sessionToken);
   offset = Math.max(0, Number(offset) || 0);
   limit = Number(limit) || 10;
   if (limit < 1) limit = 10;
   if (limit > 20) limit = 20;
+
+  var cache = null, cacheKey = '';
+  try {
+    var ver = PropertiesService.getScriptProperties().getProperty(HISTORY_CACHE_VERSION_KEY) || '0';
+    cache = CacheService.getScriptCache();
+    cacheKey = 'cfh_' + ver + '_' + offset + '_' + limit;
+    var hit = cache.get(cacheKey);
+    if (hit) {
+      var parsed = JSON.parse(hit);
+      if (parsed && Array.isArray(parsed.logs)) return parsed;
+    }
+  } catch (eCache) { cache = null; cacheKey = ''; }
 
   var ss = getSpreadsheet_();
   var tz = ss.getSpreadsheetTimeZone();
@@ -1363,6 +1410,7 @@ function getRecentLogs(sessionToken, offset, limit) {
     var sheet = sheets[s];
     if (sheet.getName() === TEMPLATE_SHEET_NAME) continue;
     if (sheet.getName() === LEDGER_SHEET_NAME || sheet.getName().indexOf('_CF_') === 0) continue;
+    if (sheet.getLastRow() < 2) continue;
     var values = sheet.getDataRange().getValues();
     if (!values || values.length < 2) continue;
     var headers = values[0].map(function (h) { return String(h || '').trim().toLowerCase(); });
@@ -1421,7 +1469,11 @@ function getRecentLogs(sessionToken, offset, limit) {
       transactionId: e.transactionId || '', entryId: e.entryId || ''
     };
   });
-  return { total: total, offset: offset, limit: limit, hasMore: (offset + limit) < total, logs: page };
+  var out = { total: total, offset: offset, limit: limit, hasMore: (offset + limit) < total, logs: page };
+  try {
+    if (cache && cacheKey) cache.put(cacheKey, JSON.stringify(out), HISTORY_CACHE_TTL_SECONDS);
+  } catch (ePut) {}
+  return out;
 }
 
 // ---------- GEMINI (with model fallback) ----------
@@ -2462,6 +2514,7 @@ function trashMoveRows_(ss, targets, groupId, type) {
     var list = bySheet[key].rows.sort(function (a, b) { return b - a; });
     for (var d = 0; d < list.length; d++) bySheet[key].sheet.deleteRow(list[d]);
   }
+  if (moved > 0) bumpHistoryCacheVersion_();
   return { moved: moved, alreadyMoved: alreadyMoved };
 }
 
@@ -2805,6 +2858,7 @@ function restoreTrashRecord_(ss, rec) {
   for (var n = 0; n < keys.length; n++) {
     if (keys[n] in byName) sh.getRange(rowNum, colIndex[keys[n]]).setValue(byName[keys[n]]);
   }
+  bumpHistoryCacheVersion_();
 }
 
 // Scans month sheets + ledger once per commit for existing IDs.
@@ -3047,6 +3101,8 @@ function commitReceiptRows(submission, finals, sessionToken) {
         message: st2.status === 'logged' ? '' : st2.message });
     }
     ledgerWrite_(ss, ledgerEntries);
+    // One version bump per commit, not one per appended line item.
+    if (staged.length > 0) bumpHistoryCacheVersion_();
 
     var summary = { logged: 0, forceAdjusted: 0, review: 0, errors: 0, duplicates: 0 };
     for (var r = 0; r < rowsOut.length; r++) {
@@ -3187,6 +3243,7 @@ function sortCashflowSheets(sessionToken) {
       rowsMoved += vals.length;
       sortedSheets.push(sh.getName());
     }
+    if (rowsMoved > 0) bumpHistoryCacheVersion_();
     return { sheets: sortedSheets, rowsMoved: rowsMoved };
   } finally {
     try { lock.releaseLock(); } catch (e) {}

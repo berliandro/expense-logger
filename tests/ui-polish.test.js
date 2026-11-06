@@ -4,18 +4,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'Index.html'), 'utf8');
+const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
+// Index.html is a thin shell composed with HtmlService includes. Join the
+// parts in serve order so the source contracts below cover the real output.
+const PARTIALS = ['Index.html', 'Styles.html', 'Layout.html', 'AppCore.html', 'AppEntry.html', 'AppAuth.html'];
+const shell = read('Index.html');
+const html = PARTIALS.map(read).join('\n');
 const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
 const count = (s, re) => (s.match(re) || []).length;
 
-assert.equal(count(html, /<\/body>/gi), 1, 'one body closer');
-assert.equal(count(html, /<\/html>/gi), 1, 'one html closer');
+assert.equal(count(shell, /<\/body>/gi), 1, 'one body closer');
+assert.equal(count(shell, /<\/html>/gi), 1, 'one html closer');
 // A stray '>' is a character standing alone on its own line, so the pattern must
 // anchor to a line break. A loose />\s*<\/body>/ would also match the legitimate
 // "</script>" line that correctly precedes </body>.
-assert.doesNotMatch(html.trimEnd(), /(?:^|\r?\n)[ \t]*>[ \t]*\r?\n[ \t]*<\/body>/i, 'no stray >');
-assert.match(html.trimEnd(), /<\/body>\s*<\/html>$/i, 'correct close order');
+assert.doesNotMatch(shell.trimEnd(), /(?:^|\r?\n)[ \t]*>[ \t]*\r?\n[ \t]*<\/body>/i, 'no stray >');
+assert.match(shell.trimEnd(), /<\/body>\s*<\/html>$/i, 'correct close order');
 
 const pillAt = html.indexOf('id="session-pill"');
 const themeAt = html.indexOf('id="theme-toggle"');

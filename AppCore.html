@@ -1,0 +1,1012 @@
+<script>
+    var form = document.getElementById('expense-form');
+    var statusEl = document.getElementById('status');
+    var submitBtn = document.getElementById('submit-btn');
+    var submitLabel = document.getElementById('submit-label');
+    var cameraBtn = document.getElementById('camera-btn');
+    var galleryBtn = document.getElementById('gallery-btn');
+    var cameraInput = document.getElementById('cameraInput');
+    var galleryInput = document.getElementById('galleryInput');
+    var uploadPlaceholder = document.getElementById('upload-placeholder');
+    var uploadZone = document.getElementById('upload-zone');
+    var previewWrap = document.getElementById('preview-wrap');
+    var previewGrid = document.getElementById('preview-grid');
+    var previewCount = document.getElementById('preview-count');
+    var addMoreBtn = document.getElementById('add-more-btn');
+    var removeAllBtn = document.getElementById('remove-all-btn');
+    var photoCountLabel = document.getElementById('photo-count-label');
+    var noteEl = document.getElementById('note');
+    var counterEl = document.getElementById('counter');
+    var activeChip = null;
+    var savedNote = '';
+    var selectedFiles = [];
+    // One object URL per File, reused across renders. Rebuilding every preview
+    // used to revoke and re-decode every thumbnail on each add/remove; that is
+    // both flicker and wasted GPU work on phones.
+    var previewUrlCache = new Map();
+    function previewUrlFor(file) {
+      var url = previewUrlCache.get(file);
+      if (!url) {
+        url = URL.createObjectURL(file);
+        previewUrlCache.set(file, url);
+      }
+      return url;
+    }
+    function releasePreviewUrl(file) {
+      var url = previewUrlCache.get(file);
+      if (!url) return;
+      previewUrlCache.delete(file);
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    }
+    function releaseAllPreviewUrls() {
+      previewUrlCache.forEach(function (url) { try { URL.revokeObjectURL(url); } catch (e) {} });
+      previewUrlCache.clear();
+    }
+    // No photo cap: Standard submissions run the same phased pipeline and
+    // adaptive batching as Table rows, so any number of photos is accepted.
+    // 12h server session token: kept in memory + localStorage, sent with every
+    // sensitive call. The raw PIN is never stored. All checks run server-side.
+    var sessionToken = null;
+    function cfSaveSession(token, expiresAt) {
+      sessionToken = token;
+      try { localStorage.setItem('cf-session', JSON.stringify({ t: token, e: expiresAt })); } catch (e) {}
+    }
+    function cfLoadSession() {
+      try {
+        var raw = localStorage.getItem('cf-session');
+        if (!raw) return null;
+        var o = JSON.parse(raw);
+        if (!o || !o.t) return null;
+        if (o.e && o.e <= Date.now()) { try { localStorage.removeItem('cf-session'); } catch (e2) {} return null; }
+        return o;
+      } catch (e) { return null; }
+    }
+    function cfClearSession() {
+      sessionToken = null;
+      try { localStorage.removeItem('cf-session'); } catch (e) {}
+    }
+    function cfIsAuthError(err) {
+      var m = String((err && err.message) || err || '');
+      return /Session expired|Unauthorized|log in again/i.test(m);
+    }
+    function cfIsMissingKeyError(err) {
+      var m = String((err && err.message) || err || '');
+      return /API key is not set|Gemini API key|API key.*missing/i.test(m);
+    }
+    function cfCleanError(err) {
+      var m = String((err && err.message) || err || 'Unknown error');
+      return m.replace(/^Exception:\s*/i, '');
+    }
+    function cfIsSpreadsheetError(err) {
+      var m = String((err && err.message) || err || '');
+      return /Spreadsheet is not configured|Could not open the Google Sheet|SPREADSHEET_ID/i.test(m);
+    }
+    function cfNoteAuthExpired() {
+      cfClearSession();
+      try { window.dispatchEvent(new CustomEvent('cf:auth-expired')); } catch (e) {}
+    }
+
+    try {
+      var now = new Date();
+      var fmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      document.getElementById('today-badge').textContent = fmt.format(now);
+      document.getElementById('foot-date').textContent = fmt.format(now) + ' · ' + now.getFullYear();
+    } catch (e) {}
+
+    function updateCounter() {
+      var n = noteEl.value.length;
+      counterEl.textContent = n + ' / 1000';
+    }
+    noteEl.addEventListener('input', updateCounter);
+    updateCounter();
+
+    document.querySelectorAll('.chip').forEach(function (chip) {
+      chip.setAttribute('aria-pressed', 'false');
+      chip.addEventListener('click', function () {
+        var t = chip.getAttribute('data-text') || '';
+        if (activeChip === chip) {
+          // Toggle off: restore text that was there before the template
+          noteEl.value = savedNote;
+          chip.classList.remove('active');
+          chip.setAttribute('aria-pressed', 'false');
+          activeChip = null;
+          savedNote = '';
+        } else {
+          // First activation stashes current text; switching templates keeps the original stash
+          if (!activeChip) savedNote = noteEl.value;
+          if (activeChip && activeChip !== chip) {
+            activeChip.classList.remove('active');
+            activeChip.setAttribute('aria-pressed', 'false');
+          }
+          noteEl.value = t;
+          chip.classList.add('active');
+          chip.setAttribute('aria-pressed', 'true');
+          activeChip = chip;
+        }
+        if (noteEl.value.length > 1000) noteEl.value = noteEl.value.slice(0, 1000);
+        updateCounter();
+        noteEl.focus();
+      });
+    });
+
+    function clearChipState() {
+      if (activeChip) {
+        activeChip.classList.remove('active');
+        activeChip.setAttribute('aria-pressed', 'false');
+      }
+      activeChip = null;
+      savedNote = '';
+    }
+
+    function openPicker(input) { input.click(); }
+    cameraBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(cameraInput); });
+    galleryBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+    addMoreBtn.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+    removeAllBtn.addEventListener('click', function (e) { e.stopPropagation(); clearPreview(); });
+    uploadZone.addEventListener('click', function (e) {
+      if (e.target.closest('.thumb-remove') || e.target.closest('.btn-choice') || e.target.closest('.add-more')) return;
+      if (selectedFiles.length > 0) return;
+      openPicker(galleryInput);
+    });
+    uploadZone.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(galleryInput); }
+    });
+
+    // Drag & drop (desktop) - accepts multiple files
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      uploadZone.addEventListener(ev, function (e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      uploadZone.addEventListener(ev, function (e) { e.preventDefault(); uploadZone.classList.remove('dragover'); });
+    });
+    uploadZone.addEventListener('drop', function (e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || files.length === 0) return;
+      addFiles(files);
+    });
+
+    cameraInput.addEventListener('change', function () {
+      if (cameraInput.files.length > 0) addFiles(cameraInput.files);
+      cameraInput.value = '';
+    });
+
+    galleryInput.addEventListener('change', function () {
+      if (galleryInput.files.length > 0) addFiles(galleryInput.files);
+      galleryInput.value = '';
+    });
+
+    function addFiles(fileList) {
+      var added = 0;
+      for (var i = 0; i < fileList.length; i++) {
+        var f = fileList[i];
+        if (!f.type || f.type.indexOf('image/') !== 0) continue;
+        selectedFiles.push(f);
+        added++;
+      }
+      if (added > 0) renderPreviews();
+    }
+
+    function renderPreviews() {
+      previewGrid.innerHTML = '';
+      if (selectedFiles.length === 0) {
+        previewWrap.classList.add('hidden');
+        uploadPlaceholder.classList.remove('hidden');
+        previewCount.textContent = '0 photos';
+        photoCountLabel.textContent = 'JPG · PNG · WEBP · HEIC';
+        return;
+      }
+      var frag = document.createDocumentFragment();
+      selectedFiles.forEach(function (file, idx) {
+        var url = previewUrlFor(file);
+        var thumb = document.createElement('button');
+        thumb.type = 'button';
+        thumb.className = 'preview-thumb';
+        thumb.setAttribute('aria-label', 'View photo ' + (idx + 1));
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Receipt ' + (idx + 1);
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        var num = document.createElement('span');
+        num.className = 'thumb-num';
+        num.textContent = idx + 1;
+        var expand = document.createElement('span');
+        expand.className = 'thumb-expand';
+        expand.setAttribute('aria-hidden', 'true');
+        expand.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>';
+        var rm = document.createElement('span');
+        rm.className = 'thumb-remove';
+        rm.setAttribute('role', 'button');
+        rm.setAttribute('aria-label', 'Remove photo ' + (idx + 1));
+        rm.setAttribute('tabindex', '0');
+        rm.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>';
+        rm.addEventListener('click', function (e) {
+          e.stopPropagation();
+          releasePreviewUrl(selectedFiles[idx]);
+          selectedFiles.splice(idx, 1);
+          renderPreviews();
+        });
+        rm.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); releasePreviewUrl(selectedFiles[idx]); selectedFiles.splice(idx, 1); renderPreviews(); }
+        });
+        thumb.appendChild(img);
+        thumb.appendChild(num);
+        thumb.appendChild(expand);
+        thumb.appendChild(rm);
+        thumb.addEventListener('click', function () { openLightbox(idx); });
+        frag.appendChild(thumb);
+      });
+      var addTile = document.createElement('button');
+      addTile.type = 'button';
+      addTile.className = 'add-tile';
+      addTile.setAttribute('aria-label', 'Add more photos');
+      addTile.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span>';
+      addTile.addEventListener('click', function (e) { e.stopPropagation(); openPicker(galleryInput); });
+      frag.appendChild(addTile);
+      previewGrid.appendChild(frag);
+      var label = selectedFiles.length + (selectedFiles.length === 1 ? ' photo' : ' photos');
+      previewCount.textContent = label;
+      photoCountLabel.textContent = label;
+      previewWrap.classList.remove('hidden');
+      uploadPlaceholder.classList.add('hidden');
+    }
+
+    function clearPreview() {
+      cameraInput.value = '';
+      galleryInput.value = '';
+      selectedFiles = [];
+      releaseAllPreviewUrls();
+      closeLightbox();
+      renderPreviews();
+    }
+
+    /* Fullscreen viewer */
+    var lightbox = document.getElementById('lightbox');
+    var lightboxImg = document.getElementById('lightbox-img');
+    var lightboxCounter = document.getElementById('lightbox-counter');
+    var lightboxPrev = document.getElementById('lightbox-prev');
+    var lightboxNext = document.getElementById('lightbox-next');
+    var lightboxDelete = document.getElementById('lightbox-delete');
+    var lbIndex = 0;
+    var touchStartX = null;
+
+    function openLightbox(i) {
+      if (!selectedFiles.length) return;
+      lbIndex = Math.max(0, Math.min(i, selectedFiles.length - 1));
+      showLbPhoto();
+      lightbox.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      document.getElementById('lightbox-close').focus();
+    }
+    function showLbPhoto() {
+      lightboxImg.src = previewUrlFor(selectedFiles[lbIndex]);
+      lightboxImg.alt = 'Receipt ' + (lbIndex + 1) + ' full view';
+      lightboxCounter.textContent = (lbIndex + 1) + ' / ' + selectedFiles.length;
+      lightboxPrev.disabled = lbIndex === 0;
+      lightboxNext.disabled = lbIndex === selectedFiles.length - 1;
+      lightboxDelete.textContent = 'Remove photo ' + (lbIndex + 1);
+    }
+    function closeLightbox() {
+      if (!lightbox.classList.contains('open')) return;
+      lightbox.classList.remove('open');
+      document.body.style.overflow = '';
+      lightboxImg.src = '';
+    }
+    function stepLightbox(d) {
+      var n = lbIndex + d;
+      if (n < 0 || n >= selectedFiles.length) return;
+      lbIndex = n;
+      showLbPhoto();
+    }
+    document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+    lightboxPrev.addEventListener('click', function () { stepLightbox(-1); });
+    lightboxNext.addEventListener('click', function () { stepLightbox(1); });
+    lightboxDelete.addEventListener('click', function () {
+      releasePreviewUrl(selectedFiles[lbIndex]);
+      selectedFiles.splice(lbIndex, 1);
+      if (!selectedFiles.length) { closeLightbox(); renderPreviews(); return; }
+      if (lbIndex >= selectedFiles.length) lbIndex = selectedFiles.length - 1;
+      showLbPhoto();
+      renderPreviews();
+    });
+    lightbox.addEventListener('click', function (e) {
+      if (e.target === lightbox) closeLightbox();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (!lightbox.classList.contains('open')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') stepLightbox(-1);
+      else if (e.key === 'ArrowRight') stepLightbox(1);
+    });
+    lightboxImg.addEventListener('touchstart', function (e) {
+      touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    lightboxImg.addEventListener('touchend', function (e) {
+      if (touchStartX === null) return;
+      var dx = e.changedTouches[0].clientX - touchStartX;
+      touchStartX = null;
+      if (Math.abs(dx) > 48) stepLightbox(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      var noteText = noteEl.value.trim();
+
+      if (selectedFiles.length === 0 && !noteText) {
+        setStatus('Add a photo or a description first.', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitLabel.textContent = 'Saving…';
+      if (selectedFiles.length > 1) {
+        setStatus('Reading ' + selectedFiles.length + ' receipts in one pass…', '');
+      } else {
+        setStatus('Processing…', '');
+      }
+
+      if (selectedFiles.length > 0) {
+        var files = selectedFiles.slice();
+        var images = new Array(files.length);
+        var pending = files.length;
+        var failed = false;
+        files.forEach(function (file, idx) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            if (failed) return;
+            images[idx] = { data: reader.result.split(',')[1], mimeType: file.type };
+            pending--;
+            if (pending === 0) submitExpenses(images, noteText);
+          };
+          reader.onerror = function () {
+            if (failed) return;
+            failed = true;
+            submitBtn.disabled = false;
+            submitLabel.textContent = 'Log entry';
+            setStatus('Could not read photo ' + (idx + 1) + '. Try again.', 'error');
+          };
+          reader.readAsDataURL(file);
+        });
+      } else {
+        submitExpenses([], noteText);
+      }
+    });
+
+    function submitExpenses(images, noteText) {
+      var oneRowBox = document.getElementById('toggle-onerow');
+      var oneRow = !!(oneRowBox && oneRowBox.checked);
+      var rows = (images && images.length ? images : [null]).map(function (img, i) {
+        return {
+          row_id: cfUuid(), origNum: i + 1, note: noteText, type: null,
+          file: null, data: (img && img.data) || '', mimeType: (img && img.mimeType) || 'image/jpeg',
+          hasPhoto: !!(img && img.data)
+        };
+      });
+      if (window.google && google.script && google.script.run) {
+        setStatus('Processing…', '');
+        cfEngineSubmit({
+          rows: rows,
+          sessionToken: sessionToken,
+          // Quick-Input (this panel) always force-saves; see cfEngineSubmit.
+          quickForce: true,
+          oneRowPerReceipt: oneRow,
+          progress: function (t) { setStatus(t, ''); }
+        }).then(function (report) {
+          var counts = (report && report.summary) || {};
+          var doneN = (counts.logged || 0) + (counts.duplicates || 0);
+          var committedById = {};
+          (report.rows || []).forEach(function (r) {
+            if (r.status === 'logged' || r.status === 'force-adjusted' || r.duplicate) {
+              committedById[r.row_id] = true;
+            }
+          });
+          // Remove only the photos the server confirmed (logged or safely
+          // recognized duplicate). Photos for review/error rows stay, with
+          // their note text, so nothing unconfirmed is ever lost. rows[i]
+          // aligns with images[i] and selectedFiles[i] for photo submissions.
+          var keptIdx = [];
+          rows.forEach(function (r, i) {
+            if (!committedById[r.row_id] && i < selectedFiles.length) keptIdx.push(i);
+          });
+          if (keptIdx.length < selectedFiles.length) {
+            var keepSet = {};
+            keptIdx.forEach(function (i) { keepSet[i] = true; });
+            selectedFiles.forEach(function (f, i) { if (!keepSet[i]) releasePreviewUrl(f); });
+            var remaining = keptIdx.map(function (i) { return selectedFiles[i]; });
+            selectedFiles.length = 0;
+            remaining.forEach(function (f) { selectedFiles.push(f); });
+            renderPreviews();
+          }
+          var parts = [];
+          // Server disclosures ride along even for rows that saved cleanly, so
+          // an incomplete line list saved under a verified total is never
+          // silent. The same text is already stored in that receipt's Notes.
+          (report.rows || []).forEach(function (r) {
+            if (r.disclosure) parts.push('Receipt ' + (r.transactionId || r.origNum || '?') + ': ' + r.disclosure);
+          });
+          (report.rows || []).forEach(function (r) {
+            if (r.status === 'logged' || r.duplicate) return;
+            if (r.status === 'force-adjusted') {
+              parts.push('Adjusted row (' + (r.transactionId || '?') + '): ' + (r.message || ''));
+            } else {
+              parts.push(r.message || 'Row needs review.');
+            }
+          });
+          var okN = (counts.logged || 0) + (counts.forceAdjusted || 0);
+          if (okN > 0) {
+            var msg = 'Logged ' + okN + ' receipt' + (okN === 1 ? '' : 's');
+            if (counts.forceAdjusted) msg += ' (includes a clearly marked balancing line - please verify)';
+            msg += '.';
+            if (parts.length) msg += ' ' + parts.join(' ');
+            var hasUnresolved = (report.rows || []).some(function (r) {
+              return r.status === 'review' || r.status === 'error';
+            });
+            onSuccess(msg, hasUnresolved);
+          } else {
+            onFailure({ message: parts.join(' ') || 'Nothing was logged.' });
+            return;
+          }
+          if (report.sortEligible) {
+            cfCall('sortCashflowSheets', [sessionToken]).then(function () {}, function () {});
+          }
+        }).catch(onFailure);
+      } else {
+        // Local preview (outside Apps Script): simulate success so layout can be reviewed
+        var n = images ? images.length : 0;
+        setTimeout(function () { onSuccess(n > 1 ? 'Logged ' + n + ' receipts (preview)' : 'Income logged: Demo Client, 1 item(s), total Rp1.500.000 (preview)'); }, 900);
+      }
+    }
+
+    function onSuccess(summary, keepForm) {
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Log entry';
+      var isIncome = /^income/i.test(summary || '');
+      setStatus(summary, isIncome ? 'success income' : 'success');
+      // When receipts remain for review, their photos were kept above: keep
+      // the note too so the user can resubmit or adjust. Otherwise reset.
+      if (!keepForm) {
+        form.reset();
+        clearPreview();
+      }
+      clearChipState();
+      updateCounter();
+      try { maybeTrashCleanup(sessionToken); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e2) {}
+    }
+
+    function onFailure(err) {
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Log entry';
+      if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+        setStatus('Session expired - please log in again.', 'error');
+        try { cfNoteAuthExpired(); } catch (e) {}
+        return;
+      }
+      if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
+        setStatus('Gemini API key is missing - please add it.', 'error');
+        try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
+        return;
+      }
+      if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
+        setStatus('Google Sheet is not set - please add it.', 'error');
+        try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
+        return;
+      }
+      setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
+    }
+
+    function setStatus(text, cls) {
+      if (cls === '' && text) {
+        // Reuse the live processing row: progress updates fire many times and
+        // must not rebuild the spinner/skeleton DOM on every tick.
+        if (statusEl.className === 'processing' && statusEl.__label) {
+          statusEl.__label.textContent = text;
+          return;
+        }
+        statusEl.className = 'processing';
+        statusEl.innerHTML = '';
+        var sp = document.createElement('div');
+        sp.className = 'spinner';
+        sp.setAttribute('aria-hidden', 'true');
+        var sk = document.createElement('div');
+        sk.className = 'skeleton-bar';
+        sk.setAttribute('aria-hidden', 'true');
+        var lb = document.createElement('span');
+        lb.className = 'status-label';
+        lb.style.flex = 'none';
+        lb.textContent = text;
+        statusEl.__label = lb;
+        statusEl.appendChild(sp);
+        statusEl.appendChild(sk);
+        statusEl.appendChild(lb);
+      } else if (text) {
+        statusEl.__label = null;
+        statusEl.textContent = '';
+        statusEl.className = cls || '';
+        var d = document.createElement('span');
+        d.className = 'status-dot';
+        d.setAttribute('aria-hidden', 'true');
+        var s = document.createElement('span');
+        s.textContent = text;
+        statusEl.appendChild(d);
+        statusEl.appendChild(s);
+      } else {
+        statusEl.__label = null;
+        statusEl.textContent = '';
+        statusEl.className = '';
+      }
+    }
+
+    /* Theme toggle — dark default, persists (icon-only moon/sun SVG) */
+    (function initTheme() {
+      var btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      var MOON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+      var SUN = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+      function paint() {
+        var t = document.documentElement.dataset.theme || 'dark';
+        btn.innerHTML = (t === 'dark' ? MOON : SUN);
+        btn.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        try {
+          document.documentElement.style.colorScheme = t;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#121110' : '#f3f1ec');
+        } catch (e) {}
+      }
+      paint();
+      btn.addEventListener('click', function () {
+        var cur = document.documentElement.dataset.theme || 'dark';
+        var next = (cur === 'dark') ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('cf-theme', next); } catch (e) {}
+        paint();
+      });
+    })();
+
+    /* Hero intro panel toggle — local instant paint + cloud persist */
+    (function initHeroToggle() {
+      var btn = document.getElementById('hero-toggle');
+      if (!btn) return;
+      function paint(hidden) {
+        document.body.classList.toggle('hero-hidden', !!hidden);
+        document.documentElement.classList.remove('hero-hidden-pre');
+        var label = btn.querySelector('.menu-label');
+        var text = hidden ? 'Show intro' : 'Hide intro';
+        if (label) label.textContent = text;
+        else btn.textContent = text;
+        btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+      }
+      var localHidden = false;
+      try { localHidden = localStorage.getItem('cf-hero-hidden') === '1'; } catch (e) {}
+      paint(localHidden);
+      // Cloud truth (UserProperties) wins when it arrives. Deferred until after
+      // unlock: it is a cosmetic preference and must not compete with the PIN
+      // check or the first meaningful render on a slow phone.
+      function syncCloudHero() {
+        try {
+          if (!sessionToken) return;
+          if (window.google && google.script && google.script.run) {
+            google.script.run.withSuccessHandler(function (hidden) {
+              var h = !!hidden;
+              try { localStorage.setItem('cf-hero-hidden', h ? '1' : '0'); } catch (e) {}
+              paint(h);
+            }).getHeroHidden(sessionToken);
+          }
+        } catch (e) {}
+      }
+      try {
+        window.addEventListener('cf:unlocked', function () {
+          setTimeout(syncCloudHero, 1200);
+        }, { once: true });
+      } catch (e) {}
+      btn.addEventListener('click', function () {
+        var next = !document.body.classList.contains('hero-hidden');
+        try { localStorage.setItem('cf-hero-hidden', next ? '1' : '0'); } catch (e) {}
+        paint(next);
+        try {
+          if (sessionToken && window.google && google.script && google.script.run) {
+            google.script.run.setHeroHidden(next, sessionToken);
+          }
+        } catch (e) {}
+      });
+    })();
+
+    /* Settings popup — consolidates Show intro / Change PIN / Set API key / Log out */
+    (function initSettings() {
+      var btn = document.getElementById('settings-btn');
+      var menu = document.getElementById('settings-menu');
+      if (!btn || !menu) return;
+      function isOpen() { return !menu.classList.contains('hidden'); }
+      function open() {
+        menu.classList.remove('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+      function close() {
+        menu.classList.add('hidden');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (isOpen()) close();
+        else open();
+      });
+      menu.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('click', function () { if (isOpen()) close(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && isOpen()) { close(); try { btn.focus(); } catch (e2) {} }
+      });
+      // Close the popup after choosing an item; the item's own handler still runs.
+      menu.querySelectorAll('.menu-item').forEach(function (item) {
+        item.addEventListener('click', function () { close(); });
+      });
+      window.addEventListener('cf:close-settings', close);
+    })();
+
+    /* Pill tabs */
+    (function initTabs() {
+      var btnS = document.getElementById('tabbtn-standard');
+      var btnT = document.getElementById('tabbtn-table');
+      var panelS = document.getElementById('tab-standard');
+      var panelT = document.getElementById('tab-table');
+      var recon = document.getElementById('recon-options');
+      if (!btnS || !btnT) return;
+      function show(which) {
+        var isStd = (which === 'standard');
+        btnS.classList.toggle('active', isStd);
+        btnT.classList.toggle('active', !isStd);
+        btnS.setAttribute('aria-selected', isStd ? 'true' : 'false');
+        btnT.setAttribute('aria-selected', !isStd ? 'true' : 'false');
+        panelS.classList.toggle('active', isStd);
+        panelT.classList.toggle('active', !isStd);
+        if (recon) recon.classList.toggle('hidden', isStd);
+      }
+      btnS.addEventListener('click', function () { show('standard'); });
+      btnT.addEventListener('click', function () { show('table'); });
+      show('table'); // Table Layout is the default workflow on first load
+    })();
+
+    /* Shared two-phase submission engine (Table Layout + Standard image flows).
+       Sequential bounded server calls: plan -> Phase 1 batches -> Phase 2
+       batches -> triage -> one bounded repair -> commit -> (separate) sort.
+       Never concurrent; one Gemini generation request per batch per phase. */
+    function cfUuid() {
+      try {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      } catch (e) {}
+      return 'r-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+    }
+    function cfReadToggles() {
+      var f = document.getElementById('toggle-force');
+      return { forceLog: !!(f && f.checked) };
+    }
+    // Shared button busy state: disables the control, shows a concise pending
+    // label, and marks it aria-busy. The original label is restored when the
+    // operation ends, on success and on failure alike. Never imply success.
+    function cfBusyBtn(btn, busy, label) {
+      if (!btn) return;
+      if (busy) {
+        if (btn.__origLabel === undefined) btn.__origLabel = btn.textContent;
+        btn.disabled = true;
+        if (btn.setAttribute) btn.setAttribute('aria-busy', 'true');
+        if (label != null) btn.textContent = label;
+      } else {
+        btn.disabled = false;
+        if (btn.removeAttribute) btn.removeAttribute('aria-busy');
+        if (btn.__origLabel !== undefined) {
+          try { btn.textContent = btn.__origLabel; } catch (e) {}
+          delete btn.__origLabel;
+        }
+      }
+    }
+    function cfFormatIDR(n) {
+      try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
+      catch (e) { return 'Rp' + n; }
+    }
+    function cfCall(fnName, args) {
+      return new Promise(function (resolve, reject) {
+        try {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(function (err) { reject(err); })
+            [fnName].apply(null, args);
+        } catch (e) { reject(e); }
+      });
+    }
+    function cfReadFileBase64(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          try { resolve(String(reader.result).split(',')[1] || ''); }
+          catch (e) { reject(e); }
+        };
+        reader.onerror = function () { reject(new Error('Could not read an attached photo.')); };
+        reader.readAsDataURL(file);
+      });
+    }
+    function cfAuthError(err) {
+      return (typeof cfIsAuthError === 'function' && cfIsAuthError(err));
+    }
+    // Trash retention upkeep: at most one backend cleanup call per local day,
+    // only after a successful entry workflow. The localStorage marker is purely
+    // an optimization (Asia/Jakarta day basis, malformed-tolerant) - the server
+    // always decides expiry by deleted_at. Failures stay silent so a cleanup
+    // hiccup never fails an otherwise good append; the next eligible check retries.
+    function trashCheckDateJakarta() {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      } catch (e) { return ''; }
+    }
+    function maybeTrashCleanup(token) {
+      if (!(window.google && google.script && google.script.run)) return;
+      if (!token) return;
+      var key = 'cf-trash-last-check-date';
+      var today = trashCheckDateJakarta();
+      if (!today) return;
+      var last = null;
+      try { last = localStorage.getItem(key); } catch (e) {}
+      if (last === today) return;
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.ok) { try { localStorage.setItem(key, today); } catch (e) {} }
+          })
+          .withFailureHandler(function () {})
+          .cleanupTrash(token);
+      } catch (e) {}
+    }
+    function cfSizeError(err) {
+      return /exceed|too large|payload|budget/i.test(String((err && err.message) || err || ''));
+    }
+    // Sequential batch queue with size-triggered splitting: a job returning
+    // {split:true} is divided in half (max 3 levels) and retried, so an
+    // oversized batch shrinks instead of failing whole or looping forever.
+    // runOne(job) must swallow row-level failures itself (marking rows) and
+    // throw only for fatal/abort errors.
+    function cfRunBatchQueue(initialLists, runOne, progress) {
+      var queue = initialLists.map(function (rows) { return { rows: rows, depth: 0 }; });
+      var doneCount = 0;
+      function pump() {
+        if (!queue.length) return Promise.resolve();
+        var job = queue.shift();
+        return Promise.resolve().then(function () {
+          return runOne(job, job.rows.length > 1 && job.depth < 3);
+        }).then(function (res) {
+          doneCount++;
+          if (res && res.split && job.rows.length > 1 && job.depth < 3) {
+            var half = Math.ceil(job.rows.length / 2);
+            queue.unshift({ rows: job.rows.slice(half), depth: job.depth + 1 });
+            queue.unshift({ rows: job.rows.slice(0, half), depth: job.depth + 1 });
+            progress('Batch too large - split ' + job.rows.length + ' rows (' + half + ' + ' + (job.rows.length - half) + ') and retrying.');
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }
+    // opts.rows: [{row_id, origNum, note, type|null, file|data, mimeType, hasPhoto}]
+    // progress(text) for phase/batch feedback. Resolves a commit report.
+    function cfEngineSubmit(opts) {
+      var rows = opts.rows || [];
+      var token = opts.sessionToken;
+      var progress = opts.progress || function () {};
+      var submissionId = cfUuid();
+      // Quick-Input always force-saves: the mode is for speed, not detailed
+      // ledgers. The saved toggle preferences are never touched; the override
+      // applies to this submission only.
+      var tg = opts.quickForce ? { forceLog: true } : cfReadToggles();
+      // One-row-per-receipt is a Quick-Input-only presentation option: it
+      // never changes triage, repair, or toggle policy, only how commit
+      // writes verified rows to the sheet.
+      var oneRowFlag = !!opts.oneRowPerReceipt;
+      // Quick-Input policy travels with every server call so the authoritative
+      // triage/commit layer - not the client - decides what may be saved.
+      var quickMode = !!opts.quickForce;
+      var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
+      var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
+      function needBackend() {
+        if (!(window.google && google.script && google.script.run)) throw new Error('backend-missing');
+      }
+      // 1. plan (metadata only - no image bytes cross yet)
+      chain = chain.then(function () {
+        needBackend();
+        var meta = rows.map(function (r) {
+          // imageBytes is the base64 length estimate (raw bytes x4/3): the
+          // server measures the encoded payload, and token budgets must see it.
+          return { row_id: r.row_id, origNum: r.origNum, note: r.note, type: r.type,
+                   hasPhoto: !!r.hasPhoto, imageBytes: r.file ? Math.ceil((r.file.size || 0) * 4 / 3) : String(r.data || '').length };
+        });
+        progress('Planning ' + meta.length + ' row(s)…');
+        return cfCall('planReceiptSubmission', [meta, token]);
+      }).then(function (plan) {
+        st.plan = plan;
+        // 2. Phase 1 batches (photo rows only; base64 read per batch only).
+        // imageBytes uses base64 length estimate (file bytes x4/3) because the
+        // server measures the encoded payload, not raw file bytes.
+        var p1jobs = (plan.batches || []).map(function (b) {
+          var ids = {};
+          b.rows.forEach(function (m) { if (m.hasPhoto) ids[m.row_id] = true; });
+          return rows.filter(function (r) { return ids[r.row_id]; });
+        }).filter(function (l) { return l.length; });
+        return cfRunBatchQueue(p1jobs, function (job, canSplit) {
+          var batchRows = job.rows;
+          progress('Phase 1: reading totals (' + batchRows.length + ' photo row(s))…');
+          var reads = batchRows.map(function (r) {
+            var getData = r.file ? cfReadFileBase64(r.file) : Promise.resolve(r.data || '');
+            return getData.then(function (b64) { return { r: r, b64: b64 }; });
+          });
+          return Promise.all(reads).then(function (got) {
+            var payload = got.map(function (g, k) {
+              return { row_id: g.r.row_id, photo_index: k + 1, data: g.b64, mimeType: g.r.mimeType || 'image/jpeg' };
+            });
+            return cfCall('runPhase1Batch', [submissionId, payload, token]).then(function (res) {
+              (res.results || []).forEach(function (one) { st.phase1ById[one.row_id] = one; });
+              progress('Phase 1: totals recorded for ' + (res.results || []).length + ' photo row(s).');
+              return {};
+            }).catch(function (err) {
+              if (cfAuthError(err)) throw err;
+              if (cfSizeError(err) && canSplit) return { split: true };
+              batchRows.forEach(function (r) {
+                st.failedById[r.row_id] = 'Total extraction failed for this batch: ' +
+                  ((err && err.message) || err) + ' Other batches continued.';
+              });
+              progress('Phase 1: a batch failed; continuing with the rest.');
+              return {};
+            });
+          });
+        }, progress);
+      }).then(function () {
+        // 3. Phase 2 batches (same plan; text rows included, photo rows carry manifest)
+        var batches = (st.plan && st.plan.batches) || [{ rows: rows.map(function (r) {
+          return { row_id: r.row_id, origNum: r.origNum, note: r.note, type: r.type,
+                   hasPhoto: !!r.hasPhoto, imageBytes: 0 };
+        }) }];
+        var p2jobs = batches.map(function (b) {
+          var ids = {};
+          b.rows.forEach(function (m) { ids[m.row_id] = true; });
+          // Rows whose Phase 1 batch already failed skip Phase 2; their
+          // captured cause travels to triage/commit via preError.
+          return rows.filter(function (r) { return ids[r.row_id] && !st.failedById[r.row_id]; });
+        }).filter(function (l) { return l.length; });
+        return cfRunBatchQueue(p2jobs, function (job, canSplit) {
+          var batchRows = job.rows;
+          progress('Phase 2: extracting lines (' + batchRows.length + ' row(s))…');
+            var reads = batchRows.map(function (r) {
+              if (!r.hasPhoto) return Promise.resolve(null);
+              if (st.failedById[r.row_id] || !st.phase1ById[r.row_id]) return Promise.resolve(null);
+              var getData = r.file ? cfReadFileBase64(r.file) : Promise.resolve(r.data || '');
+              return getData.then(function (b64) { return { data: b64, mimeType: r.mimeType || 'image/jpeg' }; });
+            });
+            return Promise.all(reads).then(function (datas) {
+              var payload = [];
+              batchRows.forEach(function (r, k) {
+                if (!r.hasPhoto) {
+                  payload.push({ row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                                 hasPhoto: false, data: '', mimeType: '' });
+                  return;
+                }
+                if (!datas[k] || !st.phase1ById[r.row_id]) {
+                  st.failedById[r.row_id] = 'No printed total was recorded for this photo - nothing from this row was appended.';
+                  return;
+                }
+                payload.push({ row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                               hasPhoto: true, data: datas[k].data, mimeType: datas[k].mimeType,
+                               phase1: st.phase1ById[r.row_id] });
+              });
+              if (!payload.length) return {};
+              return cfCall('runPhase2Batch', [submissionId, payload, token]).then(function (res) {
+                (res.ok || []).forEach(function (o) { st.okById[o.row_id] = o.txn; });
+                (res.failed || []).forEach(function (f) { st.failedById[f.row_id] = f.error; });
+                progress('Phase 2: lines recorded for ' + payload.length + ' row(s).');
+                return {};
+              }).catch(function (err) {
+                if (cfAuthError(err)) throw err;
+                if (cfSizeError(err) && canSplit) return { split: true };
+                payload.forEach(function (p) {
+                  st.failedById[p.row_id] = 'Line extraction failed for this batch: ' +
+                    ((err && err.message) || err) + ' Other batches continued.';
+                });
+                progress('Phase 2: a batch failed; continuing with the rest.');
+                return {};
+              });
+            });
+          }, progress);
+      }).then(function () {
+        // 4. triage (no writes) to find the single bounded repair set
+        var items = rows.map(function (r) {
+          if (st.failedById[r.row_id] && !st.okById[r.row_id]) {
+            return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                     hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
+                     txn: null, repaired: true, preError: st.failedById[r.row_id] };
+          }
+          return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
+                   hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
+                   txn: st.okById[r.row_id] || null, repaired: false };
+        });
+        return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, quickMode: quickMode }, items, token])
+          .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
+      }).then(function (tri) {
+        // 5. bounded repair for eligible mismatches (grouped, budget-aware).
+        // Base pipeline runs one pass. Quick-Input retries rows that are
+        // still mismatched up to two extra times; each extra round re-triages
+        // the repaired results and only continues for readable-total
+        // mismatches (server verdict), never for uncertain/review rows.
+        var byId = {};
+        tri.items.forEach(function (it) { byId[it.row_id] = it; });
+        var QUICK_EXTRA_REPAIRS = 2;
+        function runRepairBatch(list, label) {
+          progress(label + ': re-checking ' + list.length + ' mismatched row(s)…');
+          var rjobs = [];
+          for (var i = 0; i < list.length; i += 12) rjobs.push(list.slice(i, i + 12));
+          return cfRunBatchQueue(rjobs, function (job, canSplit) {
+            var g = job.rows;
+            var reads = g.map(function (v) {
+              var r = rows.filter(function (x) { return x.row_id === v.row_id; })[0];
+              var getData = (r && r.file) ? cfReadFileBase64(r.file) : Promise.resolve((r && r.data) || '');
+              return getData.then(function (b64) {
+                return { row_id: v.row_id, origNum: v.origNum, forcedType: r ? r.type : null,
+                         note: r ? r.note : '', hasPhoto: true, data: b64,
+                         mimeType: (r && r.mimeType) || 'image/jpeg',
+                         expectedTotal: v.expectedTotal, calculatedTotal: v.calculatedTotal, difference: v.difference };
+              });
+            });
+            return Promise.all(reads).then(function (payload) {
+              return cfCall('repairReceiptRows', [submissionId, payload, token]).then(function (res) {
+                (res.ok || []).forEach(function (o) { st.repairedTxnById[o.row_id] = o.txn; });
+                progress(label + ': re-checked ' + payload.length + ' row(s).');
+                return {};
+              }).catch(function (err) {
+                if (cfAuthError(err)) throw err;
+                if (cfSizeError(err) && canSplit) return { split: true };
+                progress(label + ': a group failed; keeping originals for review.');
+                return {};
+              });
+            });
+          }, progress);
+        }
+        function retriageRepaired() {
+          var re = Object.keys(st.repairedTxnById).map(function (id) {
+            var orig = byId[id] || {};
+            return { row_id: id, origNum: orig.origNum || 0, forcedType: orig.forcedType || null, note: orig.note || '',
+                     hasPhoto: !!orig.hasPhoto, phase1: orig.phase1 || null,
+                     txn: st.repairedTxnById[id], repaired: true };
+          }).filter(function (it) { return !!it.txn; });
+          if (!re.length) return Promise.resolve([]);
+          return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, quickMode: quickMode }, re, token])
+            .then(function (res) { return res.rows || []; })
+            .catch(function (err) {
+              if (cfAuthError(err)) throw err;
+              progress('Repair re-check skipped; keeping latest results for review.');
+              return [];
+            });
+        }
+        function done() { return { items: tri.items, repairedTxnById: st.repairedTxnById }; }
+        var eligible = tri.verdicts.filter(function (v) { return v.repairEligible; });
+        if (!eligible.length) return done();
+        var extraLeft = opts.quickForce ? QUICK_EXTRA_REPAIRS : 0;
+        function extraRound() {
+          if (extraLeft <= 0) return Promise.resolve();
+          return retriageRepaired().then(function (verdicts) {
+            var still = verdicts.filter(function (v) { return v.status === 'mismatch'; });
+            if (!still.length) return;
+            extraLeft--;
+            progress('Quick-Input retry (' + (QUICK_EXTRA_REPAIRS - extraLeft) + ' of ' + QUICK_EXTRA_REPAIRS + ')…');
+            return runRepairBatch(still, 'Quick-Input retry').then(extraRound);
+          });
+        }
+        progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
+        return runRepairBatch(eligible, 'Repair pass').then(extraRound).then(done);
+      }).then(function (pre) {
+        // 6. commit (server reconciles authoritatively, applies toggles, appends)
+        var finals = pre.items.map(function (it) {
+          var fixed = (it.row_id in pre.repairedTxnById) ? pre.repairedTxnById[it.row_id] : it.txn;
+          return { row_id: it.row_id, origNum: it.origNum, forcedType: it.forcedType, note: it.note,
+                   hasPhoto: it.hasPhoto, phase1: it.phase1, txn: fixed, repaired: (it.row_id in pre.repairedTxnById) || !!it.repaired,
+                   preError: it.preError || '' };
+        });
+        progress('Writing validated rows…');
+        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, oneRowPerReceipt: oneRowFlag, quickMode: quickMode }, finals, token]);
+      });
+      return chain;
+    }
+</script>

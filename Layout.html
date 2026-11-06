@@ -1,0 +1,318 @@
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">C</div>
+      <div>
+        <div class="brand-name">Cashflow Log</div>
+        <div class="brand-sub">Expense + income &rarr; Sheets</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="pill" id="session-pill" title="App access status is confirmed by the server on unlock."><span class="dot unknown" id="pill-dot" aria-hidden="true"></span><span id="pill-access">Access unknown</span><span class="pill-sep" aria-hidden="true">&middot;</span><span id="pill-env">Gemini &middot; Sheets</span><span id="sess-count" class="sess-count hidden"></span></div>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+      <div class="settings-wrap">
+        <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
+          <button type="button" class="menu-item" id="hero-toggle" role="menuitem" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="menu-label">Show intro</span></button>
+          <div class="menu-sep" aria-hidden="true"></div>
+          <button type="button" class="menu-item hidden" id="pin-change-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="menu-label">Change PIN</span></button>
+          <button type="button" class="menu-item hidden" id="api-key-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span class="menu-label">Set API key</span></button>
+          <button type="button" class="menu-item hidden" id="sheet-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="menu-label">Set Sheet</span></button>
+          <button type="button" class="menu-item hidden" id="sess-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 13.5"/></svg><span class="menu-label">Session settings</span></button>
+          <button type="button" class="menu-item hidden" id="trash-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg><span class="menu-label">Trash</span></button>
+          <button type="button" class="menu-item danger hidden" id="pin-logout-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="menu-label">Log out</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cfg-note hidden" id="cfg-note" role="status" aria-live="polite"></div>
+
+  <div class="shell">
+    <!-- Reference: Pinterest "Minimal Finance App UI" / "Expense Tracker UI" —
+         soft neutral bg, white rounded cards, pill CTA, left editorial + right form. -->
+    <section class="hero" aria-label="About">
+      <div class="eyebrow">Receipt &rarr; Sheet in seconds</div>
+      <h1>Log cashflow <span class="thin">without the spreadsheet chore.</span></h1>
+      <p class="lede">Add a receipt photo or a note below. Each photo becomes its own receipt: Gemini extracts the items, checks them against the printed total, and saves the rows to your month sheet.</p>
+      <p class="hero-compact-note">Snap a receipt or describe income / expense below.</p>
+
+      <ul class="steps">
+        <li><div class="step-n">1</div><div><b>Attach or type</b><span>Photos optional — attach several receipts at once. A short note like “Gaji bulanan 5jt” works. Empty rows are ignored.</span></div></li>
+        <li><div class="step-n">2</div><div><b>Gemini structures each photo</b><span>Each photo is its own receipt: date, merchant, items, Expense vs Income. One note covers all photos — say “first photo…” to point at one. Tap a thumbnail for the full image. Missing date &rarr; today.</span></div></li>
+        <li><div class="step-n">3</div><div><b>Saved to the month sheet</b><span>Rows land in “MMMM yyyy” under Date · Merchant · Amount · Type.</span></div></li>
+      </ul>
+
+      <div class="type-row">
+        <div class="type-card">
+          <div class="type-ico out">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div><b>Expense</b><span>Bills, groceries, rent</span></div>
+        </div>
+        <div class="type-card">
+          <div class="type-ico in">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+          </div>
+          <div><b>Income</b><span>Salary, clients, sales</span></div>
+        </div>
+      </div>
+
+      <div class="tip"><b>Tip:</b> no date on the receipt? Leave it out — it is logged under today automatically.</div>
+    </section>
+
+    <main class="card" aria-label="Log entry form">
+      <div class="card-head">
+        <div>
+          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="Information about how logging works">i</button></div>
+          <p>Add a photo or a note.</p>
+        </div>
+        <div class="date-badge" id="today-badge">Today</div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Entry mode">
+        <button type="button" class="tab active" id="tabbtn-table" role="tab" aria-selected="true" aria-controls="tab-table">Table Layout</button>
+        <button type="button" class="tab" id="tabbtn-standard" role="tab" aria-selected="false" aria-controls="tab-standard">Quick-Input</button>
+      </div>
+
+      <fieldset class="recon-toggles" id="recon-options" aria-label="Receipt reconciliation options">
+        <legend><span class="recon-legend-label">Reconciliation options</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="Information about reconciliation options">i</button></legend>
+        <label class="switch">
+          <span class="txt"><b>Force-save</b></span>
+          <input type="checkbox" id="toggle-force" aria-label="Force-save">
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+        </label>
+      </fieldset>
+
+      <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
+      <form id="expense-form" novalidate>
+        <div class="form-group">
+          <div class="field-heading"><label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="Information about receipt photos">i</button></div>
+          <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-labelledby="upload-label" aria-describedby="drop-hint">
+            <div id="upload-placeholder" class="upload-placeholder">
+              <div class="upload-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="22" height="22">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.105-.782.16-1.185.16h-.14a1.5 1.5 0 00-1.5 1.5V16.5a1.5 1.5 0 001.5 1.5h15.25a1.5 1.5 0 001.5-1.5V8.89a1.5 1.5 0 00-1.5-1.5h-.14c-.403 0-.806-.055-1.185-.16a2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                </svg>
+              </div>
+              <div class="upload-title">Drag receipts here, or choose</div>
+              <div class="upload-subtitle" id="drop-hint">Camera takes a new photo. Gallery lets you choose existing photos.</div>
+              <div class="upload-actions">
+                <button type="button" class="btn-choice" id="camera-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Camera
+                </button>
+                <button type="button" class="btn-choice" id="gallery-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  Gallery
+                </button>
+              </div>
+            </div>
+
+            <div id="preview-wrap" class="preview-wrap hidden" aria-live="polite">
+              <div id="preview-grid" class="preview-grid"></div>
+              <div class="preview-bar">
+                <span class="count" id="preview-count">0 photos</span>
+                <span>
+                  <button type="button" class="add-more" id="add-more-btn">Add more</button>
+                  <button type="button" class="add-more" id="remove-all-btn">Clear</button>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <input type="file" id="cameraInput" class="hidden-input" accept="image/*" capture="environment">
+          <input type="file" id="galleryInput" class="hidden-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/*" multiple>
+          <div id="selected-file"></div>
+        </div>
+
+        <div class="form-group">
+          <div class="field-heading"><label class="label" for="note">Note / description <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="Information about notes">i</button></div>
+          <div class="textarea-wrap">
+            <textarea id="note" maxlength="1000" placeholder="Optional note for these receipt(s)…"></textarea>
+            <div class="char-count" aria-hidden="true"></div>
+          </div>
+          <div class="chips" aria-label="Templates">
+            <button type="button" class="chip" data-text="For lunch and dinner">Day meal</button>
+            <button type="button" class="chip" data-text="Expense for work. To be reimburse">Work</button>
+            <button type="button" class="chip" data-text="Weekly groceries">Weekly</button>
+            <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
+          </div>
+        </div>
+
+        <div class="switch one-row-switch" style="margin-top:12px">
+          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>One row per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="Information about one row per receipt">i</button></span></span>
+          <input type="checkbox" id="toggle-onerow" aria-label="One row per receipt">
+          <label for="toggle-onerow" class="track" aria-hidden="true"><span class="thumb"></span></label>
+        </div>
+
+        <button type="submit" id="submit-btn">
+          <svg id="submit-ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span id="submit-label">Log entry</span>
+        </button>
+      </form>
+      </div>
+
+      <div id="tab-table" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-table">
+        <div class="form-group">
+          <label class="label">Rows — photo optional <span class="opt" id="table-count-label">0 rows</span></label>
+          <div id="table-rows" aria-live="polite"></div>
+          <div class="table-actions">
+            <button type="button" id="add-row-btn">+ Add Row</button>
+            <button type="button" id="retry-rows-btn" class="hidden">Retry review rows</button>
+          </div>
+        </div>
+        <p class="recon-progress" id="table-progress" role="status" aria-live="polite"></p>
+        <button type="button" id="table-submit-btn">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span id="table-submit-label">Submit Batch</span>
+        </button>
+      </div>
+
+      <div class="lightbox" id="trow-lightbox" role="dialog" aria-modal="true" aria-label="Receipt viewer">
+        <div class="lightbox-top">
+          <span id="trow-lightbox-counter">Row receipt</span>
+          <button type="button" class="lightbox-close" id="trow-lightbox-close" aria-label="Close viewer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="lightbox-stage">
+          <img id="trow-lightbox-img" src="" alt="Receipt full view">
+        </div>
+      </div>
+
+      <div id="status" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <footer>
+    <span>Cashflow Logger · Apps Script + Gemini + Sheets</span>
+    <span id="foot-date"></span>
+  </footer>
+
+  <section id="history-card" class="card history-card hidden" aria-label="Recent logs">
+    <div class="history-head">
+      <div>
+        <h2>Recent logs</h2>
+        <p id="history-sub">Newest first, across all month sheets.</p>
+      </div>
+      <button type="button" class="theme-toggle" id="history-refresh" aria-label="Refresh recent logs">Refresh</button>
+    </div>
+    <div id="history-list" aria-live="polite"></div>
+    <div class="history-foot">
+      <button type="button" class="btn-choice" id="history-load">Show recent 10</button>
+      <button type="button" class="btn-choice hidden" id="history-more">Show 10 more</button>
+    </div>
+  </section>
+
+  <div class="credit">Made by @berliandro</div>
+
+  <!-- Fullscreen photo viewer -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+    <div class="lightbox-top">
+      <span id="lightbox-counter">1 / 1</span>
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close viewer">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="lightbox-stage">
+      <button type="button" class="lightbox-nav" id="lightbox-prev" aria-label="Previous photo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <img id="lightbox-img" src="" alt="Receipt full view">
+      <button type="button" class="lightbox-nav" id="lightbox-next" aria-label="Next photo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+    <button type="button" class="lightbox-delete" id="lightbox-delete">Remove this photo</button>
+  </div>
+
+  <div id="lock-screen" role="dialog" aria-modal="true" aria-label="PIN lock">
+    <div class="lock-card">
+      <div class="brand-mark">C</div>
+      <h2 id="lock-title">Enter PIN</h2>
+      <p id="lock-sub">Enter your 6-digit PIN to continue.</p>
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••" aria-label="6-digit PIN">
+      <button type="button" id="pin-submit">Unlock</button>
+      <div id="pin-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Change PIN">
+    <div class="lock-card">
+      <h2>Change PIN</h2>
+      <p>Verified on Google's server — the PIN is never checked on this device.</p>
+      <div class="pin-field"><label for="pin-old">Current PIN</label><input id="pin-old" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <div class="pin-field"><label for="pin-new">New 6-digit PIN</label><input id="pin-new" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <div class="pin-field"><label for="pin-new2">Confirm new PIN</label><input id="pin-new2" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <button type="button" id="pin-change-save">Save new PIN</button>
+      <button type="button" id="pin-change-cancel">Cancel</button>
+      <div id="pin-change-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="api-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Gemini API key">
+    <div class="lock-card">
+      <h2 id="api-title">Add Gemini API key</h2>
+      <p id="api-sub">No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.</p>
+      <div class="pin-field"><label for="api-key-input">Gemini API key</label><input id="api-key-input" class="pin-input api-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste key (AIza…)"></div>
+      <button type="button" id="api-save">Save API key</button>
+      <button type="button" id="api-cancel">Later</button>
+      <div id="api-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="sheet-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Google Sheet">
+    <div class="lock-card">
+      <h2 id="sheet-title">Set Google Sheet</h2>
+      <p id="sheet-sub">No Google Sheet found on the server. Paste your Sheet ID or full Sheet URL to enable logging.</p>
+      <div class="pin-field"><label for="sheet-id-input">Google Sheet ID or URL</label><input id="sheet-id-input" class="pin-input api-input" type="text" autocomplete="off" spellcheck="false" placeholder="Paste Sheet ID or https://docs.google.com/spreadsheets/d/…"></div>
+      <button type="button" id="sheet-save">Save Sheet</button>
+      <button type="button" id="sheet-cancel">Later</button>
+      <div id="sheet-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="sess-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Session settings">
+    <div class="lock-card">
+      <h2>Session settings</h2>
+      <p>Applies to everyone. New durations affect new sessions only.</p>
+      <div class="pin-field"><label for="sess-hours">Session duration (whole hours, 1–168)</label><input id="sess-hours" class="pin-input" type="number" min="1" max="168" step="1" inputmode="numeric" autocomplete="off"></div>
+      <div class="pin-field pin-check"><input id="sess-renew" type="checkbox" checked><label for="sess-renew">Refresh countdown on activity</label><span class="hint">When off, the session expires at its fixed time even while you are active.</span></div>
+      <button type="button" id="sess-save">Save session settings</button>
+      <button type="button" id="sess-cancel">Cancel</button>
+      <div id="sess-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="info-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="info-title" aria-describedby="info-body">
+    <div class="lock-card">
+      <div class="info-modal-head"><h2 id="info-title">Information</h2><button type="button" class="btn-choice" id="info-close">Close</button></div>
+      <p id="info-body"></p>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="lock-card">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-body"></p>
+      <button type="button" id="confirm-ok">Confirm</button>
+      <button type="button" id="confirm-cancel">Cancel</button>
+      <div id="confirm-error" role="alert" aria-live="assertive"></div>
+    </div>
+  </div>
+
+  <div id="trash-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+    <div class="lock-card">
+      <h2 id="trash-title">Trash</h2>
+      <p id="trash-sub">Deleted items stay recoverable for 7 days from deletion, then are permanently removed.</p>
+      <div class="trash-filters" role="tablist" aria-label="Trash filter">
+        <button type="button" class="btn-choice" id="trash-filter-entries" role="tab" aria-selected="true">Entries</button>
+        <button type="button" class="btn-choice" id="trash-filter-txns" role="tab" aria-selected="false">Transactions</button>
+      </div>
+      <div class="trash-count" id="trash-count" role="status" aria-live="polite"></div>
+      <div id="trash-list"></div>
+      <button type="button" id="trash-close">Close</button>
+    </div>
+  </div>

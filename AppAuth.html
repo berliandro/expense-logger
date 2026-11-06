@@ -1,0 +1,1408 @@
+<script>
+    /* PIN-first gate + 12h server sessions. Raw PIN never stored; only the
+       session token (memory + localStorage) is sent; all checks server-side. */
+    (function initAuthHistory() {
+      var lockEl = document.getElementById('lock-screen');
+      var lockTitle = document.getElementById('lock-title');
+      var lockSub = document.getElementById('lock-sub');
+      var pinInput = document.getElementById('pin-input');
+      var pinSubmit = document.getElementById('pin-submit');
+      var pinError = document.getElementById('pin-error');
+      var changeBtn = document.getElementById('pin-change-btn');
+      var logoutBtn = document.getElementById('pin-logout-btn');
+      var modal = document.getElementById('pin-modal');
+      var apiBtn = document.getElementById('api-key-btn');
+      var apiModal = document.getElementById('api-modal');
+      var apiInput = document.getElementById('api-key-input');
+      var apiSave = document.getElementById('api-save');
+      var apiCancel = document.getElementById('api-cancel');
+      var apiError = document.getElementById('api-error');
+      var sheetBtn = document.getElementById('sheet-btn');
+      var sheetModal = document.getElementById('sheet-modal');
+      var sheetInput = document.getElementById('sheet-id-input');
+      var sheetSave = document.getElementById('sheet-save');
+      var sheetCancel = document.getElementById('sheet-cancel');
+      var sheetError = document.getElementById('sheet-error');
+      var histCard = document.getElementById('history-card');
+      var histList = document.getElementById('history-list');
+      var histLoad = document.getElementById('history-load');
+      var histMore = document.getElementById('history-more');
+      var histRefresh = document.getElementById('history-refresh');
+      var histSub = document.getElementById('history-sub');
+      var trashBtn = document.getElementById('trash-btn');
+      var confirmModal = document.getElementById('confirm-modal');
+      var confirmTitle = document.getElementById('confirm-title');
+      var confirmBody = document.getElementById('confirm-body');
+      var confirmOk = document.getElementById('confirm-ok');
+      var confirmCancel = document.getElementById('confirm-cancel');
+      var confirmError = document.getElementById('confirm-error');
+      var trashModal = document.getElementById('trash-modal');
+      var trashTitle = document.getElementById('trash-title');
+      var trashCount = document.getElementById('trash-count');
+      var trashList = document.getElementById('trash-list');
+      var trashClose = document.getElementById('trash-close');
+      var trashFilterEntries = document.getElementById('trash-filter-entries');
+      var trashFilterTxns = document.getElementById('trash-filter-txns');
+      if (!lockEl || !pinInput || !pinSubmit) return;
+      var mode = 'login'; // login | setup-new | setup-confirm
+      var firstPin = '';
+      var pinBusy = false;
+      var histOffset = 0;
+      var histLimit = 10;
+      var hasBackend = !!(window.google && google.script && google.script.run);
+      // Session countdown/renewal state. sessExpiresAt and sessRenew always
+      // mirror the last server validation; the server stays authoritative.
+      var sessExpiresAt = 0;
+      var sessRenew = true;
+      var sessWarned10 = false;
+      var sessTimer = null;
+      var sessLastTouch = 0;
+      var SESS_TOUCH_MIN_MS = 60000;
+      var SESS_WARN_MS = 10 * 60 * 1000;
+      var SESS_COUNTDOWN_MS = 30 * 60 * 1000;
+
+      function setLockedUI(locked) {
+        try { document.body.classList.toggle('locked', !!locked); } catch (e) {}
+        if (locked) { lockEl.classList.remove('hidden'); }
+        else { lockEl.classList.add('hidden'); }
+        [changeBtn, apiBtn, sheetBtn, sessBtn, trashBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
+        try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
+        if (histCard) histCard.classList.toggle('hidden', !!locked);
+        // Never leave another session's rows in memory: locking drops the cache.
+        if (locked) {
+          try { invalidateHistCache(); } catch (e) {}
+          // Access state is session-scoped: never keep showing the previous
+          // session's verified status behind the PIN gate.
+          try { if (typeof paintAccessPill === 'function') paintAccessPill({ verified: false, access: 'unknown', detail: 'Sign in to verify access.' }); } catch (e2) {}
+        }
+      }
+      function setError(msg) { if (pinError) pinError.textContent = msg || ''; }
+      function paintMode(msg) {
+        if (mode === 'setup-new') {
+          lockTitle.textContent = 'Set up a 6-digit PIN';
+          lockSub.textContent = 'First run — choose a 6-digit PIN. It is stored on Google\'s server, never on this device.';
+          pinSubmit.textContent = 'Continue';
+        } else if (mode === 'setup-confirm') {
+          lockTitle.textContent = 'Confirm your PIN';
+          lockSub.textContent = 'Enter the same 6 digits again.';
+          pinSubmit.textContent = 'Save PIN';
+        } else {
+          lockTitle.textContent = 'Enter PIN';
+          lockSub.textContent = 'Enter your 6-digit PIN to continue.';
+          pinSubmit.textContent = 'Unlock';
+        }
+        setError(msg || '');
+        pinInput.value = '';
+        if (!lockEl.classList.contains('hidden')) {
+          try { pinInput.focus(); } catch (e) {}
+        }
+      }
+      function onUnlocked() {
+        setLockedUI(false);
+        try { window.dispatchEvent(new CustomEvent('cf:unlocked')); } catch (e) {}
+        checkSpreadsheetAndKey();
+        // Access state is only ever shown after the server confirms it. Until
+        // then the pill reads "Access unknown" (see paintAccessPill).
+        refreshAccessStatus();
+        // Warm the first history page after the UI is interactive. Deferred
+        // so unlock and the entry form never wait on it; silent by design.
+        deferIdle(function () { prefetchPage(0); });
+        refreshSessionState();
+      }
+      function lockToLogin(msg) {
+        mode = 'login';
+        firstPin = '';
+        stopSessTimer();
+        try { if (typeof closeApiModal === 'function') closeApiModal(); } catch (e) {}
+        try { if (typeof closeSheetModal === 'function') closeSheetModal(); } catch (e) {}
+        try { if (typeof closeSessModal === 'function') closeSessModal(); } catch (e) {}
+        try { if (typeof closeConfirmModal === 'function') closeConfirmModal(); } catch (e) {}
+        try { if (typeof closeTrashModal === 'function') closeTrashModal(); } catch (e) {}
+        setLockedUI(true);
+        paintMode(msg || '');
+      }
+      window.addEventListener('cf:auth-expired', function (e) {
+        var m = (e && e.detail) || 'Session expired - please log in again.';
+        lockToLogin(m);
+      });
+      function valid6(v) { return /^\d{6}$/.test(v || ''); }
+      function submitPin() {
+        var v = (pinInput.value || '').trim();
+        if (!valid6(v)) { setError('PIN must be exactly 6 digits.'); return; }
+        if (pinBusy) return;
+        if (!hasBackend) { try { cfSaveSession('preview', Date.now() + 43200000); } catch (e) {} onUnlocked(); return; }
+        pinBusy = true;
+        cfBusyBtn(pinSubmit, true, 'Checking…');
+        setError('');
+        if (mode === 'setup-new') {
+          firstPin = v;
+          mode = 'setup-confirm';
+          pinBusy = false;
+          cfBusyBtn(pinSubmit, false);
+          paintMode();
+          return;
+        }
+        if (mode === 'setup-confirm') {
+          if (v !== firstPin) {
+            pinBusy = false;
+            cfBusyBtn(pinSubmit, false);
+            firstPin = '';
+            mode = 'setup-new';
+            paintMode('PINs do not match — try again.');
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(function (sess) {
+              pinBusy = false;
+              cfBusyBtn(pinSubmit, false);
+              firstPin = '';
+              if (sess && sess.token) {
+                try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+                onUnlocked();
+              } else {
+                setError('Could not create session - try again.');
+              }
+            })
+            .withFailureHandler(function (err) {
+              pinBusy = false;
+              cfBusyBtn(pinSubmit, false);
+              setError('Could not save PIN: ' + (err && err.message ? err.message : err));
+            })
+            .setupPin(v);
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function (sess) {
+            pinBusy = false;
+            cfBusyBtn(pinSubmit, false);
+            if (sess && sess.token) {
+              try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+              onUnlocked();
+            } else {
+              setError('Wrong PIN — try again.');
+              pinInput.value = '';
+              try { pinInput.focus(); } catch (e) {}
+            }
+          })
+          .withFailureHandler(function (err) {
+            pinBusy = false;
+            cfBusyBtn(pinSubmit, false);
+            setError('Error: ' + (err && err.message ? err.message : err));
+          })
+          .login(v);
+      }
+      pinInput.addEventListener('input', function () {
+        pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 6);
+        setError('');
+        if (pinInput.value.length === 6) { setTimeout(function () { if (pinInput.value.length === 6 && !lockEl.classList.contains('hidden')) submitPin(); }, 250); }
+      });
+      pinInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPin(); });
+      pinSubmit.addEventListener('click', submitPin);
+
+      // Change PIN modal (session + old PIN required server-side)
+      function openModal() {
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        var e2 = document.getElementById('pin-change-error');
+        if (e2) e2.textContent = '';
+        ['pin-old', 'pin-new', 'pin-new2'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+        try { var f = document.getElementById('pin-old'); if (f) f.focus(); } catch (e) {}
+      }
+      function closeModal() { if (modal) modal.classList.add('hidden'); }
+      if (changeBtn) changeBtn.addEventListener('click', openModal);
+      var cancelBtn = document.getElementById('pin-change-cancel');
+      if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+      if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+      var saveBtn = document.getElementById('pin-change-save');
+      if (saveBtn) saveBtn.addEventListener('click', function () {
+        var oldP = (document.getElementById('pin-old').value || '').trim();
+        var newP = (document.getElementById('pin-new').value || '').trim();
+        var newP2 = (document.getElementById('pin-new2').value || '').trim();
+        var errEl = document.getElementById('pin-change-error');
+        function fail(m) { if (errEl) errEl.textContent = m; }
+        if (!valid6(oldP) || !valid6(newP)) { fail('All PINs must be exactly 6 digits.'); return; }
+        if (newP !== newP2) { fail('New PINs do not match.'); return; }
+        if (!hasBackend) { try { cfSaveSession(newP, Date.now() + 43200000); } catch (e) {} closeModal(); return; }
+        cfBusyBtn(saveBtn, true, 'Saving…');
+        google.script.run
+          .withSuccessHandler(function (sess) {
+            cfBusyBtn(saveBtn, false);
+            if (sess && sess.token) {
+              try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
+            }
+            closeModal();
+            try { setStatus('PIN changed. All other sessions revoked.', 'success'); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            cfBusyBtn(saveBtn, false);
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            fail('Error: ' + (err && err.message ? err.message : err));
+          })
+          .changePin(oldP, newP, sessionToken);
+      });
+
+      // Gemini API key prompt: after every PIN unlock (fresh setup or existing
+      // PIN login), ask for the key when none is stored server-side.
+      var apiHasKey = false;
+      function paintApiText() {
+        var title = document.getElementById('api-title');
+        var sub = document.getElementById('api-sub');
+        if (apiHasKey) {
+          if (title) title.textContent = 'Change Gemini API key';
+          if (sub) sub.textContent = 'A Gemini API key is already stored on the server. Paste a new key from Google AI Studio to replace it.';
+        } else {
+          if (title) title.textContent = 'Add Gemini API key';
+          if (sub) sub.textContent = 'No Gemini API key found on the server. Paste your key from Google AI Studio to enable logging.';
+        }
+      }
+      function openApiModal(msg) {
+        if (!apiModal) return;
+        paintApiText();
+        if (apiError) apiError.textContent = msg || '';
+        if (apiInput) apiInput.value = '';
+        apiModal.classList.remove('hidden');
+        try { if (apiInput) apiInput.focus(); } catch (e) {}
+      }
+      function closeApiModal() { if (apiModal) apiModal.classList.add('hidden'); }
+      function setApiKeyLabel(has) {
+        if (!apiBtn) return;
+        apiHasKey = !!has;
+        var label = apiBtn.querySelector('.menu-label');
+        var text = apiHasKey ? 'Change API key' : 'Set API key';
+        if (label) label.textContent = text;
+        else apiBtn.textContent = text;
+      }
+      function checkGeminiKey() {
+        if (!hasBackend) return;
+        if (!sessionToken) return;
+        var tok = arguments.length ? arguments[0] : sessionToken;
+        if (tok !== sessionToken) return;
+        try {
+          google.script.run
+            .withSuccessHandler(function (has) {
+              cfgFinish();
+              if (cfgStale(tok)) return;
+              setApiKeyLabel(!!has);
+              if (!has) openApiModal('');
+            })
+            .withFailureHandler(function (err) {
+              cfgFinish();
+              if (cfgStale(tok)) return;
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+                try { cfNoteAuthExpired(); } catch (e) {}
+                return;
+              }
+              // Non-auth errors (e.g. transient) must not block the app and
+              // must not be reported as a missing configuration.
+            })
+            .hasGeminiKey(tok);
+        } catch (e) { cfgFinish(); }
+      }
+      window.addEventListener('cf:missing-key', function () { openApiModal(''); });
+      if (apiBtn) apiBtn.addEventListener('click', function () { openApiModal(''); });
+      if (apiCancel) apiCancel.addEventListener('click', closeApiModal);
+      if (apiModal) apiModal.addEventListener('click', function (e) { if (e.target === apiModal) closeApiModal(); });
+      if (apiInput) apiInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (apiSave) apiSave.click(); } });
+      if (apiSave) apiSave.addEventListener('click', function () {
+        var k = (apiInput && apiInput.value ? apiInput.value : '').trim();
+        if (!k) { if (apiError) apiError.textContent = 'Paste your Gemini API key first.'; return; }
+        if (!hasBackend) { closeApiModal(); return; }
+        cfBusyBtn(apiSave, true, 'Saving…');
+        if (apiError) apiError.textContent = '';
+        google.script.run
+          .withSuccessHandler(function () {
+            cfBusyBtn(apiSave, false);
+            closeApiModal();
+            setApiKeyLabel(true);
+            try { setStatus('Gemini API key saved.', 'success'); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            cfBusyBtn(apiSave, false);
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeApiModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            if (apiError) apiError.textContent = 'Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err));
+          })
+          .saveGeminiKey(k, sessionToken);
+      });
+
+      // Google Sheet prompt: mirrors the API-key modal. Container-bound scripts
+      // (copied from a Sheet) need nothing; standalone scripts ask for ID/URL.
+      var sheetHasValue = false;
+      function paintSheetText() {
+        var title = document.getElementById('sheet-title');
+        var sub = document.getElementById('sheet-sub');
+        if (sheetHasValue) {
+          if (title) title.textContent = 'Change Google Sheet';
+          if (sub) sub.textContent = 'A Google Sheet is already set on the server. Paste a new Sheet ID or full Sheet URL to replace it.';
+        } else {
+          if (title) title.textContent = 'Set Google Sheet';
+          if (sub) sub.textContent = 'No Google Sheet found on the server. Paste your Sheet ID or full Sheet URL to enable logging.';
+        }
+      }
+      function openSheetModal(msg) {
+        if (!sheetModal) return;
+        paintSheetText();
+        if (sheetError) sheetError.textContent = msg || '';
+        if (sheetInput) sheetInput.value = '';
+        sheetModal.classList.remove('hidden');
+        try { if (sheetInput) sheetInput.focus(); } catch (e) {}
+      }
+      function closeSheetModal() { if (sheetModal) sheetModal.classList.add('hidden'); }
+      function setSheetLabel(has) {
+        if (!sheetBtn) return;
+        sheetHasValue = !!has;
+        var label = sheetBtn.querySelector('.menu-label');
+        var text = sheetHasValue ? 'Change Sheet' : 'Set Sheet';
+        if (label) label.textContent = text;
+        else sheetBtn.textContent = text;
+      }
+      // ---------- Access status (server-verified, never assumed) ----------
+      // The pill NEVER claims Private on its own. It starts unknown and is
+      // only repainted from a server response; a failed or stale response
+      // leaves the honest neutral state in place.
+      var accessPillPending = false;
+      function paintAccessPill(state) {
+        var dot = document.getElementById('pill-dot');
+        var label = document.getElementById('pill-access');
+        var pill = document.getElementById('session-pill');
+        var s = state || {};
+        var mode = s.verified && s.access === 'public' ? 'public'
+          : (s.verified && s.access === 'private' ? 'private' : 'unknown');
+        var text = mode === 'public' ? 'Public'
+          : (mode === 'private' ? 'Private' : 'Access unknown');
+        if (dot) dot.className = 'dot ' + mode;
+        if (label) {
+          label.textContent = text;
+          label.classList.toggle('pending', mode === 'unknown');
+        }
+        if (pill) {
+          pill.title = mode === 'unknown'
+            ? 'Access mode could not be verified from inside the app. ' +
+              (s.detail || 'Only the deployment owner can read it in Apps Script > Deploy > Manage deployment.')
+            : (s.detail || '');
+          try { pill.setAttribute('aria-label', 'Access status: ' + text + (pill.title ? '. ' + pill.title : '')); } catch (e) {}
+        }
+        return mode;
+      }
+      function refreshAccessStatus() {
+        if (!hasBackend || !sessionToken) return;
+        if (document.body.classList.contains('locked')) return;
+        if (accessPillPending) return; // never fire duplicate checks
+        accessPillPending = true;
+        var tokenAtCall = sessionToken;
+        paintAccessPill({ verified: false, access: 'unknown', detail: 'Checking…' });
+        cfCall('getAccessStatus', [tokenAtCall]).then(function (res) {
+          accessPillPending = false;
+          // Ignore a response that belongs to a session we already left.
+          if (tokenAtCall !== sessionToken) return;
+          paintAccessPill(res || { verified: false, access: 'unknown' });
+        }).catch(function (err) {
+          accessPillPending = false;
+          if (tokenAtCall !== sessionToken) return;
+          if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+            try { cfNoteAuthExpired(); } catch (e) {}
+            return;
+          }
+          // Transient failure stays honest and neutral.
+          paintAccessPill({ verified: false, access: 'unknown', detail: 'Access check failed; showing unknown.' });
+        });
+      }
+      // ---------- Configuration check (discreet pending state) ----------
+      // Unlock silently starts two backend calls (Sheet configured? Gemini key
+      // present?). This shows one small, non-blocking status for that work: the
+      // entry form stays fully usable, and every terminal path - success,
+      // missing configuration, auth expiry, transient failure - clears it.
+      // A missing Sheet/API key modal opens ONLY when the server confirmed the
+      // value is absent; a transient error is never reported as "not set up".
+      var cfgBusy = false;
+      function setCfgNote(text) {
+        var el = document.getElementById('cfg-note');
+        if (!el) return;
+        if (text) { el.textContent = text; el.classList.remove('hidden'); }
+        else { el.textContent = ''; el.classList.add('hidden'); }
+      }
+      function cfgStale(tok) {
+        // A response that belongs to a session we already left (logout, PIN
+        // change, expiry) must never open a modal or repaint the new session.
+        return tok !== sessionToken || document.body.classList.contains('locked');
+      }
+      function cfgFinish() { cfgBusy = false; setCfgNote(''); }
+      function checkSpreadsheetAndKey() {
+        if (!hasBackend) return;
+        if (!sessionToken) return;
+        if (document.body.classList.contains('locked')) return;
+        if (cfgBusy) return; // never fire duplicate configuration checks
+        cfgBusy = true;
+        var tok = sessionToken;
+        setCfgNote('Checking configuration…');
+        try {
+          google.script.run
+            .withSuccessHandler(function (hasSheet) {
+              if (cfgStale(tok)) { cfgFinish(); return; }
+              setSheetLabel(!!hasSheet);
+              if (!hasSheet) {
+                cfgFinish();
+                openSheetModal('');
+                checkGeminiKeyQuiet();
+                return;
+              }
+              checkGeminiKey(tok);
+            })
+            .withFailureHandler(function (err) {
+              if (cfgStale(tok)) { cfgFinish(); return; }
+              cfgFinish();
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+                try { cfNoteAuthExpired(); } catch (e) {}
+                return;
+              }
+              // Transient failure: say so plainly, claim nothing about setup.
+              try { setStatus('Configuration check could not finish — you can still try logging.', ''); } catch (e2) {}
+              checkGeminiKeyQuiet();
+            })
+            .hasSpreadsheet(tok);
+        } catch (e) { cfgFinish(); }
+      }
+      function checkGeminiKeyQuiet() {
+        if (!hasBackend) return;
+        if (!sessionToken) return;
+        var tok = sessionToken;
+        try {
+          google.script.run
+            .withSuccessHandler(function (has) { if (!cfgStale(tok)) setApiKeyLabel(!!has); })
+            .withFailureHandler(function () {})
+            .hasGeminiKey(tok);
+        } catch (e) {}
+      }
+      window.addEventListener('cf:missing-sheet', function () { openSheetModal(''); });
+      if (sheetBtn) sheetBtn.addEventListener('click', function () { openSheetModal(''); });
+      if (sheetCancel) sheetCancel.addEventListener('click', closeSheetModal);
+      if (sheetModal) sheetModal.addEventListener('click', function (e) { if (e.target === sheetModal) closeSheetModal(); });
+      if (sheetInput) sheetInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (sheetSave) sheetSave.click(); } });
+      if (sheetSave) sheetSave.addEventListener('click', function () {
+        var v = (sheetInput && sheetInput.value ? sheetInput.value : '').trim();
+        if (!v) { if (sheetError) sheetError.textContent = 'Paste your Sheet ID or full Sheet URL first.'; return; }
+        if (!hasBackend) { closeSheetModal(); return; }
+        cfBusyBtn(sheetSave, true, 'Saving…');
+        if (sheetError) sheetError.textContent = '';
+        google.script.run
+          .withSuccessHandler(function () {
+            cfBusyBtn(sheetSave, false);
+            closeSheetModal();
+            setSheetLabel(true);
+            try { setStatus('Google Sheet saved.', 'success'); } catch (e) {}
+            checkGeminiKey();
+          })
+          .withFailureHandler(function (err) {
+            cfBusyBtn(sheetSave, false);
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeSheetModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            if (sheetError) sheetError.textContent = 'Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err));
+          })
+          .saveSpreadsheetId(v, sessionToken);
+      });
+
+      // ---- Global session countdown, renewal, and settings ----
+      // The server is authoritative: sessExpiresAt/sessRenew always mirror the
+      // last validateSession response. The 30s timer only enforces and
+      // displays that server-issued state; it never extends anything itself.
+      function sessRemainingMs() { return (sessExpiresAt || 0) - Date.now(); }
+      function paintSessPill() {
+        var el = document.getElementById('sess-count');
+        if (!el) return;
+        var left = sessRemainingMs();
+        var show = !sessRenew && sessExpiresAt > 0 && left > 0 && left <= SESS_COUNTDOWN_MS;
+        el.classList.toggle('hidden', !show);
+        if (!show) { el.textContent = ''; el.classList.remove('warn'); return; }
+        var mins = Math.max(1, Math.ceil(left / 60000));
+        el.textContent = 'expires in ' + mins + ' min';
+        el.classList.toggle('warn', left <= SESS_WARN_MS);
+      }
+      function stopSessTimer() {
+        try { if (sessTimer) clearInterval(sessTimer); } catch (e) {}
+        sessTimer = null;
+      }
+      function expireSession() {
+        stopSessTimer();
+        paintSessPill();
+        // Locking overlays the PIN gate without reloading: typed notes,
+        // table rows, and selected photos stay exactly as left. Lock directly
+        // rather than via the auth-expired event so the lock (and its message)
+        // cannot be lost if the event has no listener.
+        try { cfClearSession(); } catch (e) {}
+        try { lockToLogin('Your session has expired - please log in again.'); } catch (e2) {}
+      }
+      function checkSessExpiry() {
+        if (!sessionToken || !sessExpiresAt) return;
+        try {
+          if (document.body.classList.contains('locked')) { stopSessTimer(); return; }
+        } catch (e) {}
+        var left = sessRemainingMs();
+        if (left <= 0) { expireSession(); return; }
+        paintSessPill();
+        if (!sessRenew && left <= SESS_WARN_MS && !sessWarned10) {
+          sessWarned10 = true;
+          try { setStatus('Your session expires in ' + Math.max(1, Math.ceil(left / 60000)) + ' minutes. Finish up and log in again — your entries stay put.', 'error'); } catch (e2) {}
+        }
+      }
+      function startSessTimer() {
+        try {
+          if (sessTimer) return;
+          checkSessExpiry();
+          sessTimer = setInterval(function () { checkSessExpiry(); }, 30000);
+        } catch (e) {}
+      }
+      // Reconciles the display with the server's recorded expiry. Safe to
+      // call on unlock, tab visibility changes, and after settings saves.
+      function refreshSessionState() {
+        if (!hasBackend || !sessionToken) return;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (!res || !res.valid) { expireSession(); return; }
+            if (res.expiresAt !== sessExpiresAt) sessWarned10 = false;
+            sessExpiresAt = Number(res.expiresAt) || 0;
+            sessRenew = res.refreshOnActivity === true;
+            startSessTimer();
+            checkSessExpiry();
+          })
+          .withFailureHandler(function () {
+            // Transient failure: keep last-known state. The local-expiry
+            // rule in checkSessExpiry still locks on time.
+          })
+          .validateSession(sessionToken);
+      }
+      // Throttled activity renewal: trusted interaction events only (never
+      // timer ticks, never mousemove), at most one server call per minute.
+      // Each call revalidates server-side; failures keep last-known state.
+      function onUserActivity() {
+        if (!sessRenew || !sessionToken || !sessExpiresAt) return;
+        if (!hasBackend) return;
+        try { if (document.body.classList.contains('locked')) return; } catch (e) {}
+        var now = Date.now();
+        if (now - sessLastTouch < SESS_TOUCH_MIN_MS) return;
+        sessLastTouch = now;
+        try {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res && res.valid && res.expiresAt) {
+                if (res.expiresAt !== sessExpiresAt) sessWarned10 = false;
+                sessExpiresAt = Number(res.expiresAt) || sessExpiresAt;
+                paintSessPill();
+              } else if (res && !res.valid) {
+                expireSession();
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) expireSession();
+            })
+            .touchSession(sessionToken);
+        } catch (e2) {}
+      }
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        ['keydown', 'pointerdown', 'touchstart', 'click'].forEach(function (t) {
+          try { document.addEventListener(t, onUserActivity, { passive: true }); } catch (e) {}
+        });
+        document.addEventListener('visibilitychange', function () {
+          try { if (!document.hidden) refreshSessionState(); } catch (e) {}
+        });
+      }
+
+      // Global session settings (applies to every web-app user).
+      var sessModal = document.getElementById('sess-modal');
+      var sessHours = document.getElementById('sess-hours');
+      var sessRenewBox = document.getElementById('sess-renew');
+      var sessSave = document.getElementById('sess-save');
+      var sessCancel = document.getElementById('sess-cancel');
+      var sessError = document.getElementById('sess-error');
+      var sessBtn = document.getElementById('sess-btn');
+      var sessReturnFocus = null;
+      function showSessModal() {
+        if (!sessModal) return;
+        sessModal.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+      }
+      function openSessModal() {
+        if (!sessModal) return;
+        if (sessError) sessError.textContent = '';
+        if (!hasBackend || !sessionToken) return;
+        sessReturnFocus = document.getElementById('settings-btn') || sessBtn;
+        cfBusyBtn(sessSave, true, 'Loading…');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            cfBusyBtn(sessSave, false);
+            if (!res || !res.valid) { expireSession(); return; }
+            if (sessHours) sessHours.value = (res.ttlHours != null ? res.ttlHours : 3);
+            if (sessRenewBox) sessRenewBox.checked = res.refreshOnActivity === true;
+            showSessModal();
+            try { if (sessHours) sessHours.focus(); } catch (e) {}
+          })
+          .withFailureHandler(function (err) {
+            cfBusyBtn(sessSave, false);
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) { expireSession(); return; }
+            if (sessError) sessError.textContent = 'Could not load session settings: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            showSessModal();
+            try { if (sessCancel) sessCancel.focus(); } catch (e) {}
+          })
+          .validateSession(sessionToken);
+      }
+      function closeSessModal() {
+        if (sessModal) sessModal.classList.add('hidden');
+        syncSpecialModalScrollLock();
+        var focus = sessReturnFocus;
+        sessReturnFocus = null;
+        try { if (focus && focus.focus) focus.focus(); } catch (e) {}
+      }
+      if (sessBtn) sessBtn.addEventListener('click', openSessModal);
+      if (sessCancel) sessCancel.addEventListener('click', closeSessModal);
+      if (sessModal) sessModal.addEventListener('click', function (e) { if (e.target === sessModal) closeSessModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && sessModal && !sessModal.classList.contains('hidden')) {
+          e.preventDefault();
+          closeSessModal();
+        }
+      });
+      // Reusable information dialog. Content is assigned as text, never HTML.
+      var infoModal = document.getElementById('info-modal');
+      var infoTitle = document.getElementById('info-title');
+      var infoBody = document.getElementById('info-body');
+      var infoClose = document.getElementById('info-close');
+      var infoReturnFocus = null;
+      var infoCopy = {
+        entry: { title: 'How logging works', body: 'The app reads the printed total first, then extracts line items and checks their sum. A mismatch gets a bounded repair. Unreadable totals or unresolved mismatches stay available for review unless Table Layout Force-save is enabled with a reliable total. You can also log a typed note without a photo.' },
+        reconciliation: { title: 'Reconciliation options', body: 'Receipts whose extracted items match the printed total are saved. A mismatch gets a repair first. With Force-save off, an unresolved mismatch waits for review. With Force-save on, a reliably read printed total can be balanced by one clearly labeled line after repair. An unreadable total is never force-saved.' },
+        photos: { title: 'Receipt photos', body: 'Supported formats: JPG, PNG, WEBP, and HEIC. Camera captures one new photo at a time. Use Gallery to select multiple existing photos.' },
+        note: { title: 'Notes', body: 'The note applies to all selected photos. To describe individual receipts, use wording such as “first photo is a top-up; third photo is food for a friend”.' },
+        'one-row': { title: 'One row per receipt', body: 'Each receipt is written as one spreadsheet row at its reliably read printed total. Its item detail is preserved in Notes. Quantity and unit price are included only when they were clearly readable on the receipt.' }
+      };
+      function syncSpecialModalScrollLock() {
+        var sessionOpen = sessModal && !sessModal.classList.contains('hidden');
+        var infoOpen = infoModal && !infoModal.classList.contains('hidden');
+        document.body.classList.toggle('modal-open', !!(sessionOpen || infoOpen));
+      }
+      function openInfoModal(key, trigger) {
+        var copy = infoCopy[key];
+        if (!infoModal || !copy) return;
+        infoReturnFocus = trigger || document.activeElement;
+        infoTitle.textContent = copy.title;
+        infoBody.textContent = copy.body;
+        infoModal.classList.remove('hidden');
+        syncSpecialModalScrollLock();
+        try { if (infoClose) infoClose.focus(); } catch (e) {}
+      }
+      function closeInfoModal() {
+        if (!infoModal || infoModal.classList.contains('hidden')) return;
+        infoModal.classList.add('hidden');
+        syncSpecialModalScrollLock();
+        var focus = infoReturnFocus;
+        infoReturnFocus = null;
+        try { if (focus && focus.focus) focus.focus(); } catch (e) {}
+      }
+      document.querySelectorAll('[data-info]').forEach(function (button) {
+        button.addEventListener('click', function () { openInfoModal(button.getAttribute('data-info'), button); });
+      });
+      if (infoClose) infoClose.addEventListener('click', closeInfoModal);
+      if (infoModal) infoModal.addEventListener('click', function (e) { if (e.target === infoModal) closeInfoModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && infoModal && !infoModal.classList.contains('hidden')) {
+          e.preventDefault();
+          closeInfoModal();
+        }
+      });
+
+      if (sessSave) sessSave.addEventListener('click', function () {
+        var h = sessHours ? Number(String(sessHours.value || '').trim()) : NaN;
+        if (!isFinite(h) || Math.floor(h) !== h || h < 1 || h > 168) {
+          if (sessError) sessError.textContent = 'Enter a whole number of hours from 1 to 168.';
+          return;
+        }
+        var renew = !!(sessRenewBox && sessRenewBox.checked);
+        openConfirmModal({
+          title: 'Apply session settings for everyone?',
+          body: 'New sessions will last ' + h + (h === 1 ? ' hour' : ' hours') + ' and activity renewal will be ' + (renew ? 'on' : 'off') + ' for every user. Current sessions keep their recorded expiry.',
+          okLabel: 'Apply to everyone',
+          danger: false
+        }).then(function (yes) {
+          if (!yes) return;
+          if (sessError) sessError.textContent = '';
+          cfBusyBtn(sessSave, true, 'Saving…');
+          google.script.run
+            .withSuccessHandler(function () {
+              cfBusyBtn(sessSave, false);
+              closeSessModal();
+              try { setStatus('Session settings saved for everyone.', 'success'); } catch (e) {}
+              refreshSessionState();
+            })
+            .withFailureHandler(function (err) {
+              cfBusyBtn(sessSave, false);
+              if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) { closeSessModal(); expireSession(); return; }
+              if (sessError) sessError.textContent = 'Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            })
+            .setSessionConfig(sessionToken, h, renew);
+        });
+      });
+
+      // Generic confirm dialog. Resolves true on explicit confirm, false on
+      // cancel/backdrop/Escape. Never destructive on its own.
+      var confirmResolve = null;
+      function openConfirmModal(opts) {
+        opts = opts || {};
+        if (!confirmModal) return Promise.resolve(false);
+        if (confirmTitle) confirmTitle.textContent = opts.title || 'Confirm';
+        if (confirmBody) confirmBody.textContent = opts.body || '';
+        if (confirmOk) {
+          confirmOk.textContent = opts.okLabel || 'Confirm';
+          confirmOk.classList.toggle('danger', !!opts.danger);
+          confirmOk.disabled = false;
+        }
+        if (confirmError) confirmError.textContent = '';
+        confirmModal.classList.remove('hidden');
+        try { if (confirmCancel) confirmCancel.focus(); } catch (e) {}
+        return new Promise(function (resolve) { confirmResolve = resolve; });
+      }
+      function closeConfirmModal(result) {
+        if (confirmModal) confirmModal.classList.add('hidden');
+        if (typeof confirmResolve === 'function') {
+          var r = confirmResolve;
+          confirmResolve = null;
+          r(!!result);
+        } else {
+          confirmResolve = null;
+        }
+      }
+      if (confirmCancel) confirmCancel.addEventListener('click', function () { closeConfirmModal(false); });
+      if (confirmOk) confirmOk.addEventListener('click', function () { closeConfirmModal(true); });
+      if (confirmModal) confirmModal.addEventListener('click', function (e) { if (e.target === confirmModal) closeConfirmModal(false); });
+
+      function fmtDaysLeft(ms) {
+        var days = Math.ceil(Number(ms || 0) / 86400000);
+        if (days <= 0) return 'less than a day';
+        return days + (days === 1 ? ' day' : ' days');
+      }
+      function fmtTrashWhen(ms) {
+        try {
+          return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(Number(ms)));
+        } catch (e) { return ''; }
+      }
+
+      // Trash / recovery view (unified screen, two filter sections).
+      var trashFilter = 'entries';
+      var trashGroupsCache = [];
+      function setTrashFilter(f) {
+        trashFilter = (f === 'transactions') ? 'transactions' : 'entries';
+        if (trashFilterEntries) trashFilterEntries.setAttribute('aria-selected', trashFilter === 'entries' ? 'true' : 'false');
+        if (trashFilterTxns) trashFilterTxns.setAttribute('aria-selected', trashFilter === 'transactions' ? 'true' : 'false');
+        renderTrashList();
+      }
+      function openTrashModal(filter) {
+        if (!trashModal) return;
+        if (trashTitle) trashTitle.textContent = 'Trash — recover deleted items';
+        trashModal.classList.remove('hidden');
+        setTrashFilter(filter || 'entries');
+        refreshTrashList();
+        try { if (trashClose) trashClose.focus(); } catch (e) {}
+      }
+      function closeTrashModal() { if (trashModal) trashModal.classList.add('hidden'); }
+      function trashRowBusy(btn, busy) { cfBusyBtn(btn, busy, busy ? 'Restoring…' : null); }
+      function refreshTrashList() {
+        if (!trashList) return;
+        if (!hasBackend) {
+          if (trashCount) trashCount.textContent = '';
+          trashList.innerHTML = '';
+          var p0 = document.createElement('p');
+          p0.className = 'trash-empty';
+          p0.textContent = 'Preview mode — connect to Apps Script to see deleted items.';
+          trashList.appendChild(p0);
+          return;
+        }
+        if (!sessionToken) return;
+        if (trashCount) trashCount.textContent = 'Loading Trash…';
+        trashList.innerHTML = '';
+        var p = document.createElement('p');
+        p.className = 'trash-state';
+        p.textContent = 'Loading…';
+        trashList.appendChild(p);
+        if (trashList.setAttribute) trashList.setAttribute('aria-busy', 'true');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            trashGroupsCache = (res && res.groups) || [];
+            renderTrashList();
+          })
+          .withFailureHandler(function (err) {
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              closeTrashModal();
+              try { cfNoteAuthExpired(); } catch (e) {}
+              return;
+            }
+            trashList.innerHTML = '';
+            if (trashList.removeAttribute) trashList.removeAttribute('aria-busy');
+            if (trashCount) trashCount.textContent = '';
+            var pe = document.createElement('p');
+            pe.className = 'trash-state';
+            pe.textContent = 'Could not load Trash: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err));
+            trashList.appendChild(pe);
+            var retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'btn-choice';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', refreshTrashList);
+            trashList.appendChild(retry);
+          })
+          .listTrash(sessionToken);
+      }
+      function renderTrashList() {
+        if (!trashList) return;
+        if (trashList.removeAttribute) trashList.removeAttribute('aria-busy');
+        trashList.innerHTML = '';
+        // Transaction groups always live under Transactions, even singletons.
+        var groups = trashFilter === 'transactions'
+          ? trashGroupsCache.filter(function (g) { return g.type === 'transaction'; })
+          : trashGroupsCache.filter(function (g) { return g.type !== 'transaction'; });
+        if (trashCount) trashCount.textContent = groups.length
+          ? groups.length + (groups.length === 1 ? ' deleted item' : ' deleted items') + ' in Trash'
+          : '';
+        if (!groups.length) {
+          var pe = document.createElement('p');
+          pe.className = 'trash-empty';
+          pe.textContent = 'Trash is empty. Deleted entries and receipts stay here for 7 days.';
+          trashList.appendChild(pe);
+          return;
+        }
+        groups.forEach(function (g) {
+          var card = document.createElement('div');
+          card.className = 'trash-group';
+          var title = document.createElement('b');
+          title.textContent = (g.merchant || 'Unknown') +
+            (g.type === 'transaction' ? ' · ' + g.count + ' line items' : '');
+          var descEl = null;
+          if (g.description) {
+            descEl = document.createElement('div');
+            descEl.className = 'desc';
+            descEl.textContent = g.description;
+          }
+          var meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = 'Deleted ' + (fmtTrashWhen(g.deletedAtMs) || 'recently') +
+            (g.date ? ' · receipt ' + g.date : '') +
+            (g.transactionId ? ' · ' + g.transactionId : '') +
+            (g.total ? ' · ' + fmtRp(g.total) : '') +
+            ' · expires in ' + fmtDaysLeft(g.msRemaining);
+          var row = document.createElement('div');
+          row.className = 'row';
+          var rb = document.createElement('button');
+          rb.type = 'button';
+          rb.className = 'btn-choice';
+          rb.textContent = g.type === 'transaction' ? 'Recover transaction' : 'Recover entry';
+          rb.addEventListener('click', function () { restoreTrashGroup(g, rb); });
+          row.appendChild(rb);
+          card.appendChild(title);
+          if (descEl) card.appendChild(descEl);
+          card.appendChild(meta);
+          card.appendChild(row);
+          trashList.appendChild(card);
+        });
+      }
+      function restoreTrashGroup(g, btn) {
+        function go() {
+          trashRowBusy(btn, true);
+          var call = g.type === 'transaction'
+            ? cfCall('restoreTransaction', [sessionToken, g.groupId])
+            : cfCall('restoreEntry', [sessionToken, entryIdOf_(g)]);
+          call.then(function (res) {
+            trashRowBusy(btn, false);
+            refreshTrashList();
+            noteHistoryMutated();
+            try {
+              setStatus(g.type === 'transaction'
+                ? 'Receipt restored (' + (res && res.restored) + ' rows).'
+                : 'Entry restored.', 'success');
+            } catch (e) {}
+          }, function (err) {
+            trashRowBusy(btn, false);
+            if (cfAuthError(err)) { closeTrashModal(); try { cfNoteAuthExpired(); } catch (e) {} return; }
+            try {
+              setStatus('Restore failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+            } catch (e2) {}
+            refreshTrashList();
+          });
+        }
+        if (g.type === 'transaction' && g.count > 1) {
+          openConfirmModal({
+            title: 'Recover entire receipt?',
+            body: 'Restore "' + (g.merchant || 'Unknown') + '" and all ' + g.count +
+              ' line items back to ' + 'their month sheet? Entry and Transaction IDs are preserved.',
+            okLabel: 'Recover receipt',
+            danger: false
+          }).then(function (yes) { if (yes) go(); });
+        } else {
+          go();
+        }
+      }
+      // Entry groups carry their single Entry ID from the server summary.
+      function entryIdOf_(g) {
+        var ids = (g && g.entryIds) || [];
+        return ids.length ? ids[0] : '';
+      }
+      if (trashFilterEntries) trashFilterEntries.addEventListener('click', function () { setTrashFilter('entries'); });
+      if (trashFilterTxns) trashFilterTxns.addEventListener('click', function () { setTrashFilter('transactions'); });
+      if (trashClose) trashClose.addEventListener('click', closeTrashModal);
+      if (trashModal) trashModal.addEventListener('click', function (e) { if (e.target === trashModal) closeTrashModal(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (confirmModal && !confirmModal.classList.contains('hidden')) closeConfirmModal(false);
+        else if (trashModal && !trashModal.classList.contains('hidden')) closeTrashModal();
+      });
+      if (trashBtn) trashBtn.addEventListener('click', function () { openTrashModal(); });
+
+      // Log out: destroy server session, drop local copy, back to PIN-first.
+      if (logoutBtn) logoutBtn.addEventListener('click', function () {
+        if (!hasBackend) { try { cfClearSession(); } catch (e) {} lockToLogin(''); return; }
+        var tok = null;
+        try { tok = sessionToken; } catch (e) {}
+        google.script.run
+          .withSuccessHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            lockToLogin('Logged out.');
+          })
+          .withFailureHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            lockToLogin('Logged out.');
+          })
+          .logout(tok);
+      });
+
+      // History (session-gated)
+      function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+      function fmtRp(n) { try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); } catch (e) { return 'Rp' + n; } }
+      function renderLogs(logs, append) {
+        var parts = [];
+        logs.forEach(function (lg) {
+          var isInc = String(lg.type || '').toLowerCase() === 'income';
+          var amt = Number(lg.amount || 0);
+          var desc = lg.description || lg.notes || lg.category || '';
+          var eid = esc(lg.entryId || '');
+          var tid = esc(lg.transactionId || '');
+          // Build the whole page as one string and insert once. The previous
+          // per-item appendChild loop forced a layout pass for every row.
+          parts.push(
+            '<div class="hist-item" data-entry-id="' + eid + '" data-txn-id="' + tid + '">' +
+            '<div class="hist-top"><span class="hist-merchant">' + esc(lg.merchant || 'Unknown') + '</span>' +
+            '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(lg.type || (amt < 0 ? 'Expense' : '')) + '</span></div>' +
+            '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(fmtRp(amt)) + '</div>' +
+            (desc ? '<div class="hist-sub">' + esc(desc) + '</div>' : '') +
+            '<div class="hist-meta">' + esc(lg.date || '') + ' \u00b7 ' + esc(lg.sheet || '') + (lg.category ? ' \u00b7 ' + esc(lg.category) : '') + (lg.transactionId ? ' \u00b7 ' + esc(lg.transactionId) : '') + '</div>' +
+            '<div class="hist-actions">' +
+              '<button type="button" class="hist-del" data-act="del-entry" data-entry-id="' + eid + '">Delete entry</button>' +
+              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for this entry">&#8943;</button></span>' +
+            '</div></div>'
+          );
+        });
+        if (!parts.length) return;
+        var markup = parts.join('');
+        if (append) histList.insertAdjacentHTML('beforeend', markup);
+        else histList.innerHTML = markup;
+      }
+      var histOpenMenu = null;
+      function histActTarget(el) {
+        while (el && el !== histList) {
+          if (el.getAttribute && el.getAttribute('data-act')) return el;
+          el = el.parentNode || el.parent || null;
+        }
+        return null;
+      }
+      function closeHistMenu() {
+        if (histOpenMenu) {
+          try { histOpenMenu.remove(); } catch (e) {}
+          var btn = histOpenMenu && histOpenMenu._owner;
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+          histOpenMenu = null;
+        }
+      }
+      function histBusy(btn, busy, label) { cfBusyBtn(btn, busy, busy ? (label || 'Working…') : null); }
+      if (histList) histList.addEventListener('click', function (e) {
+        var t = histActTarget(e.target);
+        if (!t) return;
+        var act = t.getAttribute('data-act');
+        if (act === 'more') { openHistMenu(t); return; }
+        if (act === 'del-entry') {
+          closeHistMenu();
+          deleteHistoryEntry(t.getAttribute('data-entry-id'), t);
+          return;
+        }
+        if (act === 'del-txn') {
+          closeHistMenu();
+          deleteHistoryTransaction(t.getAttribute('data-txn-id'), t);
+          return;
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (histOpenMenu && !histMenuContains(e.target)) closeHistMenu();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && histOpenMenu) closeHistMenu();
+      });
+      function histMenuContains(el) {
+        var owner = histOpenMenu && histOpenMenu._owner;
+        while (el) {
+          // The open trigger counts as inside: the same click that opens the
+          // menu bubbles to document, and must not close it immediately.
+          if (el === histOpenMenu || el === owner) return true;
+          el = el.parentNode || el.parent || null;
+        }
+        return false;
+      }
+      function openHistMenu(ownerBtn) {
+        // Toggle: clicking the open trigger again closes its menu instead of
+        // reopening it. A different trigger switches the menu to that row.
+        if (histOpenMenu && histOpenMenu._owner === ownerBtn) { closeHistMenu(); return; }
+        closeHistMenu();
+        var wrap = ownerBtn.parentNode || ownerBtn.parent;
+        var txnId = ownerBtn.getAttribute('data-txn-id') || '';
+        var menu = document.createElement('div');
+        menu.className = 'hist-menu';
+        menu.setAttribute('role', 'menu');
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'menu-item';
+        item.setAttribute('role', 'menuitem');
+        if (txnId) {
+          item.textContent = 'Delete entire receipt…';
+          item.setAttribute('data-act', 'del-txn');
+          item.setAttribute('data-txn-id', txnId);
+        } else {
+          item.textContent = 'No receipt group for this record';
+          item.disabled = true;
+          item.title = 'This record has no Transaction ID, so only the single entry can be deleted.';
+        }
+        menu.appendChild(item);
+        menu._owner = ownerBtn;
+        if (wrap) wrap.appendChild(menu);
+        ownerBtn.setAttribute('aria-expanded', 'true');
+        histOpenMenu = menu;
+        try { item.focus(); } catch (e) {}
+      }
+      function deleteHistoryEntry(entryId, btn) {
+        entryId = String(entryId || '');
+        if (!entryId) {
+          try { setStatus('That record has no Entry ID - reload Recent logs and try again.', 'error'); } catch (e) {}
+          return;
+        }
+        if (!hasBackend || !sessionToken) return;
+        var opId = (typeof cfUuid === 'function') ? cfUuid() : String(Date.now());
+        openConfirmModal({
+          title: 'Move entry to Trash?',
+          body: 'Move this line item to Trash? Other items in this receipt will remain. You can recover it for 7 days.',
+          okLabel: 'Move to Trash',
+          danger: true
+        }).then(function (yes) {
+          if (!yes) return;
+          histBusy(btn, true, 'Deleting…');
+          cfCall('deleteEntries', [sessionToken, [entryId], opId]).then(function (res) {
+            histBusy(btn, false);
+            try {
+              setStatus(res && res.alreadyMoved ? 'Entry was already in Trash.' : 'Entry moved to Trash. Recover it within 7 days.', 'success');
+            } catch (e) {}
+            noteHistoryMutated();
+            refreshTrashIfOpen();
+          }, function (err) {
+            histBusy(btn, false);
+            if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+            try {
+              setStatus('Delete failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+            } catch (e2) {}
+          });
+        });
+      }
+      function deleteHistoryTransaction(txnId, btn) {
+        txnId = String(txnId || '');
+        if (!txnId) return;
+        if (!hasBackend || !sessionToken) return;
+        histBusy(btn, true, 'Loading…');
+        cfCall('describeTransaction', [sessionToken, txnId]).then(function (info) {
+          histBusy(btn, false);
+          info = info || {};
+          if (!info.hasLiveRows) {
+            try { setStatus('No live rows carry that Transaction ID - it may already be in Trash.', 'error'); } catch (e) {}
+            noteHistoryMutated();
+            return;
+          }
+          var n = Number(info.count || 0);
+          var opId = (typeof cfUuid === 'function') ? cfUuid() : String(Date.now());
+          openConfirmModal({
+            title: 'Move entire receipt to Trash?',
+            body: 'Move this entire receipt' + (info.merchant ? ' ("' + info.merchant + '")' : '') + ' and all ' + n +
+              ' line item' + (n === 1 ? '' : 's') + ' to Trash? You can recover it for 7 days. After 7 days, it will be permanently deleted.',
+            okLabel: 'Move receipt to Trash',
+            danger: true
+          }).then(function (yes) {
+            if (!yes) return;
+            histBusy(btn, true, 'Moving…');
+            cfCall('deleteTransaction', [sessionToken, txnId, opId]).then(function (res) {
+              histBusy(btn, false);
+              try {
+                setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' rows). Recover it within 7 days.', 'success');
+              } catch (e) {}
+              noteHistoryMutated();
+              refreshTrashIfOpen();
+            }, function (err) {
+              histBusy(btn, false);
+              if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+              try {
+                setStatus('Delete failed: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+              } catch (e2) {}
+            });
+          });
+        }, function (err) {
+          histBusy(btn, false);
+          if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
+          try {
+            setStatus('Could not inspect that receipt: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+          } catch (e2) {}
+        });
+      }
+      function refreshTrashIfOpen() {
+        try {
+          var tm = document.getElementById('trash-modal');
+          if (tm && !tm.classList.contains('hidden') && typeof refreshTrashList === 'function') refreshTrashList();
+        } catch (e) {}
+      }
+      // Recent-logs page cache. Pages are keyed by offset and hold exact
+      // server responses; the client never re-sorts or fabricates rows.
+      // histGen rises on every refresh/invalidation so stale in-flight
+      // responses can never overwrite newer data.
+      var histCache = { pages: {}, total: 0 };
+      var histPending = {};
+      var histWaiters = {};
+      var histReqGen = {};
+      var histGen = 0;
+      var CACHED_REVEAL_MS = 300;
+      function deferIdle(fn) {
+        try {
+          if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(function () { fn(); });
+            return;
+          }
+        } catch (e) {}
+        setTimeout(fn, 0);
+      }
+      function cacheHistPage(offset, res) {
+        histCache.pages[offset] = { logs: (res.logs || []).slice(), total: res.total || 0, hasMore: !!res.hasMore };
+        histCache.total = res.total || 0;
+      }
+      function invalidateHistCache() {
+        histCache = { pages: {}, total: 0 };
+        histGen++;
+      }
+      function flushHistWaiters(offset, page, reqGen) {
+        var w = histWaiters[offset] || [];
+        var keep = [];
+        var live = (reqGen === histGen);
+        w.forEach(function (item) {
+          // Notify only waiters from the responding generation while it is
+          // still current. Waiters from newer generations stay queued for
+          // their own response; older ones drop silently and must never
+          // surface as an error.
+          if (item.gen === reqGen && live) {
+            try { item.fn(page); } catch (e) {}
+          } else if (item.gen > reqGen) {
+            keep.push(item);
+          }
+        });
+        histWaiters[offset] = keep;
+      }
+      // Fetches one page (or serves it from cache) and notifies waiters.
+      // Silent prefetch and explicit user requests share in-flight calls, so
+      // the same offset is never fetched twice for the same generation. A
+      // newer generation always fires its own request: a stale response can
+      // never satisfy it. Set force to bypass the cache for explicit refreshes.
+      function requestHistPage(offset, onDone, force) {
+        var cached = !force && histCache.pages[offset];
+        if (cached) { if (onDone) onDone(cached, true); return; }
+        var myGen = histGen;
+        histWaiters[offset] = histWaiters[offset] || [];
+        if (onDone) histWaiters[offset].push({ gen: myGen, fn: onDone });
+        if (histPending[offset] && histReqGen[offset] === myGen) return;
+        if (!hasBackend || !sessionToken) { flushHistWaiters(offset, null, myGen); return; }
+        histPending[offset] = true;
+        histReqGen[offset] = myGen;
+        var reqGen = myGen;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (histReqGen[offset] === reqGen) histPending[offset] = false;
+            if (reqGen !== histGen) { flushHistWaiters(offset, null, reqGen); return; }
+            res = res || {};
+            cacheHistPage(offset, res);
+            flushHistWaiters(offset, histCache.pages[offset], reqGen);
+            if (offset + (res.logs || []).length < (res.total || 0)) prefetchPage(offset + histLimit);
+          })
+          .withFailureHandler(function (err) {
+            if (histReqGen[offset] === reqGen) histPending[offset] = false;
+            flushHistWaiters(offset, { error: err }, reqGen);
+          })
+          .getRecentLogs(sessionToken, offset, histLimit);
+      }
+      function prefetchPage(offset) {
+        if (!hasBackend || !sessionToken) return;
+        if (histCache.pages[offset] || histPending[offset]) return;
+        requestHistPage(offset, null);
+      }
+      // Any successful mutation clears cached pages (offsets shift) and, when
+      // rows are currently shown, reloads them fresh. Failed mutations leave
+      // the cache alone. Same-scope callers use this directly; other scopes
+      // announce through the cf:history-changed event below.
+      function noteHistoryMutated() {
+        var visible = false;
+        try { visible = histOffset > 0; } catch (e) {}
+        invalidateHistCache();
+        if (visible) fetchHistory(true);
+      }
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('cf:history-changed', function () {
+          try { noteHistoryMutated(); } catch (e) {}
+        });
+      }
+      function announceHistoryChanged() {
+        try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+      }
+      function renderHistPage(res, append) {
+        var logs = res.logs || [];
+        renderLogs(logs, append);
+        if (!append) histOffset = 0;
+        histOffset += logs.length;
+        histSub.textContent = 'Showing ' + histOffset + ' of ' + (res.total || 0) + ' rows.';
+        if (res.hasMore) {
+          histMore.classList.remove('hidden');
+          histLoad.classList.add('hidden');
+        } else {
+          histMore.classList.add('hidden');
+          if (histOffset > 0) histLoad.classList.add('hidden');
+          if (histOffset === 0) histSub.textContent = 'No logged rows yet.';
+        }
+      }
+      function fetchHistory(reset) {
+        if (reset) histOffset = 0;
+        if (!hasBackend) {
+          histSub.textContent = 'Preview mode — connect to Apps Script to load real logs.';
+          return;
+        }
+        if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
+        var btn = reset ? histLoad : histMore;
+        var wantOffset = reset ? 0 : histOffset;
+        var gen = histGen;
+        cfBusyBtn(btn, true, 'Loading…');
+        if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
+        function settle() {
+          cfBusyBtn(btn, false);
+          if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
+        }
+        requestHistPage(wantOffset, function (page) {
+          if (gen !== histGen) return;
+          settle();
+          if (!page || page.error) {
+            var err = page && page.error;
+            if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
+              try { cfNoteAuthExpired(); } catch (e) {}
+              try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
+              return;
+            }
+            try { setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e3) {}
+            return;
+          }
+          renderHistPage(page, !reset);
+        }, true);
+      }
+      // First page: reveal cached rows with a brief cue, or fetch for real.
+      function showFirstPage() {
+        histOffset = 0;
+        histGen++;
+        var gen = histGen;
+        if (!hasBackend) {
+          histSub.textContent = 'Preview mode — connect to Apps Script to load real logs.';
+          return;
+        }
+        if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
+        var cached = histCache.pages[0];
+        if (cached) {
+          cfBusyBtn(histLoad, true, 'Loading…');
+          if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
+          setTimeout(function () {
+            if (gen !== histGen) return;
+            cfBusyBtn(histLoad, false);
+            if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
+            renderHistPage(cached, false);
+            prefetchPage(histLimit);
+          }, CACHED_REVEAL_MS);
+          return;
+        }
+        fetchHistory(true);
+      }
+      // Next page: cached rows render immediately, then warm the following page.
+      function showNextPage() {
+        var wantOffset = histOffset;
+        if (!hasBackend || !sessionToken) { fetchHistory(false); return; }
+        var cached = histCache.pages[wantOffset];
+        if (cached) {
+          renderHistPage(cached, true);
+          prefetchPage(wantOffset + histLimit);
+          return;
+        }
+        fetchHistory(false);
+      }
+      // Refresh always goes to the server, never to the cache.
+      function refreshHistory() {
+        invalidateHistCache();
+        fetchHistory(true);
+      }
+      if (histLoad) histLoad.addEventListener('click', function () { showFirstPage(); });
+      if (histMore) histMore.addEventListener('click', function () { showNextPage(); });
+      if (histRefresh) histRefresh.addEventListener('click', function () { refreshHistory(); });
+
+      // Boot: PIN paints first (already visible). A stored unexpired token
+      // auto-loads the actual page; otherwise stay on the PIN screen.
+      setLockedUI(true);
+      if (!hasBackend) { try { cfSaveSession('preview', Date.now() + 43200000); } catch (e) {} onUnlocked(); return; }
+      var stored = null;
+      try { stored = cfLoadSession(); } catch (e) {}
+      if (stored && stored.t) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.valid) {
+              try { sessionToken = stored.t; } catch (e) {}
+              onUnlocked();
+            } else {
+              try { cfClearSession(); } catch (e) {}
+              bootPinMode();
+            }
+          })
+          .withFailureHandler(function () {
+            try { cfClearSession(); } catch (e) {}
+            bootPinMode();
+          })
+          .validateSession(stored.t);
+      } else {
+        bootPinMode();
+      }
+      function bootPinMode() {
+        google.script.run
+          .withSuccessHandler(function (setup) {
+            mode = setup ? 'login' : 'setup-new';
+            setLockedUI(true);
+            paintMode();
+          })
+          .withFailureHandler(function () {
+            mode = 'login';
+            setLockedUI(true);
+            paintMode();
+          })
+          .isPinSetup();
+      }
+    })();
+</script>

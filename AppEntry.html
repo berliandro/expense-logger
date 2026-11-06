@@ -1,0 +1,493 @@
+<script>
+    /* Table Layout tab — dynamic rows, phased two-phase submission */
+    (function initTableTab() {
+      var rowsEl = document.getElementById('table-rows');
+      var addBtn = document.getElementById('add-row-btn');
+      var retryBtn = document.getElementById('retry-rows-btn');
+      var submitBtnT = document.getElementById('table-submit-btn');
+      var submitLabelT = document.getElementById('table-submit-label');
+      var countLabel = document.getElementById('table-count-label');
+      var progressEl = document.getElementById('table-progress');
+      var forceBox = document.getElementById('toggle-force');
+      if (!rowsEl || !addBtn || !submitBtnT) return;
+      var jobActive = false;
+      var pendingSort = false;
+
+      function setProgress(t) { if (progressEl) progressEl.textContent = t || ''; }
+
+      function updateCount() {
+        var n = rowsEl.querySelectorAll('.trow').length;
+        if (countLabel) countLabel.textContent = n + (n === 1 ? ' row' : ' rows');
+      }
+
+      function rowIsFilled(row) {
+        var noteVal = row.querySelector('.trow-note').value.trim();
+        return !!row._file || noteVal !== '';
+      }
+
+      // Exactly one trailing blank row (unless locked mid-job).
+      function ensureTrailingBlank() {
+        if (jobActive) return;
+        var list = rowsEl.querySelectorAll('.trow');
+        var blanks = 0;
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (rowIsFilled(list[i])) break;
+          blanks++;
+        }
+        if (blanks === 0) addRow();
+        else if (blanks > 1) {
+          for (var k = 0; k < blanks - 1; k++) {
+            var r = list[list.length - 1 - k];
+            if (r && r._previewUrl) { try { URL.revokeObjectURL(r._previewUrl); } catch (e) {} }
+            if (r) r.remove();
+          }
+          updateCount();
+        }
+      }
+
+      function makeThumbPlaceholder() {
+        return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+      }
+
+      function openRowViewer(row) {
+        var lb = document.getElementById('trow-lightbox');
+        var img = document.getElementById('trow-lightbox-img');
+        var cap = document.getElementById('trow-lightbox-counter');
+        if (!lb || !img || !row._previewUrl) return;
+        img.src = row._previewUrl;
+        img.alt = 'Row ' + (row._origNum || '?') + ' receipt full view';
+        if (cap) cap.textContent = 'Row ' + (row._origNum || '?') + ' receipt';
+        lb.classList.add('open');
+        try { document.getElementById('trow-lightbox-close').focus(); } catch (e) {}
+        lb._returnFocus = document.activeElement;
+      }
+      function closeRowViewer() {
+        var lb = document.getElementById('trow-lightbox');
+        var img = document.getElementById('trow-lightbox-img');
+        if (!lb) return;
+        lb.classList.remove('open');
+        if (img) img.src = '';
+        try { if (lb._returnFocus && lb._returnFocus.focus) lb._returnFocus.focus(); } catch (e) {}
+      }
+
+      function setRowStatus(row, kind, text) {
+        var el = row.querySelector('.trow-status');
+        if (!el) return;
+        el.setAttribute('data-kind', kind || '');
+        el.textContent = text || '';
+      }
+
+      function addRow() {
+        var row = document.createElement('div');
+        row.className = 'trow';
+        row._file = null;
+        row._previewUrl = null;
+        row._rowId = cfUuid();
+        row._origNum = rowsEl.querySelectorAll('.trow').length + 1;
+
+        var thumb = document.createElement('button');
+        thumb.type = 'button';
+        thumb.className = 'trow-thumb';
+        thumb.setAttribute('aria-label', 'Upload photo for this row');
+        thumb.innerHTML = makeThumbPlaceholder();
+
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,.jpg,.jpeg,.png,.webp,.heic,.heif';
+        fileInput.style.display = 'none';
+
+        var note = document.createElement('input');
+        note.type = 'text';
+        note.className = 'trow-note';
+        note.maxLength = 500;
+        note.placeholder = 'Note for this receipt…';
+
+        var typeSel = document.createElement('select');
+        typeSel.className = 'trow-type';
+        typeSel.setAttribute('aria-label', 'Transaction type');
+        var optE = document.createElement('option');
+        optE.value = 'Expense'; optE.textContent = 'Expense';
+        var optI = document.createElement('option');
+        optI.value = 'Income'; optI.textContent = 'Income';
+        typeSel.appendChild(optE); typeSel.appendChild(optI);
+        typeSel.value = 'Expense';
+
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'trow-remove';
+        rm.textContent = 'Remove';
+
+        var status = document.createElement('div');
+        status.className = 'trow-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+
+        var actions = document.createElement('div');
+        actions.className = 'row-actions';
+
+        function refreshThumb() {
+          if (row._previewUrl) {
+            thumb.innerHTML = '';
+            var img = document.createElement('img');
+            img.src = row._previewUrl;
+            img.alt = 'Row receipt';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            thumb.appendChild(img);
+            thumb.classList.add('has-img');
+            thumb.setAttribute('aria-label', 'View receipt photo (opens large preview)');
+          } else {
+            thumb.innerHTML = makeThumbPlaceholder();
+            thumb.classList.remove('has-img');
+            thumb.setAttribute('aria-label', 'Upload photo for this row');
+          }
+        }
+
+        thumb.addEventListener('click', function () {
+          if (row._previewUrl) openRowViewer(row);
+          else fileInput.click();
+        });
+        thumb.addEventListener('keydown', function (e) {
+          if ((e.key === 'Enter' || e.key === ' ') && row._previewUrl) { e.preventDefault(); openRowViewer(row); }
+        });
+        function setFile(f) {
+          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
+          row._previewUrl = null;
+          row._file = null;
+          if (f) {
+            row._file = f;
+            try { row._previewUrl = URL.createObjectURL(f); } catch (e) { row._previewUrl = null; }
+          }
+          refreshThumb();
+          ensureTrailingBlank();
+          updateCount();
+        }
+        fileInput.addEventListener('change', function () {
+          var f = fileInput.files && fileInput.files[0];
+          fileInput.value = '';
+          if (!f) return;
+          if (!f.type || f.type.indexOf('image/') !== 0) {
+            setStatus('Row needs an image file.', 'error');
+            return;
+          }
+          setFile(f);
+        });
+        note.addEventListener('input', function () { ensureTrailingBlank(); });
+        row._setFile = setFile;
+        rm.addEventListener('click', function () {
+          if (jobActive) return;
+          if (row._previewUrl) { try { URL.revokeObjectURL(row._previewUrl); } catch (e) {} }
+          row.remove();
+          if (rowsEl.querySelectorAll('.trow').length === 0) addRow();
+          else ensureTrailingBlank();
+          updateCount();
+          maybeSortAfterResolve();
+        });
+
+        row.appendChild(thumb);
+        row.appendChild(note);
+        row.appendChild(typeSel);
+        row.appendChild(rm);
+        row.appendChild(status);
+        row.appendChild(actions);
+        row.appendChild(fileInput);
+        rowsEl.appendChild(row);
+        updateCount();
+      }
+
+      function setLocked(locked) {
+        jobActive = locked;
+        submitBtnT.disabled = locked;
+        addBtn.disabled = locked;
+        if (retryBtn) retryBtn.disabled = locked;
+        if (submitLabelT) submitLabelT.textContent = locked ? 'Working…' : 'Submit Batch';
+      }
+
+      addBtn.addEventListener('click', function () {
+        if (jobActive) return;
+        var list = rowsEl.querySelectorAll('.trow');
+        var last = list[list.length - 1];
+        if (last && !rowIsFilled(last)) {
+          try { last.querySelector('.trow-note').focus(); } catch (e) {}
+          return;
+        }
+        addRow();
+      });
+      // Start with one blank row so the layout is visible
+      if (rowsEl.querySelectorAll('.trow').length === 0) addRow();
+
+      // Table receipt viewer (preview only - replace/remove stay on the row)
+      (function initRowViewer() {
+        var lb = document.getElementById('trow-lightbox');
+        if (!lb) return;
+        document.getElementById('trow-lightbox-close').addEventListener('click', closeRowViewer);
+        lb.addEventListener('click', function (e) { if (e.target === lb) closeRowViewer(); });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && lb.classList.contains('open')) closeRowViewer();
+        });
+      })();
+
+      window.addEventListener('beforeunload', function (e) {
+        var reviewWithImages = false;
+        var list = rowsEl.querySelectorAll('.trow');
+        for (var i = 0; i < list.length; i++) {
+          if (list[i]._file && list[i].getAttribute('data-state') === 'review') { reviewWithImages = true; break; }
+        }
+        if (jobActive || reviewWithImages) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
+      function collectFilled() {
+        var domRows = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow'));
+        return domRows.filter(function (row) {
+          if (row.getAttribute('data-state') === 'logged') return false;
+          var noteVal = row.querySelector('.trow-note').value.trim();
+          return !!row._file || noteVal !== '';
+        }).map(function (row, i) {
+          row._submitNum = i + 1;
+          return {
+            el: row,
+            row_id: row._rowId,
+            origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null,
+            data: '',
+            mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
+        });
+      }
+
+      function renderReport(report, rowsById) {
+        var counts = (report && report.summary) || {};
+        var loggedN = (counts.logged || 0) + (counts.duplicates || 0);
+        (report.rows || []).forEach(function (r) {
+          var dom = rowsById[r.row_id];
+          if (!dom) return;
+          var actions = dom.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+          if (r.status === 'logged' || r.duplicate) {
+            if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+            dom.remove();
+            return;
+          }
+          if (r.status === 'force-adjusted') {
+            setRowStatus(dom, 'adjusted', 'Force-saved' +
+              (r.transactionId ? ' (' + r.transactionId + ')' : '') + (r.message ? ' — ' + r.message : ''));
+            dom.setAttribute('data-state', 'adjusted');
+            if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+            dom.remove();
+            return;
+          }
+          dom.setAttribute('data-state', 'review');
+          setRowStatus(dom, 'error', r.message || 'Needs review.');
+          if (actions) {
+            var replaceBtn = document.createElement('button');
+            replaceBtn.type = 'button';
+            replaceBtn.className = 'btn-choice';
+            replaceBtn.textContent = 'Replace photo';
+            replaceBtn.addEventListener('click', function () { if (dom._setFile && !jobActive) dom.querySelector('input[type="file"]').click(); });
+            actions.appendChild(replaceBtn);
+            var forceBoxOn = forceBox && forceBox.checked;
+            if (forceBoxOn) {
+              var forceBtn = document.createElement('button');
+              forceBtn.type = 'button';
+              forceBtn.className = 'btn-choice';
+              forceBtn.textContent = 'Force log this row';
+              forceBtn.addEventListener('click', function () { resubmitRows([dom]); });
+              actions.appendChild(forceBtn);
+            }
+            var discardBtn = document.createElement('button');
+            discardBtn.type = 'button';
+            discardBtn.className = 'btn-choice';
+            discardBtn.textContent = 'Discard row';
+            discardBtn.addEventListener('click', function () {
+              if (jobActive) return;
+              if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
+              dom.remove();
+              ensureTrailingBlank();
+              updateCount();
+              updateRetryVisibility();
+              maybeSortAfterResolve();
+            });
+            actions.appendChild(discardBtn);
+          }
+        });
+        ensureTrailingBlank();
+        updateCount();
+        updateRetryVisibility();
+        // Deferred sort: committed rows stay unsorted while reviews remain.
+        // Sorting runs once the last review row is resolved or discarded.
+        if (!report.sortEligible && ((counts.logged || 0) + (counts.forceAdjusted || 0) > 0)) {
+          pendingSort = true;
+        }
+        var parts = [];
+        if (counts.logged) parts.push(counts.logged + ' logged');
+        if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' force-logged (verify receipts)');
+        if (counts.review) parts.push(counts.review + ' left for review');
+        if (counts.errors) parts.push(counts.errors + ' failed');
+        var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
+        if (counts.forceAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
+        setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
+        return loggedN;
+      }
+
+      function updateRetryVisibility() {
+        if (!retryBtn) return;
+        var hasReview = !!rowsEl.querySelector('.trow[data-state="review"]');
+        retryBtn.classList.toggle('hidden', !hasReview);
+      }
+
+      function maybeSort(report) {
+        if (!report || !report.sortEligible) return Promise.resolve(false);
+        return runSortCall();
+      }
+
+      function runSortCall() {
+        setProgress('Report shown. Sorting sheets…');
+        return cfCall('sortCashflowSheets', [sessionToken]).then(function (res) {
+          pendingSort = false;
+          var n = (res && res.sheets && res.sheets.length) || 0;
+          setStatus('Sheets sorted (' + n + ' month sheet(s)' +
+            ((res && res.rowsMoved) ? ', ' + res.rowsMoved + ' rows ordered' : '') + ').', 'success');
+          return true;
+        }).catch(function (err) {
+          if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return false; }
+          setStatus('Sorting skipped: ' + ((err && err.message) || err), 'error');
+          return false;
+        });
+      }
+
+      // Runs the deferred sort after the user resolves/discards the last
+      // review row. Only fires with zero review rows remaining, and only
+      // after a report was already rendered (pendingSort set above).
+      function maybeSortAfterResolve() {
+        if (jobActive || !pendingSort) return;
+        if (rowsEl.querySelector('.trow[data-state="review"]')) return;
+        runSortCall();
+      }
+
+      function runSubmission(filled, done) {
+        if (!filled.length) {
+          setStatus('Add at least one filled row (photo or note) first.', 'error');
+          return;
+        }
+        if (!(window.google && google.script && google.script.run)) {
+          // Local preview (outside Apps Script): simulate per-row success
+          setTimeout(function () {
+            filled.forEach(function (f) {
+              if (f.el._previewUrl) { try { URL.revokeObjectURL(f.el._previewUrl); } catch (e) {} }
+              f.el.remove();
+            });
+            ensureTrailingBlank();
+            updateCount();
+            updateRetryVisibility();
+            setProgress('');
+            setLocked(false);
+            setStatus('Logged ' + filled.length + ' rows (preview).', 'success');
+            if (done) done();
+          }, 900);
+          return;
+        }
+        setLocked(true);
+        setProgress('Starting…');
+        cfEngineSubmit({
+          rows: filled,
+          sessionToken: sessionToken,
+          progress: function (t) { setProgress(t); setStatus(t, ''); }
+        }).then(function (report) {
+          var rowsById = {};
+          filled.forEach(function (f) { rowsById[f.row_id] = f.el; });
+          renderReport(report, rowsById);
+          setProgress('');
+          setLocked(false);
+          try { maybeTrashCleanup(sessionToken); } catch (e) {}
+          try {
+            var sc = (report && report.summary) || {};
+            if ((sc.logged || 0) + (sc.forceAdjusted || 0) > 0) {
+              window.dispatchEvent(new CustomEvent('cf:history-changed'));
+            }
+          } catch (e2) {}
+          return maybeSort(report);
+        }).then(function () { if (done) done(); })
+        .catch(function (err) {
+          setProgress('');
+          setLocked(false);
+          if (cfAuthError(err)) {
+            setStatus('Session expired - please log in again.', 'error');
+            try { cfNoteAuthExpired(); } catch (e) {}
+            return;
+          }
+          if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
+            setStatus('Gemini API key is missing - please add it.', 'error');
+            try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
+            return;
+          }
+          if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
+            setStatus('Google Sheet is not set - please add it.', 'error');
+            try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
+            return;
+          }
+          setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+        });
+      }
+
+      function resubmitRows(doms) {
+        var filled = doms.map(function (row, i) {
+          return {
+            el: row, row_id: row._rowId, origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
+        }).filter(function (f) {
+          return f.hasPhoto || f.note !== '';
+        });
+        if (!filled.length) {
+          setStatus('Add a photo or note to the row first.', 'error');
+          return;
+        }
+        filled.forEach(function (f) {
+          f.el.removeAttribute('data-state');
+          setRowStatus(f.el, 'warning', 'Retrying…');
+          var actions = f.el.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+        });
+        runSubmission(filled);
+      }
+
+      submitBtnT.addEventListener('click', function () {
+        if (jobActive) return;
+        runSubmission(collectFilled());
+      });
+      if (retryBtn) retryBtn.addEventListener('click', function () {
+        if (jobActive) return;
+        var reviewDoms = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow[data-state="review"]'));
+        if (!reviewDoms.length) return;
+        var filled = reviewDoms.map(function (row, i) {
+          return {
+            el: row, row_id: row._rowId, origNum: i + 1,
+            note: row.querySelector('.trow-note').value.trim(),
+            type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
+            file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
+            hasPhoto: !!row._file
+          };
+        }).filter(function (f) { return f.hasPhoto || f.note !== ''; });
+        if (!filled.length) {
+          setStatus('Review rows are empty - edit a note/photo or discard them.', 'error');
+          return;
+        }
+        filled.forEach(function (f) {
+          f.el.removeAttribute('data-state');
+          setRowStatus(f.el, 'warning', 'Retrying…');
+          var actions = f.el.querySelector('.row-actions');
+          if (actions) actions.innerHTML = '';
+        });
+        runSubmission(filled);
+      });
+    })();
+</script>
