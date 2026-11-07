@@ -122,7 +122,9 @@ Family installs are deployment clients: `reset --hard` overwrites local source c
 # first time (creates a deployment and prints its deploymentId as JSON):
 clasp create-deployment --description "Cashflow logger" --json
 # afterwards (keep the same web-app URL / deployment ID):
-clasp update-deployment <DEPLOYMENT_ID> -d "Describe the change"
+clasp version "Describe the change"
+clasp update-deployment <DEPLOYMENT_ID> -V <VERSION_NUMBER> -d "Describe the change"
+clasp pull --versionNumber <VERSION_NUMBER>   # in a temp directory; compare hashes
 ```
 
 ## Tests
@@ -205,6 +207,7 @@ So with the normal anonymous/public deployment most users will see **Access unkn
 | `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent Logs |
 | `AppFeatures.html` | Dashboard, budgets, recurring, household, sessions, backup, edit, search, drafts/offline, review |
 | `appsscript.json` | Timezone, runtime, explicit OAuth scopes, web-app access settings |
+| `.claspignore` | Keeps tests, docs, previews, installer scripts, and local artifacts out of `clasp push` |
 | `docs/screenshots/` | Desktop and mobile product screenshots shown above |
 | `docs/feature-backlog.md` | Prioritized product and reliability backlog |
 | `tests/` | Source contracts, design/performance guards, and isolated feature tests |
