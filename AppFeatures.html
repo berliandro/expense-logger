@@ -1,0 +1,985 @@
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    ready: false,
+    month: '',
+    dashboard: null,
+    settings: null,
+    household: [],
+    searchActive: false,
+    toastTimer: null
+  };
+  var CATEGORIES = ['Food & Beverage', 'Groceries', 'Transportation', 'Utilities & Bills',
+    'Shopping', 'Health', 'Education', 'Entertainment & Subscriptions', 'Housing',
+    'Family / Dependents', 'Investment / Savings', 'Income', 'Others'];
+  var TYPES = ['Expense', 'Income'];
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function money(n) {
+    try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
+    catch (e) { return 'Rp' + n; }
+  }
+  function monthNow() {
+    var d = new Date();
+    return d.getFullYear() + '-' + (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+  }
+  function shiftMonth(key, delta) {
+    var m = String(key || monthNow()).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return monthNow();
+    var d = new Date(Number(m[1]), Number(m[2]) - 1 + delta, 1);
+    return d.getFullYear() + '-' + (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+  }
+  function monthLabel(key) {
+    var m = String(key || '').match(/^(\d{4})-(\d{2})$/);
+    if (!m) return key || '';
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+    return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  }
+
+  function api(action, payload) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (!(window.google && google.script && google.script.run)) {
+          reject(new Error('preview'));
+          return;
+        }
+        if (!sessionToken) { reject(new Error('Session expired - please log in again.')); return; }
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .cfApi(sessionToken, action, payload || {});
+      } catch (e) { reject(e); }
+    });
+  }
+
+  /* ---------- modal ---------- */
+  function closeModal() {
+    var m = document.getElementById('feature-modal');
+    if (m) m.remove();
+  }
+  function openModal(title, bodyHtml, actions) {
+    closeModal();
+    var wrap = document.createElement('div');
+    wrap.id = 'feature-modal';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.innerHTML = '<div class="lock-card">' +
+      '<div class="info-modal-head"><h2>' + esc(title) + '</h2>' +
+      '<button type="button" class="btn-choice" data-fm-close>Close</button></div>' +
+      '<div data-fm-body>' + bodyHtml + '</div>' +
+      '<div class="feature-actions" data-fm-actions></div>' +
+      '<div class="feature-error" data-fm-error></div></div>';
+    document.body.appendChild(wrap);
+    var actionBox = wrap.querySelector('[data-fm-actions]');
+    (actions || []).forEach(function (a) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn-choice' + (a.primary ? ' primary' : '');
+      b.textContent = a.label;
+      b.addEventListener('click', function () { a.onClick(wrap); });
+      actionBox.appendChild(b);
+    });
+    wrap.querySelector('[data-fm-close]').addEventListener('click', closeModal);
+    wrap.addEventListener('click', function (e) { if (e.target === wrap) closeModal(); });
+    document.addEventListener('keydown', function escClose(e) {
+      if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escClose); }
+    });
+    return wrap;
+  }
+  function modalError(wrap, msg) {
+    var e = wrap && wrap.querySelector('[data-fm-error]');
+    if (e) e.textContent = msg || '';
+  }
+  function loading(wrap, msg) {
+    var b = wrap && wrap.querySelector('[data-fm-body]');
+    if (b) b.innerHTML = '<p class="empty-note">' + esc(msg || 'Loading…') + '</p>';
+  }
+
+  function toast(message, actionLabel, actionFn) {
+    var old = document.getElementById('cf-toast');
+    if (old) old.remove();
+    var t = document.createElement('div');
+    t.id = 'cf-toast';
+    t.className = 'toast';
+    t.innerHTML = '<span>' + esc(message) + '</span>';
+    if (actionLabel && actionFn) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = actionLabel;
+      b.addEventListener('click', function () { t.remove(); actionFn(); });
+      t.appendChild(b);
+    }
+    document.body.appendChild(t);
+    clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(function () { if (t.parentNode) t.remove(); }, 8000);
+  }
+
+  /* ---------- draft autosave + offline queue ---------- */
+  var DRAFT_KEY = 'cf-draft-v2';
+  var DRAFT_DB = 'cf-drafts';
+  var draftTimer = null;
+  function idbOpen() {
+    return new Promise(function (resolve, reject) {
+      try {
+        var req = indexedDB.open(DRAFT_DB, 1);
+        req.onupgradeneeded = function () {
+          if (!req.result.objectStoreNames.contains('photos')) req.result.createObjectStore('photos');
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+  function idbPut(key, val) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').put(val, key);
+        tx.oncomplete = function () { resolve(true); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+  function idbGet(key) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('photos', 'readonly');
+        var r = tx.objectStore('photos').get(key);
+        r.onsuccess = function () { resolve(r.result); };
+        r.onerror = function () { reject(r.error); };
+      });
+    });
+  }
+  function idbDel(key) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').delete(key);
+        tx.oncomplete = function () { resolve(true); };
+        tx.onerror = function () { resolve(false); };
+      });
+    });
+  }
+
+  function collectDraft() {
+    var note = document.getElementById('note');
+    var rows = [];
+    document.querySelectorAll('.trow').forEach(function (r) {
+      var n = r.querySelector('.trow-note');
+      var t = r.querySelector('.trow-type');
+      if (!n) return;
+      if (n.value.trim() || r._file) rows.push({ note: n.value, type: t ? t.value : 'Expense', hasFile: !!r._file });
+    });
+    return {
+      ts: Date.now(),
+      note: note ? note.value : '',
+      rows: rows,
+      meta: window.cfEntryMetaValues ? window.cfEntryMetaValues() : {},
+      queued: false
+    };
+  }
+  function saveDraft(queued) {
+    try {
+      var d = collectDraft();
+      d.queued = !!queued;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      if (window.selectedFiles && window.selectedFiles.length && window.selectedFiles[0] instanceof File) {
+        var arr = window.selectedFiles.map(function (f) {
+          return { blob: f, name: f.name, type: f.type, lastModified: f.lastModified };
+        });
+        idbPut('current', arr).catch(function () {});
+      } else {
+        idbDel('current').catch(function () {});
+      }
+      var tableRows = Array.prototype.slice.call(document.querySelectorAll('.trow'));
+      var tableFiles = tableRows.map(function (r) {
+        var f = r._file;
+        return f ? { blob: f, name: f.name, type: f.type, lastModified: f.lastModified } : null;
+      });
+      if (tableFiles.some(Boolean)) idbPut('table', tableFiles).catch(function () {});
+      else idbDel('table').catch(function () {});
+    } catch (e) {}
+  }
+  function scheduleDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(function () { saveDraft(false); }, 500);
+  }
+  function restoreDraft() {
+    var raw = null;
+    try { raw = localStorage.getItem(DRAFT_KEY); } catch (e) {}
+    if (!raw) return Promise.resolve(false);
+    var d = null;
+    try { d = JSON.parse(raw); } catch (e) { return Promise.resolve(false); }
+    if (!d || (!d.note && !(d.rows || []).length && !d.queued)) return Promise.resolve(false);
+    var note = document.getElementById('note');
+    if (note && note.value.trim()) return Promise.resolve(false);
+    if (note && d.note) {
+      note.value = d.note;
+      note.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    if (d.meta) {
+      var c = document.getElementById('entry-currency'); if (c && d.meta.currency) c.value = d.meta.currency;
+      var fx = document.getElementById('entry-fx'); if (fx && d.meta.fxRate) fx.value = d.meta.fxRate;
+      var tags = document.getElementById('entry-tags'); if (tags && d.meta.tags) tags.value = d.meta.tags;
+      var mem = document.getElementById('entry-member'); if (mem && d.meta.member) mem.value = d.meta.member;
+      var re = document.getElementById('entry-reimb'); if (re) re.checked = !!d.meta.reimbursable;
+      var du = document.getElementById('entry-duplicate'); if (du) du.checked = !!d.meta.allowDuplicate;
+      updateFxField();
+    }
+    var rows = d.rows || [];
+    if (rows.length) {
+      var add = document.getElementById('add-row-btn');
+      var existing = document.querySelectorAll('.trow');
+      var need = Math.max(0, rows.length - existing.length);
+      for (var i = 0; i < need && add; i++) add.click();
+      var list = document.querySelectorAll('.trow');
+      rows.forEach(function (r, i) {
+        var row = list[i];
+        if (!row) return;
+        var n = row.querySelector('.trow-note');
+        var t = row.querySelector('.trow-type');
+        if (n) n.value = r.note || '';
+        if (t && r.type) t.value = r.type;
+      });
+    }
+    var photos = idbGet('current').catch(function () { return null; });
+    var tablePhotos = idbGet('table').catch(function () { return null; });
+    return Promise.all([photos, tablePhotos]).then(function (both) {
+      var arr = both[0], tableArr = both[1];
+      if (arr && arr.length && window.selectedFiles) {
+        var files = arr.map(function (p) {
+          try { return new File([p.blob], p.name, { type: p.type, lastModified: p.lastModified }); }
+          catch (e) { return null; }
+        }).filter(Boolean);
+        if (files.length) {
+          window.selectedFiles.length = 0;
+          files.forEach(function (f) { window.selectedFiles.push(f); });
+          if (window.renderPreviews) window.renderPreviews();
+        }
+      }
+      if (tableArr && tableArr.length) {
+        var domRows = document.querySelectorAll('.trow');
+        tableArr.forEach(function (p, i) {
+          if (!p || !domRows[i] || !domRows[i]._setFile) return;
+          try {
+            var f = new File([p.blob], p.name, { type: p.type, lastModified: p.lastModified });
+            domRows[i]._setFile(f);
+          } catch (e) {}
+        });
+      }
+      toast(d.queued ? 'Queued submission restored. Tap Send when online.' : 'Draft restored.', d.queued ? 'Send' : null, d.queued ? function () {
+        var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
+        var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
+        if (b) b.click();
+      } : null);
+      return true;
+    });
+  }
+  window.cfQueueOffline = function () {
+    saveDraft(true);
+    try { toast('Saved offline. It will be here when you return.', 'Send now', function () {
+      var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
+      var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
+      if (b && navigator.onLine) b.click();
+      else toast('Still offline.');
+    }); } catch (e) {}
+  };
+  window.cfClearDraft = function () {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    idbDel('current').catch(function () {});
+    idbDel('table').catch(function () {});
+  };
+  window.cfRestoreDraft = restoreDraft;
+
+  /* ---------- split editor ---------- */
+  window.cfSplitRow = function (row, done) {
+    var current = (row && row._splits) || [{ category: 'Groceries', amount: '' }, { category: 'Others', amount: '' }];
+    function rowsHtml(list) {
+      return list.map(function (s, i) {
+        return '<div class="row2" data-split-row>' +
+          '<select data-split-cat>' + CATEGORIES.filter(function (c) { return c !== 'Income'; }).map(function (c) {
+            return '<option' + (c === s.category ? ' selected' : '') + '>' + esc(c) + '</option>';
+          }).join('') + '</select>' +
+          '<input data-split-amt type="number" step="1" placeholder="Amount" value="' + esc(s.amount) + '">' +
+          '</div>';
+      }).join('');
+    }
+    var wrap = openModal('Split into categories', '<p class="empty-note">The split total must match the verified receipt total or the split is ignored.</p>' +
+      '<div class="feature-form" data-split-form>' + rowsHtml(current) + '</div>', [
+      { label: 'Clear split', onClick: function () { done(null); closeModal(); } },
+      { label: 'Add line', onClick: function (w) {
+        var form = w.querySelector('[data-split-form]');
+        form.insertAdjacentHTML('beforeend', '<div class="row2" data-split-row><select data-split-cat>' +
+          CATEGORIES.filter(function (c) { return c !== 'Income'; }).map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') +
+          '</select><input data-split-amt type="number" step="1" placeholder="Amount"></div>');
+      } },
+      { label: 'Apply split', primary: true, onClick: function (w) {
+        var out = [];
+        w.querySelectorAll('[data-split-row]').forEach(function (r) {
+          var cat = r.querySelector('[data-split-cat]').value;
+          var amt = Number(r.querySelector('[data-split-amt]').value) || 0;
+          if (amt > 0) out.push({ category: cat, amount: amt });
+        });
+        if (out.length < 2) { modalError(w, 'Add at least two lines.'); return; }
+        done(out); closeModal();
+      } }
+    ]);
+    return wrap;
+  };
+
+  /* ---------- settings + entry metadata ---------- */
+  function loadSettings() {
+    return api('settings.get').then(function (res) {
+      state.settings = (res && res.settings) || {};
+      state.household = (res && res.household) || [];
+      paintHousehold();
+      paintSettings();
+      return state.settings;
+    }).catch(function () {});
+  }
+  function paintHousehold() {
+    var sel = document.getElementById('entry-member');
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">Household</option>' + state.household.map(function (m) {
+      return '<option value="' + esc(m.name) + '">' + esc(m.name) + '</option>';
+    }).join('');
+    sel.value = cur;
+    var f = document.getElementById('hist-member');
+    if (f) {
+      var fc = f.value;
+      f.innerHTML = '<option value="All">All members</option>' + state.household.map(function (m) {
+        return '<option value="' + esc(m.name) + '">' + esc(m.name) + '</option>';
+      }).join('');
+      f.value = fc || 'All';
+    }
+  }
+  function paintSettings() {
+    var s = state.settings || {};
+    var cur = document.getElementById('entry-currency');
+    if (cur && s.defaultCurrency) cur.value = s.defaultCurrency;
+    var review = document.getElementById('entry-review');
+    if (review) review.checked = !!s.reviewBeforeCommit;
+    updateFxField();
+  }
+  function updateFxField() {
+    var sel = document.getElementById('entry-currency');
+    var fx = document.getElementById('fx-field');
+    var inp = document.getElementById('entry-fx');
+    if (!sel || !fx || !inp) return;
+    var isIdr = sel.value === 'IDR';
+    fx.classList.toggle('hidden', isIdr);
+    if (isIdr) inp.value = '1';
+    else if (!inp.value || inp.value === '1') {
+      var rates = (state.settings && state.settings.currencyRates) || {};
+      inp.value = rates[sel.value] || '';
+    }
+  }
+  window.cfEntryMetaValues = function () {
+    var sel = document.getElementById('entry-currency');
+    var fx = document.getElementById('entry-fx');
+    var tags = document.getElementById('entry-tags');
+    var member = document.getElementById('entry-member');
+    var reimb = document.getElementById('entry-reimb');
+    var dup = document.getElementById('entry-duplicate');
+    return {
+      currency: sel ? sel.value : 'IDR',
+      fxRate: sel && sel.value === 'IDR' ? 1 : (Number(fx && fx.value) || 1),
+      tags: tags ? tags.value.trim() : '',
+      member: member ? member.value : '',
+      reimbursable: !!(reimb && reimb.checked),
+      allowDuplicate: !!(dup && dup.checked)
+    };
+  };
+  window.cfReviewBeforeSaveEnabled = function () {
+    var c = document.getElementById('entry-review');
+    return !!(c && c.checked);
+  };
+  window.cfReviewBeforeCommit = function (items, verdicts) {
+    return new Promise(function (resolve) {
+      var byId = {};
+      (verdicts || []).forEach(function (v) { byId[v.row_id] = v; });
+      var rows = (items || []).map(function (it, i) {
+        var v = byId[it.row_id] || {};
+        var txn = it.txn || {};
+        var total = 0;
+        (txn.items || []).forEach(function (x) { total += Number(x.amount) || 0; });
+        return '<div class="feature-row"><div><b>' + esc(txn.merchant || 'Receipt ' + (i + 1)) +
+          '</b><small>' + esc(txn.transaction_date || '') + ' · ' + esc(txn.transaction_type || '') +
+          ' · ' + esc(v.status || 'extracted') + '</small><small>' +
+          (txn.items || []).slice(0, 6).map(function (x) {
+            return esc(x.description || '') + ' · ' + money(x.amount);
+          }).join('<br>') + '</small></div><div>' + money(total) + '</div></div>';
+      }).join('');
+      var wrap = openModal('Review before save', '<div class="feature-list">' + rows + '</div>' +
+        '<p class="empty-note" style="margin-top:10px">Verified rows will be written. Rows that still need review are kept in the form.</p>', [
+        { label: 'Cancel', onClick: function () { closeModal(); resolve(false); } },
+        { label: 'Save verified rows', primary: true, onClick: function () { closeModal(); resolve(true); } }
+      ]);
+      wrap.addEventListener('click', function (e) {
+        if (e.target === wrap) resolve(false);
+      });
+      document.addEventListener('keydown', function onEsc(e) {
+        if (e.key === 'Escape') { document.removeEventListener('keydown', onEsc); resolve(false); }
+      });
+    });
+  };
+
+  /* ---------- dashboard ---------- */
+  function loadDashboard() {
+    if (!state.month) state.month = monthNow();
+    return api('dashboard', { month: state.month }).then(function (res) {
+      state.dashboard = (res && res.data) || null;
+      renderDashboard(state.dashboard);
+    }).catch(function (err) {
+      var sub = document.getElementById('dash-sub');
+      if (sub) sub.textContent = err && err.message === 'preview' ? 'Preview mode' : 'Could not load overview.';
+    });
+  }
+  function statCard(label, value, note) {
+    return '<div class="stat-card"><span>' + esc(label) + '</span><b>' + esc(value) + '</b>' +
+      (note ? '<em>' + esc(note) + '</em>' : '') + '</div>';
+  }
+  function renderDashboard(d) {
+    var card = document.getElementById('dashboard-card');
+    if (!card) return;
+    card.classList.remove('hidden');
+    if (!d) return;
+    var title = document.getElementById('dash-title');
+    var sub = document.getElementById('dash-sub');
+    if (title) title.textContent = d.monthLabel || monthLabel(d.month);
+    if (sub) {
+      sub.textContent = (d.totals && d.totals.count ? d.totals.count + ' rows' : 'No rows yet') +
+        (d.scan ? ' · scanned in ' + d.scan.ms + ' ms' : '') +
+        (d.reimbursements && d.reimbursements.outstanding ? ' · ' + money(d.reimbursements.outstanding) + ' reimbursable outstanding' : '');
+    }
+    var stats = document.getElementById('dash-stats');
+    if (stats) {
+      stats.innerHTML = statCard('Spent', money(d.totals ? d.totals.expense : 0), 'expenses') +
+        statCard('Income', money(d.totals ? d.totals.income : 0), 'this month') +
+        statCard('Net', money(d.totals ? d.totals.net : 0), 'income − expenses');
+    }
+    renderDots(d);
+    var an = document.getElementById('dash-anomalies');
+    if (an) {
+      var list = (d.anomalies || []).map(function (a) {
+        return '<div class="anomaly"><span>' + esc(a.category) + '</span><b>+' + esc(a.percent) + '%</b></div>';
+      }).join('');
+      an.innerHTML = list ? '<h3>Anomaly callouts</h3>' + list : '';
+    }
+    var budgets = document.getElementById('dash-budgets');
+    if (budgets) {
+      var bl = (d.budgets || []).map(function (b) {
+        return '<div class="budget-row"><div class="budget-top"><span>' + esc(b.category) +
+          '</span><span>' + money(b.spent) + ' / ' + money(b.limit) + ' · ' + esc(b.percent) + '%</span></div>' +
+          '<div class="budget-bar' + (b.alert ? ' warn' : '') + '"><i style="width:' + Math.min(100, b.percent) + '%"></i></div></div>';
+      }).join('');
+      budgets.innerHTML = bl ? '<h3>Budgets</h3>' + bl : '';
+    }
+    var rec = document.getElementById('dash-recurring-list');
+    if (rec) {
+      var rl = (d.dueRecurring || []).map(function (r) {
+        return '<div class="due-row"><span>' + esc(r.description) + ' · ' + money(r.amount) +
+          '</span><button type="button" class="btn-choice" data-log-rule="' + esc(r.ruleId) + '">Log now</button></div>';
+      }).join('');
+      rec.innerHTML = rl ? '<h3>Recurring due</h3>' + rl : '';
+    }
+  }
+  function renderDots(d) {
+    var dots = document.getElementById('dash-dots');
+    if (!dots) return;
+    var m = String(d.month || monthNow()).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return;
+    var daysInMonth = new Date(Number(m[1]), Number(m[2]), 0).getDate();
+    var max = 0;
+    Object.keys(d.days || {}).forEach(function (k) { max = Math.max(max, Number(d.days[k]) || 0); });
+    var today = new Date();
+    var isThisMonth = today.getFullYear() === Number(m[1]) && today.getMonth() + 1 === Number(m[2]);
+    var html = '';
+    for (var i = 1; i <= daysInMonth; i++) {
+      var v = Number((d.days || {})[i] || 0);
+      var cls = 'dot';
+      if (v > 0) cls += ' active';
+      if (max > 0 && v === max) cls += ' peak';
+      if (isThisMonth && i === today.getDate()) cls += ' today';
+      html += '<span class="' + cls + '" title="Day ' + i + ': ' + money(v) + '"></span>';
+    }
+    dots.style.gridTemplateColumns = 'repeat(' + daysInMonth + ', 1fr)';
+    dots.innerHTML = html;
+    var label = document.getElementById('dash-dot-label');
+    if (label) label.textContent = monthLabel(d.month) + ' · daily spend';
+    var mx = document.getElementById('dash-dot-max');
+    if (mx) mx.textContent = max ? 'peak ' + money(max) : '';
+  }
+
+  /* ---------- budgets ---------- */
+  function openBudgets() {
+    var wrap = openModal('Budgets', '<div data-budget-body><p class="empty-note">Loading…</p></div>', [
+      { label: 'Add budget', primary: true, onClick: function () { budgetForm(wrap); } }
+    ]);
+    api('budgets.list').then(function (res) {
+      renderBudgetList(wrap, (res && res.budgets) || []);
+    }).catch(function (err) { modalError(wrap, err.message); });
+  }
+  function renderBudgetList(wrap, budgets) {
+    var box = wrap.querySelector('[data-budget-body]');
+    if (!box) return;
+    if (!budgets.length) { box.innerHTML = '<p class="empty-note">No budgets yet.</p>'; return; }
+    box.innerHTML = '<div class="feature-list">' + budgets.map(function (b) {
+      return '<div class="feature-row"><div><b>' + esc(b.category) + '</b><small>' +
+        money(b.limit) + ' / month</small></div><button type="button" class="btn-choice" data-del-budget="' +
+        esc(b.category) + '">Delete</button></div>';
+    }).join('') + '</div>';
+    box.querySelectorAll('[data-del-budget]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        api('budgets.delete', { category: b.getAttribute('data-del-budget') }).then(function (res) {
+          renderBudgetList(wrap, res.budgets || []);
+          if (state.ready) loadDashboard();
+        }).catch(function (e) { modalError(wrap, e.message); });
+      });
+    });
+  }
+  function budgetForm(wrap) {
+    var box = wrap.querySelector('[data-budget-body]');
+    if (!box) return;
+    box.innerHTML = '<div class="feature-form"><label>Category</label><select data-b-cat>' +
+      CATEGORIES.filter(function (c) { return c !== 'Income'; }).map(function (c) {
+        return '<option>' + esc(c) + '</option>';
+      }).join('') + '</select><label>Monthly limit (Rp)</label><input data-b-limit type="number" min="1" step="1000"><div class="feature-error" data-b-error></div></div>';
+    var actions = wrap.querySelector('[data-fm-actions]');
+    actions.innerHTML = '';
+    var save = document.createElement('button');
+    save.type = 'button'; save.className = 'btn-choice'; save.textContent = 'Save budget';
+    save.addEventListener('click', function () {
+      var cat = box.querySelector('[data-b-cat]').value;
+      var limit = Number(box.querySelector('[data-b-limit]').value) || 0;
+      api('budgets.save', { budget: { category: cat, limit: limit } }).then(function (res) {
+        renderBudgetList(wrap, res.budgets || []);
+        if (state.ready) loadDashboard();
+      }).catch(function (e) { box.querySelector('[data-b-error]').textContent = e.message; });
+    });
+    actions.appendChild(save);
+  }
+
+  /* ---------- recurring ---------- */
+  function openRecurring() {
+    var wrap = openModal('Recurring entries', '<div data-rec-body><p class="empty-note">Loading…</p></div>', [
+      { label: 'Add rule', primary: true, onClick: function () { recurringForm(wrap); } }
+    ]);
+    api('recurring.list').then(function (res) { renderRecurring(wrap, (res && res.rules) || []); })
+      .catch(function (e) { modalError(wrap, e.message); });
+  }
+  function renderRecurring(wrap, rules) {
+    var box = wrap.querySelector('[data-rec-body]');
+    if (!box) return;
+    if (!rules.length) { box.innerHTML = '<p class="empty-note">No recurring rules yet.</p>'; return; }
+    box.innerHTML = '<div class="feature-list">' + rules.map(function (r) {
+      return '<div class="feature-row"><div><b>' + esc(r.description) + '</b><small>' + money(r.amount) +
+        ' · day ' + r.day + ' · ' + esc(r.type) + '</small></div><span><button type="button" class="btn-choice" data-log-rule="' +
+        esc(r.ruleId) + '">Log</button> <button type="button" class="btn-choice" data-del-rule="' +
+        esc(r.ruleId) + '">Delete</button></span></div>';
+    }).join('') + '</div>';
+    box.querySelectorAll('[data-del-rule]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        api('recurring.delete', { ruleId: b.getAttribute('data-del-rule') }).then(function (res) {
+          renderRecurring(wrap, res.rules || []); loadDashboard();
+        }).catch(function (e) { modalError(wrap, e.message); });
+      });
+    });
+    box.querySelectorAll('[data-log-rule]').forEach(function (b) {
+      b.addEventListener('click', function () { logRecurring(b.getAttribute('data-log-rule'), b); });
+    });
+  }
+  function logRecurring(id, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Logging…'; }
+    api('recurring.log', { ruleId: id }).then(function () {
+      toast('Recurring entry logged.');
+      loadDashboard();
+      try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+    }).catch(function (e) { toast(e.message); }).then(function () {
+      if (btn) { btn.disabled = false; btn.textContent = 'Log'; }
+    });
+  }
+  function recurringForm(wrap) {
+    var box = wrap.querySelector('[data-rec-body]');
+    box.innerHTML = '<div class="feature-form">' +
+      '<label>Description</label><input data-r-desc maxlength="120" placeholder="Rent">' +
+      '<div class="row2"><div><label>Amount</label><input data-r-amount type="number" min="1"></div><div><label>Day</label><input data-r-day type="number" min="1" max="28" value="1"></div></div>' +
+      '<div class="row2"><div><label>Category</label><select data-r-cat>' + CATEGORIES.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select></div><div><label>Type</label><select data-r-type>' + TYPES.map(function (t) { return '<option>' + t + '</option>'; }).join('') + '</select></div></div>' +
+      '<div class="feature-error" data-r-error></div></div>';
+    var actions = wrap.querySelector('[data-fm-actions]');
+    actions.innerHTML = '';
+    var save = document.createElement('button');
+    save.type = 'button'; save.className = 'btn-choice'; save.textContent = 'Save rule';
+    save.addEventListener('click', function () {
+      var rule = {
+        description: box.querySelector('[data-r-desc]').value.trim(),
+        amount: Number(box.querySelector('[data-r-amount]').value) || 0,
+        day: Number(box.querySelector('[data-r-day]').value) || 1,
+        category: box.querySelector('[data-r-cat]').value,
+        type: box.querySelector('[data-r-type]').value
+      };
+      api('recurring.save', { rule: rule }).then(function (res) {
+        renderRecurring(wrap, res.rules || []); loadDashboard();
+      }).catch(function (e) { box.querySelector('[data-r-error]').textContent = e.message; });
+    });
+    actions.appendChild(save);
+  }
+
+  /* ---------- household ---------- */
+  function openHousehold() {
+    var wrap = openModal('Household', '<div data-hh-body><p class="empty-note">Loading…</p></div>', [
+      { label: 'Add member', primary: true, onClick: function () { householdForm(wrap); } }
+    ]);
+    api('household.list').then(function (res) { renderHousehold(wrap, (res && res.members) || []); })
+      .catch(function (e) { modalError(wrap, e.message); });
+  }
+  function renderHousehold(wrap, members) {
+    var box = wrap.querySelector('[data-hh-body]');
+    if (!box) return;
+    box.innerHTML = members.length ? '<div class="feature-list">' + members.map(function (m) {
+      return '<div class="feature-row"><div><b>' + esc(m.name) + '</b><small>' + esc(m.memberId) + '</small></div>' +
+        '<button type="button" class="btn-choice" data-del-hh="' + esc(m.memberId) + '">Remove</button></div>';
+    }).join('') + '</div>' : '<p class="empty-note">No members yet. Add the people who share this log.</p>';
+    box.querySelectorAll('[data-del-hh]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        api('household.delete', { memberId: b.getAttribute('data-del-hh') }).then(function (res) {
+          renderHousehold(wrap, res.members || []); loadSettings();
+        }).catch(function (e) { modalError(wrap, e.message); });
+      });
+    });
+  }
+  function householdForm(wrap) {
+    var box = wrap.querySelector('[data-hh-body]');
+    box.innerHTML = '<div class="feature-form"><label>Name</label><input data-hh-name maxlength="60" placeholder="Member name"><div class="feature-error" data-hh-error></div></div>';
+    var actions = wrap.querySelector('[data-fm-actions]');
+    actions.innerHTML = '';
+    var save = document.createElement('button');
+    save.type = 'button'; save.className = 'btn-choice'; save.textContent = 'Save member';
+    save.addEventListener('click', function () {
+      var name = box.querySelector('[data-hh-name]').value.trim();
+      api('household.save', { member: { name: name } }).then(function (res) {
+        renderHousehold(wrap, res.members || []); loadSettings();
+      }).catch(function (e) { box.querySelector('[data-hh-error]').textContent = e.message; });
+    });
+    actions.appendChild(save);
+  }
+
+  /* ---------- sessions ---------- */
+  function openSessions() {
+    var wrap = openModal('Sessions', '<div data-sess-body><p class="empty-note">Loading…</p></div>', []);
+    api('sessions.list').then(function (res) { renderSessions(wrap, res.sessions || []); })
+      .catch(function (e) { modalError(wrap, e.message); });
+  }
+  function renderSessions(wrap, list) {
+    var box = wrap.querySelector('[data-sess-body]');
+    if (!box) return;
+    box.innerHTML = list.length ? '<div class="feature-list">' + list.map(function (s) {
+      var created = s.createdAt ? new Date(s.createdAt).toLocaleString('en-GB') : 'unknown';
+      var seen = s.lastSeen ? new Date(s.lastSeen).toLocaleString('en-GB') : 'unknown';
+      return '<div class="feature-row"><div><b>' + esc(s.label) + (s.current ? ' · current' : '') +
+        '</b><small>created ' + esc(created) + ' · last seen ' + esc(seen) + '</small></div>' +
+        (s.current ? '' : '<button type="button" class="btn-choice" data-revoke="' + esc(s.hash) + '">Revoke</button>') +
+        '</div>';
+    }).join('') + '</div>' : '<p class="empty-note">No active sessions.</p>';
+    box.querySelectorAll('[data-revoke]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        b.disabled = true; b.textContent = 'Revoking…';
+        api('sessions.revoke', { hash: b.getAttribute('data-revoke') }).then(function (res) {
+          renderSessions(wrap, res.sessions || []);
+        }).catch(function (e) { b.disabled = false; b.textContent = 'Revoke'; modalError(wrap, e.message); });
+      });
+    });
+  }
+
+  /* ---------- app settings ---------- */
+  function openSettings() {
+    var s = state.settings || {};
+    var wrap = openModal('App settings', '<div class="feature-form">' +
+      '<label><input type="checkbox" data-s-retain ' + (s.retainImages ? 'checked' : '') + '> Retain receipt images in Drive</label>' +
+      '<label><input type="checkbox" data-s-review ' + (s.reviewBeforeCommit ? 'checked' : '') + '> Review extracted rows before saving</label>' +
+      '<label><input type="checkbox" data-s-household ' + (s.householdMode !== false ? 'checked' : '') + '> Household attribution</label>' +
+      '<label><input type="checkbox" data-s-reimb ' + (s.reimbursementEnabled !== false ? 'checked' : '') + '> Reimbursement tracking</label>' +
+      '<p class="empty-note">Image retention uses the deploying account&#39;s Drive. Only new photos are retained.</p>' +
+      '</div>', [
+      { label: 'Save settings', primary: true, onClick: function (w) {
+        var patch = {
+          retainImages: !!w.querySelector('[data-s-retain]').checked,
+          reviewBeforeCommit: !!w.querySelector('[data-s-review]').checked,
+          householdMode: !!w.querySelector('[data-s-household]').checked,
+          reimbursementEnabled: !!w.querySelector('[data-s-reimb]').checked
+        };
+        api('settings.save', { settings: patch }).then(function (res) {
+          state.settings = res.settings || state.settings;
+          paintSettings();
+          closeModal();
+          toast('Settings saved.');
+        }).catch(function (e) { modalError(w, e.message); });
+      } }
+    ]);
+    return wrap;
+  }
+
+  /* ---------- backup ---------- */
+  function openBackup() {
+    var wrap = openModal('Backup & restore', '<p class="empty-note">Export all month sheets and feature data as JSON. Restore only adds rows whose Entry ID is not already live; it never overwrites or deletes.</p>' +
+      '<div class="feature-form"><label>Restore backup (.json)</label><input type="file" accept="application/json,.json" data-backup-file></div>', [
+      { label: 'Download backup', primary: true, onClick: function (w) {
+        api('backup.export').then(function (res) {
+          var blob = new Blob([JSON.stringify(res.backup, null, 2)], { type: 'application/json' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'cashflow-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        }).catch(function (e) { modalError(w, e.message); });
+      } },
+      { label: 'Restore file', onClick: function (w) {
+        var input = w.querySelector('[data-backup-file]');
+        if (!input.files || !input.files[0]) { modalError(w, 'Choose a backup file first.'); return; }
+        var reader = new FileReader();
+        reader.onload = function () {
+          try {
+            var parsed = JSON.parse(String(reader.result));
+            api('backup.import', { backup: parsed }).then(function (res) {
+              toast('Restore complete: ' + res.added + ' added, ' + res.skipped + ' already present.');
+              loadDashboard();
+              try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+            }).catch(function (e) { modalError(w, e.message); });
+          } catch (e) { modalError(w, 'That file is not valid JSON.'); }
+        };
+        reader.readAsText(input.files[0]);
+      } }
+    ]);
+  }
+
+  /* ---------- edit + reimbursement ---------- */
+  function openEdit(entryId) {
+    api('search', { filters: { entryId: entryId, limit: 1 } }).then(function (res) {
+      var row = (res.data && res.data.logs && res.data.logs[0]) || null;
+      if (!row) { toast('Entry not found.'); return; }
+      var wrap = openModal('Edit entry', '<div class="feature-form">' +
+        '<label>Merchant</label><input data-e-merchant value="' + esc(row.merchant) + '">' +
+        '<label>Description</label><input data-e-desc value="' + esc(row.description) + '">' +
+        '<div class="row2"><div><label>Amount</label><input data-e-amount type="number" step="0.01" value="' + esc(row.amount) + '"></div>' +
+        '<div><label>Type</label><select data-e-type>' + TYPES.map(function (t) { return '<option' + (t === row.type ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div></div>' +
+        '<div class="row2"><div><label>Category</label><select data-e-cat>' + CATEGORIES.map(function (c) { return '<option' + (c === row.category ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
+        '<div><label>Member</label><select data-e-member><option value="">Household</option>' + state.household.map(function (m) { return '<option' + (m.name === row.member ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select></div></div>' +
+        '<label>Tags</label><input data-e-tags value="' + esc(row.tags) + '">' +
+        '<label><input type="checkbox" data-e-reimb ' + (row.reimbursable === 'Yes' ? 'checked' : '') + '> Reimbursable</label>' +
+        '<label><input type="checkbox" data-e-reimbursed ' + (row.reimbursed === 'Yes' ? 'checked' : '') + '> Reimbursed</label>' +
+        '<div class="feature-error" data-e-error></div></div>', [
+        { label: 'Save changes', primary: true, onClick: function (w) {
+          var patch = {
+            merchant: w.querySelector('[data-e-merchant]').value.trim(),
+            description: w.querySelector('[data-e-desc]').value.trim(),
+            amount: Number(w.querySelector('[data-e-amount]').value) || 0,
+            type: w.querySelector('[data-e-type]').value,
+            category: w.querySelector('[data-e-cat]').value,
+            member: w.querySelector('[data-e-member]').value,
+            tags: w.querySelector('[data-e-tags]').value.trim(),
+            reimbursable: w.querySelector('[data-e-reimb]').checked ? 'Yes' : 'No',
+            reimbursed: w.querySelector('[data-e-reimbursed]').checked ? 'Yes' : 'No'
+          };
+          api('updateEntry', { entryId: entryId, patch: patch }).then(function () {
+            closeModal(); toast('Entry updated.');
+            try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+            loadDashboard();
+          }).catch(function (e) { w.querySelector('[data-e-error]').textContent = e.message; });
+        } }
+      ]);
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  function markReimbursed(entryId) {
+    api('reimbursement.set', { entryIds: [entryId], patch: { reimbursed: true } }).then(function () {
+      toast('Marked reimbursed.');
+      try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+      loadDashboard();
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ---------- search ---------- */
+  function runSearch() {
+    var filters = {
+      q: (document.getElementById('hist-search') || {}).value || '',
+      type: (document.getElementById('hist-type') || {}).value || 'All',
+      category: (document.getElementById('hist-category') || {}).value || 'All',
+      member: (document.getElementById('hist-member') || {}).value || 'All',
+      reimbursable: (document.getElementById('hist-reimb') || {}).value || '',
+      limit: 100
+    };
+    state.searchActive = true;
+    var sub = document.getElementById('history-sub');
+    if (sub) sub.textContent = 'Searching…';
+    api('search', { filters: filters }).then(function (res) {
+      var logs = (res.data && res.data.logs) || [];
+      if (window.cfRenderLogs) window.cfRenderLogs(logs, false);
+      if (sub) sub.textContent = 'Showing ' + logs.length + ' of ' + (res.data.total || 0) +
+        ' matching rows' + (res.data.scan ? ' · ' + res.data.scan.ms + ' ms' : '') + '.';
+      var more = document.getElementById('history-more');
+      if (more) more.classList.add('hidden');
+      var load = document.getElementById('history-load');
+      if (load) load.classList.add('hidden');
+    }).catch(function (e) {
+      if (sub) sub.textContent = 'Search failed: ' + e.message;
+    });
+  }
+  function clearSearch() {
+    state.searchActive = false;
+    ['hist-search', 'hist-type', 'hist-category', 'hist-member', 'hist-reimb'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.value = (id === 'hist-type' || id === 'hist-category' || id === 'hist-member') ? 'All' : '';
+    });
+    var load = document.getElementById('history-load');
+    if (load) load.classList.remove('hidden');
+    var refresh = document.getElementById('history-refresh');
+    if (refresh) refresh.click();
+  }
+
+  /* ---------- init ---------- */
+  function wire() {
+    var add = function (id, event, fn) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener(event, fn);
+    };
+    add('entry-currency', 'change', function () { updateFxField(); scheduleDraft(); });
+    add('quick-text-btn', 'click', function () {
+      var tab = document.getElementById('tabbtn-standard');
+      if (tab) tab.click();
+      var note = document.getElementById('note');
+      if (note) { note.focus(); note.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    });
+    ['entry-tags', 'entry-member', 'entry-reimb', 'entry-duplicate', 'note', 'entry-fx'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.addEventListener('input', scheduleDraft); el.addEventListener('change', scheduleDraft); }
+    });
+    var noteEl = document.getElementById('note');
+    if (noteEl) noteEl.addEventListener('input', scheduleDraft);
+    var rowsBox = document.getElementById('table-rows');
+    if (rowsBox) {
+      rowsBox.addEventListener('input', scheduleDraft);
+      rowsBox.addEventListener('change', scheduleDraft);
+      rowsBox.addEventListener('click', scheduleDraft);
+      try {
+        new MutationObserver(scheduleDraft).observe(rowsBox, { childList: true, subtree: true });
+      } catch (e) {}
+    }
+    var prevGrid = document.getElementById('preview-grid');
+    if (prevGrid) {
+      try { new MutationObserver(scheduleDraft).observe(prevGrid, { childList: true }); } catch (e) {}
+    }
+    ['cameraInput', 'galleryInput'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function () { setTimeout(scheduleDraft, 50); });
+    });
+    add('entry-review', 'change', function () {
+      var s = state.settings || {};
+      s.reviewBeforeCommit = !!(document.getElementById('entry-review') || {}).checked;
+      api('settings.save', { settings: { reviewBeforeCommit: s.reviewBeforeCommit } }).catch(function () {});
+    });
+    add('dash-prev', 'click', function () { state.month = shiftMonth(state.month || monthNow(), -1); loadDashboard(); });
+    add('dash-next', 'click', function () { state.month = shiftMonth(state.month || monthNow(), 1); loadDashboard(); });
+    add('dash-budget', 'click', openBudgets);
+    add('dash-recurring', 'click', openRecurring);
+    add('dash-report', 'click', function () {
+      toast('Building report…');
+      api('report.month', { month: state.month || monthNow() }).then(function (res) {
+        toast('Report ready.');
+        if (res.url) window.open(res.url, '_blank', 'noopener');
+      }).catch(function (e) { toast(e.message); });
+    });
+    add('household-btn', 'click', openHousehold);
+    add('sessions-btn', 'click', openSessions);
+    add('backup-btn', 'click', openBackup);
+    add('feature-settings-btn', 'click', openSettings);
+    add('hist-apply', 'click', runSearch);
+    add('hist-clear', 'click', clearSearch);
+    add('hist-search', 'keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
+
+    var cat = document.getElementById('hist-category');
+    if (cat) cat.innerHTML = '<option value="All">All categories</option>' + CATEGORIES.map(function (c) {
+      return '<option>' + esc(c) + '</option>';
+    }).join('');
+
+    var dash = document.getElementById('dashboard-card');
+    if (dash) {
+      dash.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('[data-log-rule]') : null;
+        if (b) logRecurring(b.getAttribute('data-log-rule'), b);
+      });
+    }
+    var hist = document.getElementById('history-list');
+    if (hist) {
+      hist.addEventListener('click', function (e) {
+        var t = e.target.closest ? e.target.closest('[data-act]') : null;
+        if (!t) return;
+        var act = t.getAttribute('data-act');
+        if (act === 'edit') { e.preventDefault(); e.stopPropagation(); openEdit(t.getAttribute('data-entry-id')); }
+        if (act === 'reimburse') { e.preventDefault(); e.stopPropagation(); markReimbursed(t.getAttribute('data-entry-id')); }
+      });
+    }
+    window.addEventListener('cf:history-changed', function () {
+      if (state.ready) loadDashboard();
+    });
+    window.addEventListener('cf:trash-mutation', function (e) {
+      var d = (e && e.detail) || {};
+      if (!d.type) return;
+      toast(d.message || 'Moved to Trash.', 'Undo', function () {
+        var fn = d.type === 'transaction' ? 'restoreTransaction' : 'restoreEntry';
+        var arg = d.type === 'transaction' ? d.groupId : d.entryId;
+        if (!arg) { toast('Undo is unavailable for this item.'); return; }
+        cfCall(fn, [sessionToken, arg]).then(function () {
+          toast('Restored.');
+          try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e2) {}
+        }).catch(function (err) { toast(err.message || String(err)); });
+      });
+    });
+    window.addEventListener('online', function () {
+      if (!state.ready) return;
+      var queued = false;
+      try { var d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); queued = !!(d && d.queued); } catch (e) {}
+      if (queued) {
+        toast('Back online. Queued entry is ready.', 'Send', function () {
+          var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
+          var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
+          if (b) b.click();
+        });
+      } else {
+        toast('Back online.');
+      }
+    });
+  }
+
+  window.cfApiCall = api;
+  window.cfRenderDashboard = renderDashboard;
+  window.cfRetainImagesEnabled = function () {
+    return !!(state.settings && state.settings.retainImages);
+  };
+
+  function boot() {
+    if (state.ready) return;
+    state.ready = true;
+    state.month = monthNow();
+    wire();
+    loadSettings().then(function () {
+      return loadDashboard();
+    }).then(function () {
+      setTimeout(function () { restoreDraft(); }, 500);
+    });
+    try {
+      api('sessions.label', { label: 'Browser · ' + (navigator.userAgent || '').slice(0, 48) }).catch(function () {});
+    } catch (e) {}
+  }
+
+  window.addEventListener('cf:unlocked', boot);
+  if (!document.body.classList.contains('locked')) boot();
+})();
+</script>

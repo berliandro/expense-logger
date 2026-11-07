@@ -31,6 +31,13 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Recoverable Trash** — Deleted entries and whole receipts move to a hidden `_CF_Trash` sheet with typed payloads and deletion timestamps.
 - **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
 - **Light default, dark mode included** — flat paper-white surfaces, editorial serif headings, small radii, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to 320px.
+- **Monthly overview** — spend, income, net, category totals, a 30/31-dot daily ledger, anomaly callouts, budget progress, and recurring items due.
+- **Search, edit, and undo** — filter logs by text, type, category, member, or reimbursement; edit fields with an audit note; undo a delete from the toast while the record is still in Trash.
+- **Drafts and offline capture** — notes, table rows, selected photos, and entry metadata autosave locally (IndexedDB for photos) and restore after a reload; offline submissions are queued and can be sent when the connection returns.
+- **Duplicate and review gates** — a receipt fingerprint is checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows extracted totals and verdicts before writing.
+- **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
+- **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Table Layout rows can be split across categories when the split sums to the verified total.
+- **Reports, backup, and sessions** — monthly PDF reports in Drive, JSON backup/restore that only adds missing Entry IDs, optional receipt-image retention, and a server-side session list with revoke.
 
 ## How it works
 
@@ -40,6 +47,8 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 4. **Commit** appends verified rows with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
 5. **Sorting** runs separately once the report has zero unresolved rows.
 6. **Delete** moves rows to `_CF_Trash`; **Trash** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
+7. The **overview** reads the selected month, its feature columns, budgets, recurring rules, and the previous month for anomaly comparison. Recent-log pages and overview reads are cached briefly and invalidated by writes.
+8. **Feature data** lives in hidden system sheets: `_CF_Budgets`, `_CF_Recurring`, `_CF_Household`, `_CF_ReceiptHashes`, plus the new month-sheet columns (`Currency`, `FX Rate`, `Base Amount`, `Tags`, `Member`, `Reimbursable`, `Reimbursed`, `Receipt Hash`, `Receipt URL`, `Split Group`). Headers are added idempotently; existing columns never move.
 
 ## Getting started
 
@@ -80,9 +89,10 @@ Script Properties (**Project Settings → Script Properties** in the Apps Script
 
 No keys ever live in this repo — they stay in Script Properties, and the browser holds only a random session token (configurable lifetime, see below), never the PIN or keys.
 
-Month sheets are created automatically from the hidden `Template` sheet with headers
-`Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`.
-The app runs with timezone `Asia/Jakarta` (`appsscript.json`), and the web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
+Month sheets are created automatically from the hidden `Template` sheet with the base headers
+`Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
+plus the feature columns `Currency | FX Rate | Base Amount | Tags | Member | Reimbursable | Reimbursed | Receipt Hash | Receipt URL | Split Group`. Existing sheets receive missing headers at the end; no existing column is moved.
+The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, `drive.file` (optional receipt images and PDF reports), and `userinfo.email` (the conservative access status check). The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
 
 ## Deleting and recovering entries
 
@@ -127,9 +137,10 @@ Or run the suites directly:
 ```sh
 node tests/ui-polish.test.js
 node tests/design-perf.test.js
+node tests/features.test.js
 ```
 
-`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. Browser layout and physical Android testing are reported separately when available.
+`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. `features.test.js` covers the manifest scopes, `cfApi` surface, layout/client feature surfaces, split math, currency metadata, month helpers, sessions, scan caps, backup/report/image hooks, and parses every backend module. Browser layout and physical Android testing are reported separately when available.
 
 ## Performance and design notes
 
@@ -175,19 +186,28 @@ So with the normal anonymous/public deployment most users will see **Access unkn
 
 | Path | Purpose |
 |------|---------|
-| `Code.js` | Apps Script backend: serves the page, calls Gemini, writes Sheets, owns Trash/IDs/sort, and caches recent-log pages |
+| `Code.js` | Apps Script entry point: `doGet`, template includes, legacy entry wrappers |
+| `BackendConfig.js` | Constants, Gemini schemas, prompts, batch budgets, spreadsheet access |
+| `BackendAuth.js` | PIN, sessions/metadata, access status, Gemini key, hero preference |
+| `BackendHistory.js` | Recent-log reads, scan measurement/cap, page cache |
+| `BackendGemini.js` | Gemini calls and the two-phase extract/repair pipeline |
+| `BackendSheets.js` | Month sheets, IDs, ledger, Trash, commit, append |
+| `BackendSort.js` | Month-sheet ordering |
+| `BackendFeatures.js` | Session-gated `cfApi`: dashboard, search, edit, budgets, recurring, household, backup, reports, images, duplicates |
 | `Index.html` | Thin template shell; composes the partials below with `HtmlService` includes |
 | `Styles.html` | Flat light/dark design system: paper surfaces, orange accent, serif display type, small radii |
-| `Layout.html` | Body markup: top bar, entry panel, history, dialogs |
+| `Layout.html` | Body markup: top bar, entry panel, dashboard, history, dialogs |
 | `AppCore.html` | Shared client helpers, photo previews, lightboxes, submission engine |
 | `AppEntry.html` | Table Layout rows and batch submission |
 | `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent Logs |
-| `appsscript.json` | Timezone, runtime, and web-app access settings |
+| `AppFeatures.html` | Dashboard, budgets, recurring, household, sessions, backup, edit, search, drafts/offline, review |
+| `appsscript.json` | Timezone, runtime, explicit OAuth scopes, web-app access settings |
 | `docs/screenshots/` | Desktop and mobile product screenshots shown above |
 | `docs/feature-backlog.md` | Prioritized product and reliability backlog |
+| `tests/` | Source contracts, design/performance guards, and isolated feature tests |
 | `Install and Tutorial Berliandro Cash Log.bat` | Family Windows installer |
 | `Update.bat` | Updater that preserves the Web App URL |
 
-There is no build step: `clasp push` uploads `Code.js`, the HTML partials, and `appsscript.json` directly. `Index.html` is evaluated as an Apps Script template, so the partials are composed at serve time.
+There is no build step: `clasp push` uploads all `.js` backend modules, the HTML partials, and `appsscript.json` directly. `Index.html` is evaluated as an Apps Script template, so the partials are composed at serve time.
 
 Product ideas and the suggested next milestone are in [`docs/feature-backlog.md`](docs/feature-backlog.md).

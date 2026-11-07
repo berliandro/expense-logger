@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -7,10 +7,11 @@ const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 // Index.html is a thin shell composed with HtmlService includes. Join the
 // parts in serve order so the source contracts below cover the real output.
-const PARTIALS = ['Index.html', 'Styles.html', 'Layout.html', 'AppCore.html', 'AppEntry.html', 'AppAuth.html'];
+const PARTIALS = ['Index.html', 'Styles.html', 'Layout.html', 'AppCore.html', 'AppEntry.html', 'AppAuth.html', 'AppFeatures.html'];
 const shell = read('Index.html');
 const html = PARTIALS.map(read).join('\n');
-const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
+const BACKEND = ['BackendConfig.js', 'Code.js', 'BackendAuth.js', 'BackendHistory.js', 'BackendGemini.js', 'BackendSheets.js', 'BackendSort.js', 'BackendFeatures.js'];
+const code = BACKEND.map(read).join('');
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
 const count = (s, re) => (s.match(re) || []).length;
 

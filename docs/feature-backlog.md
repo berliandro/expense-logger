@@ -6,7 +6,14 @@ guide (S = days, M = about a week, L = multi-week or needs a platform change).
 
 The current pass already shipped: a flat light/dark system, removal of all background
 blur and decorative gradients, a split template structure, a cached history read, batched
-DOM rendering, and cached photo previews. The items below are new product work.
+DOM rendering, and cached photo previews. The items below are the requested scope; the
+status note records what is now live.
+
+**Implementation status:** the requested scope is implemented in `BackendFeatures.js`,
+`AppFeatures.html`, and the split backend modules. P0 items 1–10, P1 items 11–18 and 20,
+and P2 anomaly/reimbursement/household are present. Backend work also added explicit OAuth
+scopes, a measured/capped history scan, session metadata, correlation IDs, and a Gemini
+per-minute quota guard. See the README feature list for how each surface is exposed.
 
 ---
 

@@ -338,6 +338,12 @@
         return;
       }
 
+      if (!navigator.onLine && typeof window.cfQueueOffline === 'function') {
+        window.cfQueueOffline();
+        setStatus('Saved offline. Open the app when online to send it.', 'success');
+        return;
+      }
+
       submitBtn.disabled = true;
       submitLabel.textContent = 'Saving…';
       if (selectedFiles.length > 1) {
@@ -373,14 +379,57 @@
       }
     });
 
+    function cfRowMeta_(r) {
+      r = r || {};
+      return {
+        currency: r.currency, fxRate: r.fxRate, tags: r.tags, member: r.member,
+        reimbursable: r.reimbursable, reimbursed: r.reimbursed, receiptHash: r.receiptHash,
+        receiptUrl: r.receiptUrl, splitGroup: r.splitGroup, baseAmount: r.baseAmount,
+        splits: r.splits || null
+      };
+    }
+    function cfReviewGate_(pre) {
+      try {
+        if (typeof window.cfReviewBeforeSaveEnabled !== 'function' ||
+            !window.cfReviewBeforeSaveEnabled() ||
+            typeof window.cfReviewBeforeCommit !== 'function') return Promise.resolve(true);
+        return Promise.resolve(window.cfReviewBeforeCommit(pre.items || [], pre.verdicts || []))
+          .then(function (v) { return v !== false; })
+          .catch(function () { return true; });
+      } catch (e) { return Promise.resolve(true); }
+    }
+    function cfEntryMetaSafe() {
+      try { return (typeof window.cfEntryMetaValues === 'function' ? window.cfEntryMetaValues() : {}) || {}; }
+      catch (e) { return {}; }
+    }
+    // Fast, synchronous fingerprint of the source file plus note. It detects
+    // re-selecting the same file and repeated text entries without hashing the
+    // whole image on the phone; the server stores it in _CF_ReceiptHashes.
+    function cfReceiptHash(file, note, data) {
+      if (!file) return '';
+      var seed = (file ? [file.name || '', file.size || 0, file.lastModified || 0].join('|') : '') +
+        '|' + String(note || '') + '|' + String(data || '').length;
+      var h = 2166136261;
+      for (var i = 0; i < seed.length; i++) {
+        h ^= seed.charCodeAt(i);
+        h = (h * 16777619) >>> 0;
+      }
+      return 'r' + h.toString(16);
+    }
+
     function submitExpenses(images, noteText) {
       var oneRowBox = document.getElementById('toggle-onerow');
       var oneRow = !!(oneRowBox && oneRowBox.checked);
+      var meta = cfEntryMetaSafe();
       var rows = (images && images.length ? images : [null]).map(function (img, i) {
+        var f = selectedFiles[i] || null;
         return {
           row_id: cfUuid(), origNum: i + 1, note: noteText, type: null,
           file: null, data: (img && img.data) || '', mimeType: (img && img.mimeType) || 'image/jpeg',
-          hasPhoto: !!(img && img.data)
+          hasPhoto: !!(img && img.data),
+          currency: meta.currency, fxRate: meta.fxRate, tags: meta.tags, member: meta.member,
+          reimbursable: meta.reimbursable ? 'Yes' : 'No',
+          receiptHash: cfReceiptHash(f, noteText, (img && img.data) || '')
         };
       });
       if (window.google && google.script && google.script.run) {
@@ -390,6 +439,7 @@
           sessionToken: sessionToken,
           // Quick-Input (this panel) always force-saves; see cfEngineSubmit.
           quickForce: true,
+          forceDuplicate: !!meta.allowDuplicate,
           oneRowPerReceipt: oneRow,
           progress: function (t) { setStatus(t, ''); }
         }).then(function (report) {
@@ -461,6 +511,7 @@
     function onSuccess(summary, keepForm) {
       submitBtn.disabled = false;
       submitLabel.textContent = 'Log entry';
+      try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e0) {}
       var isIncome = /^income/i.test(summary || '');
       setStatus(summary, isIncome ? 'success income' : 'success');
       // When receipts remain for review, their photos were kept above: keep
@@ -491,6 +542,12 @@
       if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
         setStatus('Google Sheet is not set - please add it.', 'error');
         try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
+        return;
+      }
+      if ((!navigator.onLine || /failed to fetch|network|timed? ?out/i.test(String((err && err.message) || err))) &&
+          typeof window.cfQueueOffline === 'function') {
+        window.cfQueueOffline();
+        setStatus('Connection lost. The entry is saved on this device and can be sent when you are back online.', 'success');
         return;
       }
       setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
@@ -804,6 +861,25 @@
       var quickMode = !!opts.quickForce;
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
       var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
+      if (window.cfRetainImagesEnabled && window.cfApiCall) {
+        chain = chain.then(function () {
+          var jobs = rows.map(function (r) {
+            if (!r.hasPhoto) return Promise.resolve();
+            var read = r.data ? Promise.resolve(r.data)
+              : (r.file ? cfReadFileBase64(r.file) : Promise.resolve(''));
+            return read.then(function (b64) {
+              if (!b64) return;
+              return window.cfApiCall('image.save', {
+                data: b64, mimeType: r.mimeType || 'image/jpeg',
+                name: 'receipt-' + (r.origNum || 'x') + '-' + Date.now() + '.jpg'
+              }).then(function (res) {
+                if (res && res.url) r.receiptUrl = res.url;
+              });
+            }).catch(function () {});
+          });
+          return Promise.all(jobs);
+        });
+      }
       function needBackend() {
         if (!(window.google && google.script && google.script.run)) throw new Error('backend-missing');
       }
@@ -914,14 +990,19 @@
       }).then(function () {
         // 4. triage (no writes) to find the single bounded repair set
         var items = rows.map(function (r) {
+          var m = cfRowMeta_(r);
           if (st.failedById[r.row_id] && !st.okById[r.row_id]) {
             return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
                      hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
-                     txn: null, repaired: true, preError: st.failedById[r.row_id] };
+                     txn: null, repaired: true, preError: st.failedById[r.row_id],
+                     currency: m.currency, fxRate: m.fxRate, tags: m.tags, member: m.member,
+                     reimbursable: m.reimbursable, receiptHash: m.receiptHash, receiptUrl: m.receiptUrl, splits: m.splits };
           }
           return { row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
                    hasPhoto: !!r.hasPhoto, phase1: r.hasPhoto ? (st.phase1ById[r.row_id] || null) : null,
-                   txn: st.okById[r.row_id] || null, repaired: false };
+                   txn: st.okById[r.row_id] || null, repaired: false,
+                   currency: m.currency, fxRate: m.fxRate, tags: m.tags, member: m.member,
+                   reimbursable: m.reimbursable, receiptHash: m.receiptHash, receiptUrl: m.receiptUrl, splits: m.splits };
         });
         return cfCall('reconcileReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, quickMode: quickMode }, items, token])
           .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
@@ -980,7 +1061,7 @@
               return [];
             });
         }
-        function done() { return { items: tri.items, repairedTxnById: st.repairedTxnById }; }
+        function done() { return { items: tri.items, repairedTxnById: st.repairedTxnById, verdicts: tri.verdicts }; }
         var eligible = tri.verdicts.filter(function (v) { return v.repairEligible; });
         if (!eligible.length) return done();
         var extraLeft = opts.quickForce ? QUICK_EXTRA_REPAIRS : 0;
@@ -997,15 +1078,23 @@
         progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
         return runRepairBatch(eligible, 'Repair pass').then(extraRound).then(done);
       }).then(function (pre) {
-        // 6. commit (server reconciles authoritatively, applies toggles, appends)
+        // 6. optional human review before the commit, then commit.
         var finals = pre.items.map(function (it) {
           var fixed = (it.row_id in pre.repairedTxnById) ? pre.repairedTxnById[it.row_id] : it.txn;
           return { row_id: it.row_id, origNum: it.origNum, forcedType: it.forcedType, note: it.note,
                    hasPhoto: it.hasPhoto, phase1: it.phase1, txn: fixed, repaired: (it.row_id in pre.repairedTxnById) || !!it.repaired,
-                   preError: it.preError || '' };
+                   preError: it.preError || '', currency: it.currency, fxRate: it.fxRate, tags: it.tags,
+                   member: it.member, reimbursable: it.reimbursable, receiptHash: it.receiptHash,
+                   receiptUrl: it.receiptUrl, baseAmount: it.baseAmount, splitGroup: it.splitGroup,
+                   splits: it.splits || null };
         });
-        progress('Writing validated rows…');
-        return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog, oneRowPerReceipt: oneRowFlag, quickMode: quickMode }, finals, token]);
+        return cfReviewGate_(pre).then(function (ok) {
+          if (!ok) throw new Error('Save cancelled - rows kept in the form.');
+          progress('Writing validated rows…');
+          return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog,
+            oneRowPerReceipt: oneRowFlag, quickMode: quickMode,
+            forceDuplicate: !!opts.forceDuplicate }, finals, token]);
+        });
       });
       return chain;
     }

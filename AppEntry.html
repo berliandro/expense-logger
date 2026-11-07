@@ -124,6 +124,20 @@
 
         var actions = document.createElement('div');
         actions.className = 'row-actions';
+        var splitBtn = document.createElement('button');
+        splitBtn.type = 'button';
+        splitBtn.className = 'btn-choice';
+        splitBtn.textContent = 'Split';
+        splitBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (typeof window.cfSplitRow === 'function') {
+            window.cfSplitRow(row, function (splits) {
+              row._splits = splits && splits.length > 1 ? splits : null;
+              splitBtn.textContent = row._splits ? 'Split · ' + row._splits.length : 'Split';
+            });
+          }
+        });
+        actions.appendChild(splitBtn);
 
         function refreshThumb() {
           if (row._previewUrl) {
@@ -240,6 +254,7 @@
       });
 
       function collectFilled() {
+        var meta = cfEntryMetaSafe();
         var domRows = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow'));
         return domRows.filter(function (row) {
           if (row.getAttribute('data-state') === 'logged') return false;
@@ -247,16 +262,20 @@
           return !!row._file || noteVal !== '';
         }).map(function (row, i) {
           row._submitNum = i + 1;
+          var noteVal = row.querySelector('.trow-note').value.trim();
           return {
             el: row,
             row_id: row._rowId,
             origNum: i + 1,
-            note: row.querySelector('.trow-note').value.trim(),
+            note: noteVal,
             type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
             file: row._file || null,
             data: '',
             mimeType: (row._file && row._file.type) || 'image/jpeg',
-            hasPhoto: !!row._file
+            hasPhoto: !!row._file,
+            currency: meta.currency, fxRate: meta.fxRate, tags: meta.tags, member: meta.member,
+            reimbursable: meta.reimbursable ? 'Yes' : 'No',
+            receiptHash: cfReceiptHash(row._file, noteVal, ''), splits: row._splits || null
           };
         });
       }
@@ -328,10 +347,15 @@
         if (counts.logged) parts.push(counts.logged + ' logged');
         if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' force-logged (verify receipts)');
         if (counts.review) parts.push(counts.review + ' left for review');
+        if (counts.duplicateReview) parts.push(counts.duplicateReview + ' possible duplicate(s)');
         if (counts.errors) parts.push(counts.errors + ' failed');
         var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
         if (counts.forceAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
         setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
+        if (!(counts.review || counts.errors || counts.duplicateReview) &&
+            ((counts.logged || 0) + (counts.forceAdjusted || 0) > 0)) {
+          try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e) {}
+        }
         return loggedN;
       }
 
@@ -375,6 +399,11 @@
           setStatus('Add at least one filled row (photo or note) first.', 'error');
           return;
         }
+        if (!navigator.onLine && typeof window.cfQueueOffline === 'function') {
+          window.cfQueueOffline();
+          setStatus('Saved offline. The rows stay here until you can send them.', 'success');
+          return;
+        }
         if (!(window.google && google.script && google.script.run)) {
           // Local preview (outside Apps Script): simulate per-row success
           setTimeout(function () {
@@ -397,6 +426,7 @@
         cfEngineSubmit({
           rows: filled,
           sessionToken: sessionToken,
+          forceDuplicate: !!cfEntryMetaSafe().allowDuplicate,
           progress: function (t) { setProgress(t); setStatus(t, ''); }
         }).then(function (report) {
           var rowsById = {};
@@ -436,13 +466,18 @@
       }
 
       function resubmitRows(doms) {
+        var meta = cfEntryMetaSafe();
         var filled = doms.map(function (row, i) {
+          var noteVal = row.querySelector('.trow-note').value.trim();
           return {
             el: row, row_id: row._rowId, origNum: i + 1,
-            note: row.querySelector('.trow-note').value.trim(),
+            note: noteVal,
             type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
             file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
-            hasPhoto: !!row._file
+            hasPhoto: !!row._file,
+            currency: meta.currency, fxRate: meta.fxRate, tags: meta.tags, member: meta.member,
+            reimbursable: meta.reimbursable ? 'Yes' : 'No',
+            receiptHash: cfReceiptHash(row._file, noteVal, ''), splits: row._splits || null
           };
         }).filter(function (f) {
           return f.hasPhoto || f.note !== '';
@@ -466,15 +501,20 @@
       });
       if (retryBtn) retryBtn.addEventListener('click', function () {
         if (jobActive) return;
+        var meta = cfEntryMetaSafe();
         var reviewDoms = Array.prototype.slice.call(rowsEl.querySelectorAll('.trow[data-state="review"]'));
         if (!reviewDoms.length) return;
         var filled = reviewDoms.map(function (row, i) {
+          var noteVal = row.querySelector('.trow-note').value.trim();
           return {
             el: row, row_id: row._rowId, origNum: i + 1,
-            note: row.querySelector('.trow-note').value.trim(),
+            note: noteVal,
             type: row.querySelector('.trow-type').value === 'Income' ? 'Income' : 'Expense',
             file: row._file || null, data: '', mimeType: (row._file && row._file.type) || 'image/jpeg',
-            hasPhoto: !!row._file
+            hasPhoto: !!row._file,
+            currency: meta.currency, fxRate: meta.fxRate, tags: meta.tags, member: meta.member,
+            reimbursable: meta.reimbursable ? 'Yes' : 'No',
+            receiptHash: cfReceiptHash(row._file, noteVal, ''), splits: row._splits || null
           };
         }).filter(function (f) { return f.hasPhoto || f.note !== ''; });
         if (!filled.length) {

@@ -30,6 +30,10 @@
       var histRefresh = document.getElementById('history-refresh');
       var histSub = document.getElementById('history-sub');
       var trashBtn = document.getElementById('trash-btn');
+      var householdBtn = document.getElementById('household-btn');
+      var sessionsBtn = document.getElementById('sessions-btn');
+      var backupBtn = document.getElementById('backup-btn');
+      var featureSettingsBtn = document.getElementById('feature-settings-btn');
       var confirmModal = document.getElementById('confirm-modal');
       var confirmTitle = document.getElementById('confirm-title');
       var confirmBody = document.getElementById('confirm-body');
@@ -65,7 +69,7 @@
         try { document.body.classList.toggle('locked', !!locked); } catch (e) {}
         if (locked) { lockEl.classList.remove('hidden'); }
         else { lockEl.classList.add('hidden'); }
-        [changeBtn, apiBtn, sheetBtn, sessBtn, trashBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
+        [changeBtn, apiBtn, sheetBtn, sessBtn, trashBtn, householdBtn, sessionsBtn, backupBtn, featureSettingsBtn, logoutBtn].forEach(function (b) { if (b) b.classList.toggle('hidden', !!locked); });
         try { window.dispatchEvent(new CustomEvent('cf:close-settings')); } catch (e) {}
         if (histCard) histCard.classList.toggle('hidden', !!locked);
         // Never leave another session's rows in memory: locking drops the cache.
@@ -1001,6 +1005,10 @@
             '<div class="hist-meta">' + esc(lg.date || '') + ' \u00b7 ' + esc(lg.sheet || '') + (lg.category ? ' \u00b7 ' + esc(lg.category) : '') + (lg.transactionId ? ' \u00b7 ' + esc(lg.transactionId) : '') + '</div>' +
             '<div class="hist-actions">' +
               '<button type="button" class="hist-del" data-act="del-entry" data-entry-id="' + eid + '">Delete entry</button>' +
+              '<button type="button" class="hist-del" data-act="edit" data-entry-id="' + eid + '">Edit</button>' +
+              (String(lg.reimbursable || '').toLowerCase() === 'yes' && String(lg.reimbursed || '').toLowerCase() !== 'yes'
+                ? '<button type="button" class="hist-del" data-act="reimburse" data-entry-id="' + eid + '">Mark reimbursed</button>'
+                : '') +
               '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for this entry">&#8943;</button></span>' +
             '</div></div>'
           );
@@ -1010,6 +1018,7 @@
         if (append) histList.insertAdjacentHTML('beforeend', markup);
         else histList.innerHTML = markup;
       }
+      window.cfRenderLogs = renderLogs;
       var histOpenMenu = null;
       function histActTarget(el) {
         while (el && el !== histList) {
@@ -1112,6 +1121,7 @@
             } catch (e) {}
             noteHistoryMutated();
             refreshTrashIfOpen();
+            try { window.dispatchEvent(new CustomEvent('cf:trash-mutation', { detail: { type: 'entry', entryId: entryId, message: 'Entry moved to Trash.' } })); } catch (e3) {}
           }, function (err) {
             histBusy(btn, false);
             if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }
@@ -1152,6 +1162,7 @@
               } catch (e) {}
               noteHistoryMutated();
               refreshTrashIfOpen();
+              try { window.dispatchEvent(new CustomEvent('cf:trash-mutation', { detail: { type: 'transaction', groupId: opId, message: 'Receipt moved to Trash.' } })); } catch (e3) {}
             }, function (err) {
               histBusy(btn, false);
               if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return; }

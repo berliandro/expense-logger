@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 // Design + performance guards. These are source contracts, not device
 // benchmarks: they stop the app from regressing into external font blocking,
 // nested backdrop blurs on repeating elements, or per-row DOM thrash.
@@ -12,8 +12,8 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const shell = read('Index.html');
 const css = read('Styles.html');
 const layout = read('Layout.html');
-const js = read('AppCore.html') + '\n' + read('AppEntry.html') + '\n' + read('AppAuth.html');
-const code = read('Code.js');
+const js = read('AppCore.html') + '\n' + read('AppEntry.html') + '\n' + read('AppAuth.html') + '\n' + read('AppFeatures.html');
+const code = ['BackendConfig.js', 'Code.js', 'BackendAuth.js', 'BackendHistory.js', 'BackendGemini.js', 'BackendSheets.js', 'BackendSort.js', 'BackendFeatures.js'].map(read).join('');
 
 // --- Loading: no external, render-blocking font request -------------------
 assert.doesNotMatch(shell, /fonts\.googleapis\.com|fonts\.gstatic\.com/i, 'no Google Fonts preconnect/fetch');
@@ -21,7 +21,7 @@ assert.doesNotMatch(css + shell + js, /Outfit/i, 'no external display font');
 assert.match(css, /--font:\s*ui-sans-serif,\s*-apple-system/, 'system font stack');
 
 // --- Composition: thin shell + HtmlService includes -----------------------
-for (const part of ['Styles', 'Layout', 'AppCore', 'AppEntry', 'AppAuth']) {
+for (const part of ['Styles', 'Layout', 'AppCore', 'AppEntry', 'AppAuth', 'AppFeatures']) {
   assert.match(shell, new RegExp("include_\\('" + part + "'\\)"), 'include ' + part);
 }
 assert.match(code, /function include_\(filename\)\s*\{/, 'include_ helper exists');

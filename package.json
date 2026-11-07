@@ -4,6 +4,6 @@
   "private": true,
   "description": "Receipt-to-Sheets cashflow logger on Google Apps Script",
   "scripts": {
-    "test": "node tests/ui-polish.test.js && node tests/design-perf.test.js"
+    "test": "node tests/ui-polish.test.js && node tests/design-perf.test.js && node tests/features.test.js"
   }
 }
