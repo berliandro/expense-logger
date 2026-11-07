@@ -31,6 +31,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Recoverable Trash** — Deleted entries and whole receipts move to a hidden `_CF_Trash` sheet with typed payloads and deletion timestamps.
 - **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
 - **Light default, dark mode included** — flat paper-white surfaces, editorial serif headings, small radii, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to 320px.
+- **Advanced options** — currency/rate, tags, and household member live in a collapsible panel with a live summary; its expanded state is saved server-side and restored on every device.
 - **Monthly overview** — spend, income, net, category totals, a 30/31-dot daily ledger, anomaly callouts, budget progress, and recurring items due.
 - **Search, edit, and undo** — filter logs by text, type, category, member, or reimbursement; edit fields with an audit note; undo a delete from the toast while the record is still in Trash.
 - **Drafts and offline capture** — notes, table rows, selected photos, and entry metadata autosave locally (IndexedDB for photos) and restore after a reload; offline submissions are queued and can be sent when the connection returns.
@@ -148,6 +149,7 @@ node tests/backend-dashboard.test.js
 - **Flat surfaces, not glass.** There are no `backdrop-filter` layers and no decorative background gradients. The layout stays flat and light while borders, spacing, and type carry the hierarchy. Phones do not composite blur while scrolling.
 - **System fonts only.** The external Google Fonts request was removed; first paint no longer waits on a third-party stylesheet or font files.
 - **Recent-logs cache.** `getRecentLogs` caches the first pages in `CacheService` for 120 seconds. Every append, delete, restore, and re-sort bumps a version key, so a caller never reads a stale page after its own mutation.
+- **Month-summary cache.** Dashboard payloads are cached per month for 6 hours server-side and 10 minutes in the page. Returning to November after viewing September renders the already-loaded November summary without a server scan; any write clears both caches.
 - **Perceived latency.** The first history page preloads after unlock; cached pages reveal immediately, and later pages prefetch in the background.
 - **Rendering.** History pages are inserted in one `insertAdjacentHTML` write, photo thumbnails reuse one object URL per file, and nonessential cloud preferences wait for the `cf:unlocked` event.
 - **Measured locally.** Chromium emulating a 390×844 phone at 3× DPR, 8× CPU throttle, with 80 history rows: median 47.6 FPS during continuous scrolling over three runs, versus 14.0 FPS on the previous build. The structural change is 17 `backdrop-filter` declarations and 2 external font requests removed. This is browser emulation; physical Android testing remains a manual check.
