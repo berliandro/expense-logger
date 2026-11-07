@@ -902,9 +902,9 @@ function cfMonthlyReport_(sessionToken, monthKey) {
     }).join('') + '</tbody></table></body></html>';
   var pdf = HtmlService.createHtmlOutput(html).getAs('application/pdf');
   var name = 'Cashflow report ' + data.monthLabel + '.pdf';
-  var folder = cfReceiptFolder_();
-  var file = folder.createFile(pdf.setName(name));
-  return { ok: true, url: file.getUrl(), name: name };
+  // Return the bytes to the browser instead of saving to Drive. This keeps
+  // the report working without a Drive authorization prompt.
+  return { ok: true, name: name, pdfBase64: Utilities.base64Encode(pdf.getBytes()) };
 }
 
 function cfEscape_(s) {

@@ -996,9 +996,26 @@
       toast('Building report…');
       api('report.month', { month: state.month || monthNow() }).then(function (res) {
         toast('Report ready.');
-        if (res.url && win) win.location.href = res.url;
-        else if (res.url) window.open(res.url, '_blank', 'noopener');
-        else if (win) win.close();
+        if (res.pdfBase64) {
+          var raw = atob(res.pdfBase64);
+          var bytes = new Uint8Array(raw.length);
+          for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+          var blob = new Blob([bytes], { type: 'application/pdf' });
+          var url = URL.createObjectURL(blob);
+          if (win) { win.location.href = url; }
+          else {
+            var a = document.createElement('a');
+            a.href = url; a.download = res.name || 'cashflow-report.pdf';
+            document.body.appendChild(a); a.click(); a.remove();
+          }
+          setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+        } else if (res.url && win) {
+          win.location.href = res.url;
+        } else if (res.url) {
+          window.open(res.url, '_blank', 'noopener');
+        } else if (win) {
+          win.close();
+        }
       }).catch(function (e) { if (win) win.close(); toast(e.message); }).then(function () {
         if (btn) { btn.disabled = false; if (btn.__orig) btn.textContent = btn.__orig; delete btn.__orig; }
       });

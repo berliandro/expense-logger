@@ -45,6 +45,7 @@ assert.match(features, /function cfExportBackup_[\s\S]*?name\.indexOf\('_CF_'\) 
 assert.match(features, /_CF_Submissions|LEDGER_SHEET_NAME/, 'ledger restore key');
 assert.match(features, /TRASH_SHEET_NAME/, 'trash restore key');
 assert.match(features, /function cfMonthlyReport_/, 'monthly report backend');
+assert.match(features, /pdfBase64/, 'report returns PDF bytes to the browser');
 assert.match(features, /function cfRetainReceiptImage_/, 'image retention backend');
 
 // --- client surfaces ------------------------------------------------------
