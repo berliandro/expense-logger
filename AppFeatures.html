@@ -890,11 +890,15 @@
     add('dash-budget', 'click', openBudgets);
     add('dash-recurring', 'click', openRecurring);
     add('dash-report', 'click', function () {
+      var win = null;
+      try { win = window.open('', '_blank'); } catch (e) {}
       toast('Building report…');
       api('report.month', { month: state.month || monthNow() }).then(function (res) {
         toast('Report ready.');
-        if (res.url) window.open(res.url, '_blank', 'noopener');
-      }).catch(function (e) { toast(e.message); });
+        if (res.url && win) win.location.href = res.url;
+        else if (res.url) window.open(res.url, '_blank', 'noopener');
+        else if (win) win.close();
+      }).catch(function (e) { if (win) win.close(); toast(e.message); });
     });
     add('household-btn', 'click', openHousehold);
     add('sessions-btn', 'click', openSessions);

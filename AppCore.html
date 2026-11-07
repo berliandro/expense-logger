@@ -511,7 +511,9 @@
     function onSuccess(summary, keepForm) {
       submitBtn.disabled = false;
       submitLabel.textContent = 'Log entry';
-      try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e0) {}
+      if (!keepForm) {
+        try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e0) {}
+      }
       var isIncome = /^income/i.test(summary || '');
       setStatus(summary, isIncome ? 'success income' : 'success');
       // When receipts remain for review, their photos were kept above: keep

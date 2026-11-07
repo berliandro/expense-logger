@@ -72,7 +72,7 @@ assert.doesNotMatch(code, /discountAdjusted/, 'no obsolete summary counter');
 // Code.js is stored with CRLF endings, so every line anchor here must tolerate
 // either convention instead of assuming LF.
 const reconcileMatch = code.match(/function reconcileRow_\([\s\S]*?\r?\n\}\r?\n(?=\r?\nfunction dominantCategory_\()/);
-const policyMatch = code.match(/function applyTogglePolicy_\([\s\S]*?\r?\n\}\r?\n(?=\r?\n\/\/ ---------- SHEET WRITING ----------)/);
+const policyMatch = code.match(/function applyTogglePolicy_\([\s\S]*?\r?\n\}\r?\n(?=\s*\/\/ ---------- SHEET WRITING ----------)/);
 assert.ok(reconcileMatch, 'find reconcileRow_');
 assert.ok(policyMatch, 'find applyTogglePolicy_');
 const context = {
