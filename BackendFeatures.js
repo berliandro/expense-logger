@@ -11,10 +11,12 @@ var CF_BUDGET_SHEET = '_CF_Budgets';
 var CF_RECURRING_SHEET = '_CF_Recurring';
 var CF_HOUSEHOLD_SHEET = '_CF_Household';
 var CF_HASH_SHEET = '_CF_ReceiptHashes';
+var CF_IMAGE_SHEET = '_CF_ReceiptImages';
+var CF_IMAGE_CHUNK = 45000;
+var CF_IMAGE_MAX_CHUNKS = 60;
 var CF_SETTINGS_KEY = 'CF_FEATURE_SETTINGS_V1';
-var CF_DRIVE_FOLDER_KEY = 'CF_RECEIPT_FOLDER_ID';
 var CF_SCHEMA_VERSION_KEY = 'CF_SCHEMA_VERSION';
-var CF_SCHEMA_VERSION = '1';
+var CF_SCHEMA_VERSION = '2';
 var CF_UI_PREFS_KEY = 'CF_UI_PREFS_V1';
 
 var CF_UI_PREFS_DEFAULTS = {
@@ -140,13 +142,18 @@ function cfEnsureSheetFeatureColumns_(sh) {
 }
 
 function cfEnsureFeatureSheets_(ss) {
+  var imageHeaders = ['Image ID', 'Receipt Hash', 'Mime Type', 'Chunk Count', 'Created At'];
+  for (var ii = 1; ii <= CF_IMAGE_MAX_CHUNKS; ii++) imageHeaders.push('Data ' + ii);
+  var imageWidths = [150, 280, 100, 80, 170];
+  for (var iw = 1; iw <= CF_IMAGE_MAX_CHUNKS; iw++) imageWidths.push(200);
   var defs = [
     [CF_BUDGET_SHEET, ['Category', 'Monthly Limit', 'Updated At'], [180, 160, 180]],
     [CF_RECURRING_SHEET,
       ['Rule ID', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Member', 'Tags', 'Day', 'Active', 'Last Run', 'Created At'],
       [150, 220, 120, 160, 120, 100, 140, 180, 80, 90, 130, 170]],
     [CF_HOUSEHOLD_SHEET, ['Member ID', 'Name', 'Active', 'Created At'], [150, 200, 90, 170]],
-    [CF_HASH_SHEET, ['Receipt Hash', 'Transaction ID', 'Entry ID', 'Created At'], [280, 150, 150, 170]]
+    [CF_HASH_SHEET, ['Receipt Hash', 'Transaction ID', 'Entry ID', 'Created At'], [280, 150, 150, 170]],
+    [CF_IMAGE_SHEET, imageHeaders, imageWidths]
   ];
   defs.forEach(function (d) {
     if (!ss.getSheetByName(d[0])) cfFeatureSheet_(ss, d[0], d[1], d[2]);
@@ -754,6 +761,11 @@ function cfApplyTxnMeta_(txn, it) {
   return txn;
 }
 
+function cfDuplicateDisposition_(submission, fingerprint, dupSet) {
+  if (!fingerprint || !dupSet || !dupSet[fingerprint]) return 'none';
+  return (submission && submission.forceDuplicate) ? 'allow' : 'hold';
+}
+
 function cfDuplicateFingerprint_(txn, imageHash) {
   if (!txn) return '';
   var total = 0;
@@ -808,29 +820,61 @@ function cfRecordHashes_(ss, txnId, entries, hash) {
   });
 }
 
-function cfReceiptFolder_() {
-  var props = PropertiesService.getScriptProperties();
-  var id = props.getProperty(CF_DRIVE_FOLDER_KEY);
-  if (id) {
-    try { return DriveApp.getFolderById(id); } catch (e) {}
-  }
-  // drive.file can create and then access app-created folders. Avoid
-  // getFoldersByName(), which requires the broader Drive scope.
-  var folder = DriveApp.createFolder('Cashflow Receipts');
-  try { props.setProperty(CF_DRIVE_FOLDER_KEY, folder.getId()); } catch (e2) {}
-  return folder;
-}
-
 function cfRetainReceiptImage_(sessionToken, data, mimeType, name) {
   requireSession_(sessionToken);
-  if (!data) throw new Error('No image data supplied.');
+  var b64 = String(data || '');
+  if (!b64) throw new Error('No image data supplied.');
   if (!/^image\//.test(String(mimeType || ''))) throw new Error('Only image files can be retained.');
-  var folder = cfReceiptFolder_();
-  var bytes = Utilities.base64Decode(data);
-  var safe = String(name || ('receipt-' + Date.now())).replace(/[^\w.\-]+/g, '-').slice(0, 80);
-  var blob = Utilities.newBlob(bytes, mimeType, safe);
-  var file = folder.createFile(blob);
-  return { ok: true, url: file.getUrl(), id: file.getId(), name: file.getName() };
+  var ss = getSpreadsheet_();
+  cfEnsureFeatureSchema_(ss);
+  var chunks = [];
+  for (var i = 0; i < b64.length; i += CF_IMAGE_CHUNK) chunks.push(b64.slice(i, i + CF_IMAGE_CHUNK));
+  if (chunks.length > CF_IMAGE_MAX_CHUNKS) {
+    throw new Error('Receipt preview is too large to retain. Try a smaller photo.');
+  }
+  var id = 'IMG-' + Utilities.getUuid().slice(0, 8);
+  var now = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm');
+  var row = [id, '', mimeType, chunks.length, now].concat(chunks);
+  var sh = ss.getSheetByName(CF_IMAGE_SHEET);
+  if (!sh) { cfEnsureFeatureSheets_(ss); sh = ss.getSheetByName(CF_IMAGE_SHEET); }
+  if (!sh) throw new Error('Receipt image storage is not available.');
+  sh.appendRow(row);
+  // A short token lives in the month sheet's Receipt URL column; the bytes
+  // stay in the hidden image sheet, so no Drive authorization is needed.
+  return { ok: true, url: 'cfimg:' + id, id: id, storage: 'sheet' };
+}
+
+function cfReceiptImage_(sessionToken, id) {
+  requireSession_(sessionToken);
+  var want = String(id || '').replace(/^cfimg:/, '');
+  if (!want) throw new Error('No receipt image selected.');
+  var ss = getSpreadsheet_();
+  cfEnsureFeatureSchema_(ss);
+  var d = cfFeatureSheetData_(ss.getSheetByName(CF_IMAGE_SHEET));
+  for (var r = 0; r < d.rows.length; r++) {
+    if (String(cfValue_(d.rows[r], d.col, 'Image ID') || '') !== want) continue;
+    var count = Number(cfValue_(d.rows[r], d.col, 'Chunk Count')) || 0;
+    var out = '';
+    for (var c = 1; c <= count; c++) out += String(cfValue_(d.rows[r], d.col, 'Data ' + c) || '');
+    return { ok: true, mimeType: String(cfValue_(d.rows[r], d.col, 'Mime Type') || 'image/jpeg'), data: out };
+  }
+  throw new Error('Receipt preview not found.');
+}
+
+function cfDeleteReceiptImage_(sessionToken, id) {
+  requireSession_(sessionToken);
+  var want = String(id || '').replace(/^cfimg:/, '');
+  if (!want) throw new Error('No receipt image selected.');
+  var ss = getSpreadsheet_();
+  cfEnsureFeatureSchema_(ss);
+  var sh = ss.getSheetByName(CF_IMAGE_SHEET);
+  if (!sh) return { ok: true, deleted: 0 };
+  var d = cfFeatureSheetData_(sh);
+  var deleted = 0;
+  for (var r = d.rows.length - 1; r >= 0; r--) {
+    if (String(cfValue_(d.rows[r], d.col, 'Image ID') || '') === want) { sh.deleteRow(r + 2); deleted++; }
+  }
+  return { ok: true, deleted: deleted };
 }
 
 function cfExportBackup_(sessionToken) {
@@ -881,6 +925,7 @@ function cfImportBackup_(sessionToken, backup) {
     else if (name === CF_RECURRING_SHEET) keyHeaders = ['rule id'];
     else if (name === CF_HOUSEHOLD_SHEET) keyHeaders = ['member id'];
     else if (name === CF_HASH_SHEET) keyHeaders = ['receipt hash'];
+    else if (name === CF_IMAGE_SHEET) keyHeaders = ['image id'];
     else if (name === LEDGER_SHEET_NAME) keyHeaders = ['submission id', 'row id'];
     else if (name === TRASH_SHEET_NAME) keyHeaders = ['trash id'];
     else keyHeaders = ['entry id'];
@@ -1042,6 +1087,8 @@ function cfApi(sessionToken, action, payload) {
       case 'reimbursement.set': return cfSetReimbursement_(sessionToken, payload.entryIds, payload.patch);
       case 'duplicates.check': return { ok: true, data: cfCheckDuplicates_(sessionToken, payload.hashes || []) };
       case 'image.save': return cfRetainReceiptImage_(sessionToken, payload.data, payload.mimeType, payload.name);
+      case 'image.get': return cfReceiptImage_(sessionToken, payload.id);
+      case 'image.delete': return cfDeleteReceiptImage_(sessionToken, payload.id);
       case 'backup.export': return { ok: true, backupJson: cfExportBackup_(sessionToken) };
       case 'backup.import': return cfImportBackup_(sessionToken, payload.backup);
       case 'report.month': return cfMonthlyReport_(sessionToken, payload.month);

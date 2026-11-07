@@ -1030,7 +1030,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
       }
       var t = triageRow_(it, toggles);
       var fp = (it.receiptHash && t.txn) ? cfDuplicateFingerprint_(t.txn, it.receiptHash) : '';
-      if (!submission.forceDuplicate && fp && dupSet[fp]) {
+      if (cfDuplicateDisposition_(submission, fp, dupSet) === 'hold') {
         rowsOut.push({ row_id: it.row_id, origNum: it.origNum, status: 'duplicate-review',
           transactionId: dupSet[fp].transactionId || '',
           message: 'This receipt matches one already in the sheet. Review it, then use “Log anyway” if it is a real second purchase.' });

@@ -17,14 +17,15 @@ const app = read('appsscript.json');
 const pkg = JSON.parse(read('package.json'));
 
 // --- manifest -------------------------------------------------------------
-for (const scope of ['spreadsheets', 'script.external_request', 'drive', 'userinfo.email']) {
+for (const scope of ['spreadsheets', 'script.external_request', 'userinfo.email']) {
   assert.match(app, new RegExp('auth/' + scope.replace('.', '\\.')), 'oauth scope: ' + scope);
 }
+assert.doesNotMatch(app, /auth\/drive/, 'no Drive scope is needed');
 
 // --- backend API surface --------------------------------------------------
 for (const action of ['dashboard', 'search', 'updateEntry', 'sessions.list', 'sessions.revoke',
   'budgets.save', 'recurring.log', 'household.save', 'reimbursement.set', 'duplicates.check',
-  'image.save', 'backup.export', 'backup.import', 'report.month', 'quickText', 'uiPrefs.get', 'uiPrefs.save']) {
+  'image.save', 'image.get', 'image.delete', 'backup.export', 'backup.import', 'report.month', 'quickText', 'uiPrefs.get', 'uiPrefs.save']) {
   assert.ok(features.includes("'" + action + "'"), 'cfApi action: ' + action);
 }
 assert.match(features, /function cfEnsureFeatureSchema_/, 'schema migration');
@@ -39,8 +40,8 @@ assert.match(backend, /cfRecordHashes_/, 'receipt hash recording');
 assert.match(features, /function cfApplySplits_/, 'split backend');
 assert.match(features, /function cfDuplicateFingerprint_/, 'duplicate fingerprint backend');
 assert.match(features, /function cfQuickText_/, 'quick text backend');
-assert.match(features, /function cfReceiptFolder_/, 'Drive folder helper');
-assert.doesNotMatch(features, /DriveApp\.getFoldersByName/, 'report path avoids broad Drive lookup');
+assert.match(features, /CF_IMAGE_SHEET/, 'receipt image storage sheet');
+assert.doesNotMatch(features, /DriveApp/, 'image retention avoids Drive authorization');
 assert.match(features, /function cfExportBackup_[\s\S]*?name\.indexOf\('_CF_'\) !== 0/, 'backup includes system sheets');
 assert.match(features, /_CF_Submissions|LEDGER_SHEET_NAME/, 'ledger restore key');
 assert.match(features, /TRASH_SHEET_NAME/, 'trash restore key');
@@ -58,7 +59,7 @@ for (const marker of ['DRAFT_KEY', 'indexedDB', 'cfQueueOffline', 'cfClearDraft'
   'cfReviewBeforeCommit', 'cfSplitRow', 'runSearch', 'openSessions', 'openBackup',
   'Anomaly callouts', 'markReimbursed', 'report.month', 'cfRenderDashboard',
   'photoUrl', 'data-rv-merchant', 'openQuickText', 'cfRetryFailedBatch', 'feature-help',
-  'advanced-toggle', 'paintAdvanced', 'dashboardCache']) {
+  'advanced-toggle', 'paintAdvanced', 'dashboardCache', 'openRetainedImage']) {
   assert.ok(client.includes(marker), 'feature client marker: ' + marker);
 }
 assert.match(client, /cf:trash-mutation/, 'undo hook');
@@ -151,6 +152,36 @@ const fp2 = fpCtx.fp({ merchant: 'Other', transaction_date: '2026-11-07', items:
 assert.notEqual(fp1, fp2, 'different merchant produces a different fingerprint');
 const fp3 = fpCtx.fp(baseTxn, 'image-xyz');
 assert.notEqual(fp1, fp3, 'different image hash produces a different fingerprint');
+const dupCtx = {};
+vm.runInNewContext(grab('cfDuplicateDisposition_') + '\nthis.d = cfDuplicateDisposition_;', dupCtx);
+const dupSet = { abc: { transactionId: 'T1' } };
+assert.equal(dupCtx.d({}, 'abc', dupSet), 'hold', 'duplicate is held by default');
+assert.equal(dupCtx.d({ forceDuplicate: true }, 'abc', dupSet), 'allow', 'forceDuplicate overrides the hold');
+assert.equal(dupCtx.d({}, 'none', dupSet), 'none', 'unknown fingerprint is not held');
+
+// Quick text must commit one text transaction with the current metadata.
+let quickCaptured = null;
+const quickCtx = {
+  requireSession_: () => {},
+  buildPrompt: () => 'prompt',
+  TRANSACTION_SCHEMA: {},
+  callGemini_: () => ({ transaction_type: 'Expense', merchant: 'Coffee', items: [{ description: 'Coffee', amount: 35000, category: 'Food & Beverage' }] }),
+  sanitizeTransaction: (t) => t,
+  Utilities: { getUuid: () => 'u1' },
+  commitReceiptRows: (sub, rows, token) => { quickCaptured = { sub, rows, token }; return { rows: [{ status: 'logged' }] }; }
+};
+vm.runInNewContext(grab('cfQuickText_') + '\nthis.quick = cfQuickText_;', quickCtx);
+const quickRes = quickCtx.quick('tok', { note: 'Coffee 35k', meta: { currency: 'USD', fxRate: 15000, tags: 'work', member: 'Rae', reimbursable: true } });
+assert.equal(quickRes.ok, true, 'quick text returns ok');
+assert.ok(quickCaptured, 'quick text commits');
+assert.equal(quickCaptured.rows.length, 1, 'one text row');
+assert.equal(quickCaptured.rows[0].hasPhoto, false, 'text row has no photo');
+assert.equal(quickCaptured.rows[0].currency, 'USD');
+assert.equal(quickCaptured.rows[0].fxRate, 15000);
+assert.equal(quickCaptured.rows[0].tags, 'work');
+assert.equal(quickCaptured.rows[0].member, 'Rae');
+assert.equal(quickCaptured.rows[0].reimbursable, 'Yes');
+assert.equal(quickCaptured.token, 'tok');
 
 // --- syntax ---------------------------------------------------------------
 for (const f of backendFiles) {

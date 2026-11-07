@@ -438,6 +438,37 @@
       try { return (typeof window.cfEntryMetaValues === 'function' ? window.cfEntryMetaValues() : {}) || {}; }
       catch (e) { return {}; }
     }
+    function cfCompressBase64(data, mime) {
+      return new Promise(function (resolve) {
+        if (!data) { resolve({ data: '', mime: mime || 'image/jpeg' }); return; }
+        try {
+          var img = new Image();
+          img.onload = function () {
+            try {
+              var max = 1000;
+              var w = img.naturalWidth || img.width;
+              var h = img.naturalHeight || img.height;
+              if (!w || !h) { resolve({ data: data, mime: mime || 'image/jpeg' }); return; }
+              var scale = Math.min(1, max / Math.max(w, h));
+              if (scale >= 1 && /jpe?g/i.test(mime || '')) {
+                resolve({ data: data, mime: mime || 'image/jpeg' }); return;
+              }
+              var canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, Math.round(w * scale));
+              canvas.height = Math.max(1, Math.round(h * scale));
+              var ctx = canvas.getContext('2d');
+              if (!ctx) { resolve({ data: data, mime: mime || 'image/jpeg' }); return; }
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              var out = canvas.toDataURL('image/jpeg', 0.7).split(',')[1] || data;
+              resolve({ data: out, mime: 'image/jpeg' });
+            } catch (e) { resolve({ data: data, mime: mime || 'image/jpeg' }); }
+          };
+          img.onerror = function () { resolve({ data: data, mime: mime || 'image/jpeg' }); };
+          img.src = 'data:' + (mime || 'image/jpeg') + ';base64,' + data;
+        } catch (e) { resolve({ data: data, mime: mime || 'image/jpeg' }); }
+      });
+    }
+
     function cfHex_(buf) {
       var bytes = new Uint8Array(buf);
       var out = '';
@@ -940,11 +971,13 @@
               : (r.file ? cfReadFileBase64(r.file) : Promise.resolve(''));
             return read.then(function (b64) {
               if (!b64) return;
-              return window.cfApiCall('image.save', {
-                data: b64, mimeType: r.mimeType || 'image/jpeg',
-                name: 'receipt-' + (r.origNum || 'x') + '-' + Date.now() + '.jpg'
-              }).then(function (res) {
-                if (res && res.url) r.receiptUrl = res.url;
+              return cfCompressBase64(b64, r.mimeType || 'image/jpeg').then(function (c) {
+                return window.cfApiCall('image.save', {
+                  data: c.data, mimeType: c.mime || 'image/jpeg',
+                  name: 'receipt-' + (r.origNum || 'x') + '-' + Date.now() + '.jpg'
+                }).then(function (res) {
+                  if (res && res.url) r.receiptUrl = res.url;
+                });
               });
             }).catch(function () {});
           });

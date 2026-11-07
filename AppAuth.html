@@ -994,6 +994,7 @@
           var desc = lg.description || lg.notes || lg.category || '';
           var eid = esc(lg.entryId || '');
           var tid = esc(lg.transactionId || '');
+          var imageId = String(lg.receiptUrl || '').indexOf('cfimg:') === 0 ? String(lg.receiptUrl).slice(6) : '';
           // Build the whole page as one string and insert once. The previous
           // per-item appendChild loop forced a layout pass for every row.
           parts.push(
@@ -1006,6 +1007,7 @@
             '<div class="hist-actions">' +
               '<button type="button" class="hist-del" data-act="del-entry" data-entry-id="' + eid + '">Delete entry</button>' +
               '<button type="button" class="hist-del" data-act="edit" data-entry-id="' + eid + '">Edit</button>' +
+              (imageId ? '<button type="button" class="hist-del" data-act="image" data-image-id="' + esc(imageId) + '">View image</button>' : '') +
               (String(lg.reimbursable || '').toLowerCase() === 'yes' && String(lg.reimbursed || '').toLowerCase() !== 'yes'
                 ? '<button type="button" class="hist-del" data-act="reimburse" data-entry-id="' + eid + '">Mark reimbursed</button>'
                 : '') +

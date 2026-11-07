@@ -38,7 +38,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Duplicate and review gates** — a SHA-256 image hash plus the merchant, date, and total form a server-side fingerprint checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows the receipt photo, extracted items/totals, and editable merchant, date, type, and category fields before writing.
 - **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
 - **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Table Layout rows can be split across categories when the split sums to the verified total.
-- **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets, optional receipt-image retention uses Drive, and a server-side session list supports revoke.
+- **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets, optional compressed receipt previews live in a hidden sheet, and a server-side session list supports revoke.
 
 ## How it works
 
@@ -49,7 +49,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 5. **Sorting** runs separately once the report has zero unresolved rows.
 6. **Delete** moves rows to `_CF_Trash`; **Trash** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
 7. The **overview** reads the selected month, its feature columns, budgets, recurring rules, and the previous month for anomaly comparison. Recent-log pages and overview reads are cached briefly and invalidated by writes.
-8. **Feature data** lives in hidden system sheets: `_CF_Budgets`, `_CF_Recurring`, `_CF_Household`, `_CF_ReceiptHashes`, plus the new month-sheet columns (`Currency`, `FX Rate`, `Base Amount`, `Tags`, `Member`, `Reimbursable`, `Reimbursed`, `Receipt Hash`, `Receipt URL`, `Split Group`). Headers are added idempotently; existing columns never move.
+8. **Feature data** lives in hidden system sheets: `_CF_Budgets`, `_CF_Recurring`, `_CF_Household`, `_CF_ReceiptHashes`, `_CF_ReceiptImages`, plus the new month-sheet columns (`Currency`, `FX Rate`, `Base Amount`, `Tags`, `Member`, `Reimbursable`, `Reimbursed`, `Receipt Hash`, `Receipt URL`, `Split Group`). Headers are added idempotently; existing columns never move.
 
 ## Getting started
 
@@ -93,7 +93,7 @@ No keys ever live in this repo — they stay in Script Properties, and the brows
 Month sheets are created automatically from the hidden `Template` sheet with the base headers
 `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
 plus the feature columns `Currency | FX Rate | Base Amount | Tags | Member | Reimbursable | Reimbursed | Receipt Hash | Receipt URL | Split Group`. Existing sheets receive missing headers at the end; no existing column is moved.
-The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, Google Drive (optional receipt-image retention only), and `userinfo.email` (the conservative access status check). Monthly PDF reports are generated server-side and downloaded as a browser blob, so they do not depend on Drive authorization. The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
+The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, and `userinfo.email` (the conservative access status check). There is no Drive scope: monthly PDF reports download as browser blobs, and optional receipt previews are compressed and stored in the hidden `_CF_ReceiptImages` sheet. The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
 
 ## Deleting and recovering entries
 
