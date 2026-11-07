@@ -1,0 +1,20 @@
+# Only Apps Script production files belong in the web app.
+# Preview output, tests, docs, tool artifacts, installer scripts, and local
+# clasp/deployment secrets must never be pushed as Apps Script files.
+.git/**
+.opencode/**
+.playwright-mcp/**
+docs/**
+goal/**
+tests/**
+scripts/**
+preview/**
+baseline-snapshot/**
+review/**
+package.json
+package-lock.json
+README.md
+*.bat
+.cashlogger-deployment-id
+.clasp.json
+.claspignore

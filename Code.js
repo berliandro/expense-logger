@@ -10,7 +10,6 @@ function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Cashflow log')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
