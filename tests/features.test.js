@@ -183,6 +183,29 @@ assert.equal(quickCaptured.rows[0].member, 'Rae');
 assert.equal(quickCaptured.rows[0].reimbursable, 'Yes');
 assert.equal(quickCaptured.token, 'tok');
 
+// Session revoke removes only the selected session.
+let sessMap = { 'h:current': Date.now() + 100000, 'h:other': Date.now() + 100000 };
+let sessMeta = { 'h:current': { label: 'Current', lastSeen: 2 }, 'h:other': { label: 'Other', lastSeen: 1 } };
+const sessCtx = {
+  sha256Hex_: (s) => 'h:' + s,
+  requireSession_: () => {},
+  loadSessions_: () => sessMap,
+  loadSessionMeta_: () => sessMeta,
+  saveSessions_: (m) => { sessMap = m; },
+  saveSessionMeta_: (m) => { sessMeta = m; },
+  touchSessionMeta_: () => {}
+};
+vm.runInNewContext(grab('cfSessionsList_') + '\n' + grab('cfSessionRevoke_') +
+  '\nthis.list = cfSessionsList_; this.revoke = cfSessionRevoke_;', sessCtx, { filename: 'sessions' });
+const sessions = sessCtx.list('current');
+assert.equal(sessions.length, 2);
+const other = sessions.find((s) => !s.current);
+assert.ok(other, 'other session visible');
+const revoked = sessCtx.revoke('current', other.hash);
+assert.equal(revoked.ok, true);
+assert.equal(revoked.sessions.some((s) => s.hash === other.hash), false, 'target session gone');
+assert.equal(revoked.sessions.some((s) => s.current), true, 'current session remains');
+
 // --- syntax ---------------------------------------------------------------
 for (const f of backendFiles) {
   assert.doesNotThrow(() => new vm.Script(read(f), { filename: f }), f + ' parses');
