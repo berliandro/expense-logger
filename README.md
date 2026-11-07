@@ -34,10 +34,10 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Monthly overview** — spend, income, net, category totals, a 30/31-dot daily ledger, anomaly callouts, budget progress, and recurring items due.
 - **Search, edit, and undo** — filter logs by text, type, category, member, or reimbursement; edit fields with an audit note; undo a delete from the toast while the record is still in Trash.
 - **Drafts and offline capture** — notes, table rows, selected photos, and entry metadata autosave locally (IndexedDB for photos) and restore after a reload; offline submissions are queued and can be sent when the connection returns.
-- **Duplicate and review gates** — a receipt fingerprint is checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows extracted totals and verdicts before writing.
+- **Duplicate and review gates** — a SHA-256 image hash plus the merchant, date, and total form a server-side fingerprint checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows the receipt photo, extracted items/totals, and editable merchant, date, type, and category fields before writing.
 - **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
 - **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Table Layout rows can be split across categories when the split sums to the verified total.
-- **Reports, backup, and sessions** — monthly PDF reports in Drive, JSON backup/restore that only adds missing Entry IDs, optional receipt-image retention, and a server-side session list with revoke.
+- **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets, optional receipt-image retention uses Drive, and a server-side session list supports revoke.
 
 ## How it works
 
@@ -92,7 +92,7 @@ No keys ever live in this repo — they stay in Script Properties, and the brows
 Month sheets are created automatically from the hidden `Template` sheet with the base headers
 `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
 plus the feature columns `Currency | FX Rate | Base Amount | Tags | Member | Reimbursable | Reimbursed | Receipt Hash | Receipt URL | Split Group`. Existing sheets receive missing headers at the end; no existing column is moved.
-The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, Google Drive (optional receipt images and PDF reports), and `userinfo.email` (the conservative access status check). The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
+The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, Google Drive (optional receipt-image retention only), and `userinfo.email` (the conservative access status check). Monthly PDF reports are generated server-side and downloaded as a browser blob, so they do not depend on Drive authorization. The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
 
 ## Deleting and recovering entries
 
@@ -157,7 +157,7 @@ node tests/backend-dashboard.test.js
 - `Google Sheet is not set` (or `Spreadsheet is not configured` / `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log entry means no usable sheet was found. Set it via Settings menu → Set Sheet (Sheet ID or full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then reload the `/exec` URL and retry. A missing `Template` sheet is created automatically with the headers listed under Configuration.
 - `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script Properties or was never saved via Settings menu → Set API key. Add it, then retry.
 - `Too many PIN attempts - try again later` means 5 wrong PINs within 10 minutes; wait for the window to pass.
-- A restore that reports a missing month sheet recreates it from the `Template` automatically; restores that cannot determine a destination refuse with an explanation and leave the Trash record untouched.
+- A restore that reports a missing month sheet recreates it from the `Template` automatically; restores that cannot determine a destination refuse with an explanation and leave the Trash record untouched. Restore is idempotent per sheet key (Entry ID, Trash ID, Submission ID + Row ID, receipt hash, rule/member/category).
 
 ## Security and privacy
 

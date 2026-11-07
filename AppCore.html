@@ -415,14 +415,19 @@
             var edits = (res && res.edits) || {};
             (pre.items || []).forEach(function (it) {
               var e = edits[it.row_id];
-              if (!e || !it.txn) return;
-              if (e.merchant !== undefined) it.txn.merchant = e.merchant;
-              if (e.date) it.txn.transaction_date = e.date;
-              if (e.type === 'Income' || e.type === 'Expense') it.txn.transaction_type = e.type;
-              if (e.category && it.txn.items && it.txn.items.length) {
-                it.txn.items[0].category = e.category;
-                if (e.type === 'Income') it.txn.items[0].spending_type = '';
-              }
+              if (!e) return;
+              var targets = [it.txn];
+              if (pre.repairedTxnById && pre.repairedTxnById[it.row_id]) targets.push(pre.repairedTxnById[it.row_id]);
+              targets.forEach(function (txn) {
+                if (!txn) return;
+                if (e.merchant !== undefined) txn.merchant = e.merchant;
+                if (e.date) txn.transaction_date = e.date;
+                if (e.type === 'Income' || e.type === 'Expense') txn.transaction_type = e.type;
+                if (e.category && txn.items && txn.items.length) {
+                  txn.items[0].category = e.category;
+                  if (e.type === 'Income') txn.items[0].spending_type = '';
+                }
+              });
             });
             return true;
           })
