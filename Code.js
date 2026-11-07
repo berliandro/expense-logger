@@ -10,6 +10,9 @@ function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Cashflow log')
+    // The shell also has a viewport meta tag, but Apps Script's outer wrapper
+    // needs this one too; without it a phone lays the iframe out at ~980px.
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
