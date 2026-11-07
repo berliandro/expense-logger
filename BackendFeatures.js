@@ -885,6 +885,7 @@ function cfExportBackup_(sessionToken) {
   var sheets = ss.getSheets();
   sheets.forEach(function (sh) {
     var name = sh.getName();
+    if (name === CF_IMAGE_SHEET) return; // optional binary previews are not part of the JSON backup
     if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name) && name.indexOf('_CF_') !== 0) return;
     var d = cfFeatureSheetData_(sh);
     payload.sheets[name] = { headers: d.headers, rows: d.rows };

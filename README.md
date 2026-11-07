@@ -38,7 +38,7 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Duplicate and review gates** — a SHA-256 image hash plus the merchant, date, and total form a server-side fingerprint checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows the receipt photo, extracted items/totals, and editable merchant, date, type, and category fields before writing.
 - **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
 - **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Table Layout rows can be split across categories when the split sums to the verified total.
-- **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets, optional compressed receipt previews live in a hidden sheet, and a server-side session list supports revoke.
+- **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets (compressed receipt previews are excluded), optional receipt previews live in a hidden sheet, and a server-side session list supports revoke.
 
 ## How it works
 
