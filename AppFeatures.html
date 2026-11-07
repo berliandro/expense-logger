@@ -10,6 +10,7 @@
     household: [],
     uiPrefs: null,
     dashboardCache: {},
+    advancedTouched: false,
     searchActive: false,
     toastTimer: null
   };
@@ -375,7 +376,7 @@
       state.uiPrefs = (res && res.uiPrefs) || state.uiPrefs || {};
       paintHousehold();
       paintSettings();
-      paintAdvanced(!!(state.uiPrefs && state.uiPrefs.advancedOpen));
+      if (!state.advancedTouched) paintAdvanced(!!(state.uiPrefs && state.uiPrefs.advancedOpen));
       return state.settings;
     }).catch(function () {});
   }
@@ -991,6 +992,7 @@
     add('advanced-toggle', 'click', function () {
       var panel = document.getElementById('entry-meta');
       var open = panel ? panel.classList.contains('hidden') : false;
+      state.advancedTouched = true;
       paintAdvanced(open);
       api('uiPrefs.save', { prefs: { advancedOpen: open } }).catch(function () {});
     });
