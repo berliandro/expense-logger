@@ -13,6 +13,8 @@ var CF_HOUSEHOLD_SHEET = '_CF_Household';
 var CF_HASH_SHEET = '_CF_ReceiptHashes';
 var CF_SETTINGS_KEY = 'CF_FEATURE_SETTINGS_V1';
 var CF_DRIVE_FOLDER_KEY = 'CF_RECEIPT_FOLDER_ID';
+var CF_SCHEMA_VERSION_KEY = 'CF_SCHEMA_VERSION';
+var CF_SCHEMA_VERSION = '1';
 var CF_SCAN_MAX_SHEETS = 36;
 var CF_SCAN_MAX_ROWS = 25000;
 var CF_HISTORY_MAX_ROWS = 500;
@@ -102,10 +104,31 @@ function cfEnsureSheetFeatureColumns_(sh) {
   return missing.length > 0;
 }
 
+function cfEnsureFeatureSheets_(ss) {
+  var defs = [
+    [CF_BUDGET_SHEET, ['Category', 'Monthly Limit', 'Updated At'], [180, 160, 180]],
+    [CF_RECURRING_SHEET,
+      ['Rule ID', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Member', 'Tags', 'Day', 'Active', 'Last Run', 'Created At'],
+      [150, 220, 120, 160, 120, 100, 140, 180, 80, 90, 130, 170]],
+    [CF_HOUSEHOLD_SHEET, ['Member ID', 'Name', 'Active', 'Created At'], [150, 200, 90, 170]],
+    [CF_HASH_SHEET, ['Receipt Hash', 'Transaction ID', 'Entry ID', 'Created At'], [280, 150, 150, 170]]
+  ];
+  defs.forEach(function (d) {
+    if (!ss.getSheetByName(d[0])) cfFeatureSheet_(ss, d[0], d[1], d[2]);
+  });
+}
+
 // Idempotent migration. Appends new headers to Template and every month sheet
-// in place; existing column positions and data are never moved.
+// in place; existing column positions and data are never moved. A version flag
+// skips the expensive header scan after the first successful migration.
 function cfEnsureFeatureSchema_(ss) {
   ss = ss || getSpreadsheet_();
+  cfEnsureFeatureSheets_(ss);
+  try {
+    if (PropertiesService.getScriptProperties().getProperty(CF_SCHEMA_VERSION_KEY) === CF_SCHEMA_VERSION) {
+      return true;
+    }
+  } catch (e) {}
   var sheets = ss.getSheets();
   for (var s = 0; s < sheets.length; s++) {
     var sh = sheets[s];
@@ -113,12 +136,7 @@ function cfEnsureFeatureSchema_(ss) {
     if (nm !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(nm)) continue;
     cfEnsureSheetFeatureColumns_(sh);
   }
-  cfFeatureSheet_(ss, CF_BUDGET_SHEET, ['Category', 'Monthly Limit', 'Updated At'], [180, 160, 180]);
-  cfFeatureSheet_(ss, CF_RECURRING_SHEET,
-    ['Rule ID', 'Description', 'Amount', 'Category', 'Spending Type', 'Type', 'Member', 'Tags', 'Day', 'Active', 'Last Run', 'Created At'],
-    [150, 220, 120, 160, 120, 100, 140, 180, 80, 90, 130, 170]);
-  cfFeatureSheet_(ss, CF_HOUSEHOLD_SHEET, ['Member ID', 'Name', 'Active', 'Created At'], [150, 200, 90, 170]);
-  cfFeatureSheet_(ss, CF_HASH_SHEET, ['Receipt Hash', 'Transaction ID', 'Entry ID', 'Created At'], [280, 150, 150, 170]);
+  try { PropertiesService.getScriptProperties().setProperty(CF_SCHEMA_VERSION_KEY, CF_SCHEMA_VERSION); } catch (e2) {}
   return true;
 }
 
@@ -232,6 +250,14 @@ function cfDashboard_(sessionToken, monthKey) {
   var ss = getSpreadsheet_();
   cfEnsureFeatureSchema_(ss);
   monthKey = monthKey || Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM');
+  var cache = null, cacheKey = '';
+  try {
+    var dashVer = PropertiesService.getScriptProperties().getProperty(HISTORY_CACHE_VERSION_KEY) || '0';
+    cache = CacheService.getScriptCache();
+    cacheKey = 'cfdash_' + dashVer + '_' + monthKey;
+    var dashHit = cache.get(cacheKey);
+    if (dashHit) return JSON.parse(dashHit);
+  } catch (eCache) { cache = null; cacheKey = ''; }
   var scan = { ms: 0, sheets: 0, rows: 0, capped: false };
   var started = Date.now();
   var cur = cfMonthRows_(ss, monthKey);
@@ -330,7 +356,7 @@ function cfDashboard_(sessionToken, monthKey) {
 
   var household = cfHouseholdList_(sessionToken, true);
   scan.ms = Date.now() - started;
-  return {
+  var out = {
     month: monthKey, monthLabel: cfMonthSheetName_(monthKey),
     sheet: cur.name, exists: cur.exists,
     totals: current.totals, categories: current.categories, days: current.days,
@@ -340,6 +366,8 @@ function cfDashboard_(sessionToken, monthKey) {
     household: household, settings: cfFeatureSettings_(),
     scan: scan
   };
+  try { if (cache && cacheKey) cache.put(cacheKey, JSON.stringify(out), 60); } catch (ePut) {}
+  return out;
 }
 
 function cfSearchLogs_(sessionToken, filters) {
@@ -474,6 +502,7 @@ function cfBudgetSave_(sessionToken, budget) {
   } else {
     sh.getRange(rowNum, d.col['category'] + 1, 1, 3).setValues([[category, limit, now]]);
   }
+  bumpHistoryCacheVersion_();
   return { ok: true, budgets: cfBudgetList_(sessionToken) };
 }
 
@@ -486,6 +515,7 @@ function cfBudgetDelete_(sessionToken, category) {
   for (var i = d.rows.length - 1; i >= 0; i--) {
     if (String(cfValue_(d.rows[i], d.col, 'Category') || '') === String(category || '')) sh.deleteRow(i + 2);
   }
+  bumpHistoryCacheVersion_();
   return { ok: true, budgets: cfBudgetList_(sessionToken) };
 }
 
@@ -529,6 +559,7 @@ function cfRecurringSave_(sessionToken, rule) {
   }
   if (rowNum < 0) sh.appendRow(row);
   else sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
+  bumpHistoryCacheVersion_();
   return { ok: true, rules: cfRecurringList_(sessionToken) };
 }
 
@@ -541,6 +572,7 @@ function cfRecurringDelete_(sessionToken, ruleId) {
   for (var i = d.rows.length - 1; i >= 0; i--) {
     if (String(cfValue_(d.rows[i], d.col, 'Rule ID') || '') === String(ruleId || '')) sh.deleteRow(i + 2);
   }
+  bumpHistoryCacheVersion_();
   return { ok: true, rules: cfRecurringList_(sessionToken) };
 }
 
@@ -607,6 +639,7 @@ function cfHouseholdSave_(sessionToken, member) {
   }
   if (rowNum < 0) sh.appendRow(row);
   else sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
+  bumpHistoryCacheVersion_();
   return { ok: true, members: cfHouseholdList_(sessionToken) };
 }
 
@@ -619,6 +652,7 @@ function cfHouseholdDelete_(sessionToken, memberId) {
   for (var i = d.rows.length - 1; i >= 0; i--) {
     if (String(cfValue_(d.rows[i], d.col, 'Member ID') || '') === String(memberId || '')) sh.deleteRow(i + 2);
   }
+  bumpHistoryCacheVersion_();
   return { ok: true, members: cfHouseholdList_(sessionToken) };
 }
 

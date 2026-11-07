@@ -17,7 +17,7 @@ const app = read('appsscript.json');
 const pkg = JSON.parse(read('package.json'));
 
 // --- manifest -------------------------------------------------------------
-for (const scope of ['spreadsheets', 'script.external_request', 'drive.file', 'userinfo.email']) {
+for (const scope of ['spreadsheets', 'script.external_request', 'drive', 'userinfo.email']) {
   assert.match(app, new RegExp('auth/' + scope.replace('.', '\\.')), 'oauth scope: ' + scope);
 }
 

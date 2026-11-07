@@ -579,6 +579,7 @@ function saveSpreadsheetId(sheetIdOrUrl, sessionToken) {
     throw new Error('Could not save Sheet ID - try again.');
   }
   try { CacheService.getScriptCache().remove(HAS_SHEET_CACHE_KEY); } catch (e2) {}
+  try { PropertiesService.getScriptProperties().deleteProperty('CF_SCHEMA_VERSION'); } catch (e3) {}
   bumpHistoryCacheVersion_();
   return true;
 }

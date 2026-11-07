@@ -92,7 +92,7 @@ No keys ever live in this repo — they stay in Script Properties, and the brows
 Month sheets are created automatically from the hidden `Template` sheet with the base headers
 `Date | Description | Amount | Category | Spending Type | Type | Merchant | Notes | Transaction ID | Entry ID`
 plus the feature columns `Currency | FX Rate | Base Amount | Tags | Member | Reimbursable | Reimbursed | Receipt Hash | Receipt URL | Split Group`. Existing sheets receive missing headers at the end; no existing column is moved.
-The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, `drive.file` (optional receipt images and PDF reports), and `userinfo.email` (the conservative access status check). The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
+The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth scopes are declared for Sheets, `UrlFetchApp`/Gemini, Google Drive (optional receipt images and PDF reports), and `userinfo.email` (the conservative access status check). The web app executes as the deploying user while remaining openable by anyone with the link — the app's own PIN/session check still gates every sensitive call.
 
 ## Deleting and recovering entries
 
