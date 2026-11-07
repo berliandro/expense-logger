@@ -138,9 +138,10 @@ Or run the suites directly:
 node tests/ui-polish.test.js
 node tests/design-perf.test.js
 node tests/features.test.js
+node tests/backend-dashboard.test.js
 ```
 
-`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. `features.test.js` covers the manifest scopes, `cfApi` surface, layout/client feature surfaces, split math, currency metadata, month helpers, sessions, scan caps, backup/report/image hooks, and parses every backend module. Browser layout and physical Android testing are reported separately when available.
+`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. `features.test.js` covers the manifest scopes, `cfApi` surface, layout/client feature surfaces, split math, currency metadata, month helpers, sessions, scan caps, backup/report/image hooks, and parses every backend module. `backend-dashboard.test.js` runs the dashboard/search functions against a mocked spreadsheet and checks totals, category grouping, budgets, anomalies, recurring due items, reimbursements, and filters. Browser layout and physical Android testing are reported separately when available.
 
 ## Performance and design notes
 
