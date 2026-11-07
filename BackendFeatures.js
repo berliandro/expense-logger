@@ -810,7 +810,9 @@ function cfExportBackup_(sessionToken) {
     var d = cfFeatureSheetData_(sh);
     payload.sheets[name] = { headers: d.headers, rows: d.rows };
   });
-  return payload;
+  // Return a JSON string: Date cells and large payloads serialize reliably
+  // across google.script.run, and the client can download the exact bytes.
+  return JSON.stringify(payload);
 }
 
 function cfImportBackup_(sessionToken, backup) {
@@ -1003,7 +1005,7 @@ function cfApi(sessionToken, action, payload) {
       case 'reimbursement.set': return cfSetReimbursement_(sessionToken, payload.entryIds, payload.patch);
       case 'duplicates.check': return { ok: true, data: cfCheckDuplicates_(sessionToken, payload.hashes || []) };
       case 'image.save': return cfRetainReceiptImage_(sessionToken, payload.data, payload.mimeType, payload.name);
-      case 'backup.export': return { ok: true, backup: cfExportBackup_(sessionToken) };
+      case 'backup.export': return { ok: true, backupJson: cfExportBackup_(sessionToken) };
       case 'backup.import': return cfImportBackup_(sessionToken, payload.backup);
       case 'report.month': return cfMonthlyReport_(sessionToken, payload.month);
       default: throw new Error('Unknown action: ' + act);

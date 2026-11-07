@@ -804,7 +804,7 @@
       '<div class="feature-form"><label>Restore backup (.json)</label><input type="file" accept="application/json,.json" data-backup-file></div>', [
       { label: 'Download backup', primary: true, onClick: function (w) {
         api('backup.export').then(function (res) {
-          var blob = new Blob([JSON.stringify(res.backup, null, 2)], { type: 'application/json' });
+          var blob = new Blob([res.backupJson || '{}'], { type: 'application/json' });
           var a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
           a.download = 'cashflow-backup-' + new Date().toISOString().slice(0, 10) + '.json';
