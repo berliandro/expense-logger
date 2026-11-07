@@ -82,7 +82,15 @@
         <button type="button" class="tab" id="tabbtn-standard" role="tab" aria-selected="false" aria-controls="tab-standard">Quick-Input</button>
       </div>
 
-      <div class="entry-meta" id="entry-meta" aria-label="Entry details">
+      <div class="entry-advanced-head">
+        <button type="button" class="adv-toggle" id="advanced-toggle" aria-expanded="false" aria-controls="entry-meta">
+          <span class="adv-chevron" aria-hidden="true">›</span>
+          <span>Advanced options</span>
+          <span class="adv-summary" id="advanced-summary">IDR · Household</span>
+        </button>
+      </div>
+
+      <div class="entry-meta hidden" id="entry-meta" aria-label="Advanced entry details">
         <div class="meta-field">
           <label for="entry-currency">Currency</label>
           <select id="entry-currency">
@@ -106,6 +114,9 @@
           <label for="entry-member">Member</label>
           <select id="entry-member"><option value="">Household</option></select>
         </div>
+      </div>
+
+      <div class="entry-flags">
         <label class="meta-check"><input type="checkbox" id="entry-reimb"> Reimbursable</label>
         <label class="meta-check"><input type="checkbox" id="entry-review"> Review before save</label>
         <label class="meta-check"><input type="checkbox" id="entry-duplicate"> Allow duplicate</label>

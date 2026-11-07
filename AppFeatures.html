@@ -8,6 +8,8 @@
     dashboard: null,
     settings: null,
     household: [],
+    uiPrefs: null,
+    dashboardCache: {},
     searchActive: false,
     toastTimer: null
   };
@@ -370,8 +372,10 @@
     return api('settings.get').then(function (res) {
       state.settings = (res && res.settings) || {};
       state.household = (res && res.household) || [];
+      state.uiPrefs = (res && res.uiPrefs) || state.uiPrefs || {};
       paintHousehold();
       paintSettings();
+      paintAdvanced(!!(state.uiPrefs && state.uiPrefs.advancedOpen));
       return state.settings;
     }).catch(function () {});
   }
@@ -391,6 +395,28 @@
       }).join('');
       f.value = fc || 'All';
     }
+    updateAdvancedSummary();
+  }
+  function updateAdvancedSummary() {
+    var el = document.getElementById('advanced-summary');
+    if (!el) return;
+    var cur = document.getElementById('entry-currency');
+    var mem = document.getElementById('entry-member');
+    var tags = document.getElementById('entry-tags');
+    var parts = [cur ? cur.value : 'IDR'];
+    if (mem && mem.value) parts.push(mem.value);
+    else parts.push('Household');
+    if (tags && tags.value.trim()) parts.push(tags.value.trim().split(',')[0].trim());
+    el.textContent = parts.join(' · ');
+  }
+  function paintAdvanced(open) {
+    var panel = document.getElementById('entry-meta');
+    var btn = document.getElementById('advanced-toggle');
+    if (!panel || !btn) return;
+    panel.classList.toggle('hidden', !open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try { localStorage.setItem('cf-advanced-open', open ? '1' : '0'); } catch (e) {}
+    updateAdvancedSummary();
   }
   function paintSettings() {
     var s = state.settings || {};
@@ -399,6 +425,7 @@
     var review = document.getElementById('entry-review');
     if (review) review.checked = !!s.reviewBeforeCommit;
     updateFxField();
+    updateAdvancedSummary();
   }
   function updateFxField() {
     var sel = document.getElementById('entry-currency');
@@ -491,6 +518,7 @@
   };
 
   /* ---------- dashboard ---------- */
+  function clearDashboardCache() { state.dashboardCache = {}; }
   function setDashBusy(busy, label) {
     var sub = document.getElementById('dash-sub');
     var prev = document.getElementById('dash-prev');
@@ -503,11 +531,19 @@
         esc(label || 'Loading overview…');
     }
   }
-  function loadDashboard() {
+  function loadDashboard(force) {
     if (!state.month) state.month = monthNow();
+    var hit = state.dashboardCache[state.month];
+    if (!force && hit && Date.now() - hit.ts < 10 * 60 * 1000) {
+      state.dashboard = hit.data;
+      renderDashboard(hit.data);
+      setDashBusy(false);
+      return Promise.resolve();
+    }
     setDashBusy(true);
     return api('dashboard', { month: state.month }).then(function (res) {
       state.dashboard = (res && res.data) || null;
+      if (state.dashboard) state.dashboardCache[state.month] = { data: state.dashboard, ts: Date.now() };
       renderDashboard(state.dashboard);
     }).catch(function (err) {
       var sub = document.getElementById('dash-sub');
@@ -612,7 +648,7 @@
       b.addEventListener('click', function () {
         api('budgets.delete', { category: b.getAttribute('data-del-budget') }).then(function (res) {
           renderBudgetList(wrap, res.budgets || []);
-          if (state.ready) loadDashboard();
+          if (state.ready) { clearDashboardCache(); loadDashboard(true); }
         }).catch(function (e) { modalError(wrap, e.message); });
       });
     });
@@ -633,7 +669,7 @@
       var limit = Number(box.querySelector('[data-b-limit]').value) || 0;
       api('budgets.save', { budget: { category: cat, limit: limit } }).then(function (res) {
         renderBudgetList(wrap, res.budgets || []);
-        if (state.ready) loadDashboard();
+        if (state.ready) { clearDashboardCache(); loadDashboard(true); }
       }).catch(function (e) { box.querySelector('[data-b-error]').textContent = e.message; });
     });
     actions.appendChild(save);
@@ -660,7 +696,7 @@
     box.querySelectorAll('[data-del-rule]').forEach(function (b) {
       b.addEventListener('click', function () {
         api('recurring.delete', { ruleId: b.getAttribute('data-del-rule') }).then(function (res) {
-          renderRecurring(wrap, res.rules || []); loadDashboard();
+          renderRecurring(wrap, res.rules || []); clearDashboardCache(); loadDashboard(true);
         }).catch(function (e) { modalError(wrap, e.message); });
       });
     });
@@ -672,7 +708,6 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Logging…'; }
     api('recurring.log', { ruleId: id }).then(function () {
       toast('Recurring entry logged.');
-      loadDashboard();
       try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
     }).catch(function (e) { toast(e.message); }).then(function () {
       if (btn) { btn.disabled = false; btn.textContent = 'Log'; }
@@ -698,7 +733,7 @@
         type: box.querySelector('[data-r-type]').value
       };
       api('recurring.save', { rule: rule }).then(function (res) {
-        renderRecurring(wrap, res.rules || []); loadDashboard();
+        renderRecurring(wrap, res.rules || []); clearDashboardCache(); loadDashboard(true);
       }).catch(function (e) { box.querySelector('[data-r-error]').textContent = e.message; });
     });
     actions.appendChild(save);
@@ -821,7 +856,6 @@
             var parsed = JSON.parse(String(reader.result));
             api('backup.import', { backup: parsed }).then(function (res) {
               toast('Restore complete: ' + res.added + ' added, ' + res.skipped + ' already present.');
-              loadDashboard();
               try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
             }).catch(function (e) { modalError(w, e.message); });
           } catch (e) { modalError(w, 'That file is not valid JSON.'); }
@@ -862,7 +896,6 @@
           api('updateEntry', { entryId: entryId, patch: patch }).then(function () {
             closeModal(); toast('Entry updated.');
             try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
-            loadDashboard();
           }).catch(function (e) { w.querySelector('[data-e-error]').textContent = e.message; });
         } }
       ]);
@@ -873,7 +906,6 @@
     api('reimbursement.set', { entryIds: [entryId], patch: { reimbursed: true } }).then(function () {
       toast('Marked reimbursed.');
       try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
-      loadDashboard();
     }).catch(function (e) { toast(e.message); });
   }
 
@@ -934,7 +966,6 @@
         api('quickText', { note: note, meta: meta }).then(function () {
           closeModal();
           toast('Text entry logged.');
-          loadDashboard();
           try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
         }).catch(function (e) {
           modalBusy(w, false);
@@ -950,11 +981,22 @@
 
   /* ---------- init ---------- */
   function wire() {
+    var localOpen = false;
+    try { localOpen = localStorage.getItem('cf-advanced-open') === '1'; } catch (e) {}
+    paintAdvanced(localOpen);
     var add = function (id, event, fn) {
       var el = document.getElementById(id);
       if (el) el.addEventListener(event, fn);
     };
-    add('entry-currency', 'change', function () { updateFxField(); scheduleDraft(); });
+    add('advanced-toggle', 'click', function () {
+      var panel = document.getElementById('entry-meta');
+      var open = panel ? panel.classList.contains('hidden') : false;
+      paintAdvanced(open);
+      api('uiPrefs.save', { prefs: { advancedOpen: open } }).catch(function () {});
+    });
+    add('entry-currency', 'change', function () { updateFxField(); updateAdvancedSummary(); scheduleDraft(); });
+    add('entry-member', 'change', updateAdvancedSummary);
+    add('entry-tags', 'input', updateAdvancedSummary);
     add('quick-text-btn', 'click', openQuickText);
     ['entry-tags', 'entry-member', 'entry-reimb', 'entry-duplicate', 'note', 'entry-fx'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -1051,7 +1093,8 @@
       });
     }
     window.addEventListener('cf:history-changed', function () {
-      if (state.ready) loadDashboard();
+      clearDashboardCache();
+      if (state.ready) { clearDashboardCache(); loadDashboard(true); }
     });
     window.addEventListener('cf:trash-mutation', function (e) {
       var d = (e && e.detail) || {};

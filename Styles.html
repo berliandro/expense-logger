@@ -1317,6 +1317,21 @@
       html { scroll-behavior: auto; }
     }
     /* ---------- Feature additions ---------- */
+    .entry-advanced-head { padding: 4px 0 6px; }
+    .adv-toggle {
+      width: 100%; display: flex; align-items: center; gap: 7px;
+      font-family: inherit; font-size: 11.5px; font-weight: 550; color: var(--muted);
+      background: transparent; border: 0; padding: 4px 1px; cursor: pointer; text-align: left;
+    }
+    .adv-toggle:hover { color: var(--ink); }
+    .adv-toggle .adv-chevron {
+      display: inline-block; font-size: 15px; line-height: 1; color: var(--faint);
+      transition: transform 0.16s ease; transform: rotate(0deg);
+    }
+    .adv-toggle[aria-expanded="true"] .adv-chevron { transform: rotate(90deg); }
+    .adv-summary { margin-left: auto; font-size: 10px; color: var(--faint); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+    .entry-flags { display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0 10px; align-items: center; }
+    .entry-flags .meta-check { padding-bottom: 0; }
     .head-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .entry-meta {
       display: grid;

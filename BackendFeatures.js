@@ -15,6 +15,41 @@ var CF_SETTINGS_KEY = 'CF_FEATURE_SETTINGS_V1';
 var CF_DRIVE_FOLDER_KEY = 'CF_RECEIPT_FOLDER_ID';
 var CF_SCHEMA_VERSION_KEY = 'CF_SCHEMA_VERSION';
 var CF_SCHEMA_VERSION = '1';
+var CF_UI_PREFS_KEY = 'CF_UI_PREFS_V1';
+
+var CF_UI_PREFS_DEFAULTS = {
+  advancedOpen: false
+};
+
+function cfUiPrefs_() {
+  var out = JSON.parse(JSON.stringify(CF_UI_PREFS_DEFAULTS));
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(CF_UI_PREFS_KEY);
+    if (raw) {
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        for (var k in out) {
+          if (Object.prototype.hasOwnProperty.call(out, k) && o[k] !== undefined) out[k] = o[k];
+        }
+      }
+    }
+  } catch (e) {}
+  return out;
+}
+
+function cfSaveUiPrefs_(patch) {
+  var cur = cfUiPrefs_();
+  patch = patch || {};
+  for (var k in cur) {
+    if (Object.prototype.hasOwnProperty.call(cur, k) && patch[k] !== undefined) cur[k] = patch[k];
+  }
+  try {
+    PropertiesService.getScriptProperties().setProperty(CF_UI_PREFS_KEY, JSON.stringify(cur));
+  } catch (e) {
+    throw new Error('Could not save UI settings - try again.');
+  }
+  return cur;
+}
 var CF_SCAN_MAX_SHEETS = 36;
 var CF_SCAN_MAX_ROWS = 25000;
 var CF_HISTORY_MAX_ROWS = 500;
@@ -366,7 +401,7 @@ function cfDashboard_(sessionToken, monthKey) {
     household: household, settings: cfFeatureSettings_(),
     scan: scan
   };
-  try { if (cache && cacheKey) cache.put(cacheKey, JSON.stringify(out), 60); } catch (ePut) {}
+  try { if (cache && cacheKey) cache.put(cacheKey, JSON.stringify(out), 21600); } catch (ePut) {}
   return out;
 }
 
@@ -983,8 +1018,10 @@ function cfApi(sessionToken, action, payload) {
   var act = String(action || '');
   try {
     switch (act) {
-      case 'settings.get': return { ok: true, settings: cfFeatureSettings_(), household: cfHouseholdList_(sessionToken, true) };
+      case 'settings.get': return { ok: true, settings: cfFeatureSettings_(), household: cfHouseholdList_(sessionToken, true), uiPrefs: cfUiPrefs_() };
       case 'settings.save': return { ok: true, settings: cfSaveFeatureSettings_(payload.settings || {}) };
+      case 'uiPrefs.get': return { ok: true, prefs: cfUiPrefs_() };
+      case 'uiPrefs.save': return { ok: true, prefs: cfSaveUiPrefs_(payload.prefs || {}) };
       case 'dashboard': return { ok: true, data: cfDashboard_(sessionToken, payload.month) };
       case 'search': return { ok: true, data: cfSearchLogs_(sessionToken, payload.filters) };
       case 'quickText': return cfQuickText_(sessionToken, payload);

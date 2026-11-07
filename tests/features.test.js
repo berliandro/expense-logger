@@ -24,7 +24,7 @@ for (const scope of ['spreadsheets', 'script.external_request', 'drive', 'userin
 // --- backend API surface --------------------------------------------------
 for (const action of ['dashboard', 'search', 'updateEntry', 'sessions.list', 'sessions.revoke',
   'budgets.save', 'recurring.log', 'household.save', 'reimbursement.set', 'duplicates.check',
-  'image.save', 'backup.export', 'backup.import', 'report.month', 'quickText']) {
+  'image.save', 'backup.export', 'backup.import', 'report.month', 'quickText', 'uiPrefs.get', 'uiPrefs.save']) {
   assert.ok(features.includes("'" + action + "'"), 'cfApi action: ' + action);
 }
 assert.match(features, /function cfEnsureFeatureSchema_/, 'schema migration');
@@ -57,7 +57,8 @@ for (const id of ['dashboard-card', 'entry-meta', 'entry-currency', 'entry-tags'
 for (const marker of ['DRAFT_KEY', 'indexedDB', 'cfQueueOffline', 'cfClearDraft',
   'cfReviewBeforeCommit', 'cfSplitRow', 'runSearch', 'openSessions', 'openBackup',
   'Anomaly callouts', 'markReimbursed', 'report.month', 'cfRenderDashboard',
-  'photoUrl', 'data-rv-merchant', 'openQuickText', 'cfRetryFailedBatch', 'feature-help']) {
+  'photoUrl', 'data-rv-merchant', 'openQuickText', 'cfRetryFailedBatch', 'feature-help',
+  'advanced-toggle', 'paintAdvanced', 'dashboardCache']) {
   assert.ok(client.includes(marker), 'feature client marker: ' + marker);
 }
 assert.match(client, /cf:trash-mutation/, 'undo hook');
