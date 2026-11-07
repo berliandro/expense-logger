@@ -26,6 +26,10 @@ for (const part of ['Styles', 'Layout', 'AppCore', 'AppEntry', 'AppAuth', 'AppFe
 }
 assert.match(code, /function include_\(filename\)\s*\{/, 'include_ helper exists');
 assert.match(code, /createTemplateFromFile\('Index'\)/, 'doGet still serves Index');
+// The Apps Script outer wrapper is a separate document from the shell. Keep the
+// viewport meta in both places or real phones lay the iframe out at ~980 px.
+assert.match(read('Index.html'), /<meta name="viewport"[^>]*width=device-width/, 'shell viewport meta');
+assert.match(read('Code.js'), /addMetaTag\('viewport',\s*'width=device-width, initial-scale=1'\)/, 'doGet wrapper viewport meta');
 
 // --- Flat design: no blur, no decorative gradients -------------------------
 assert.equal((css.match(/backdrop-filter/g) || []).length, 0, 'no backdrop blur anywhere');
