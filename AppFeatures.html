@@ -63,7 +63,7 @@
     var m = document.getElementById('feature-modal');
     if (m) m.remove();
   }
-  function openModal(title, bodyHtml, actions) {
+  function openModal(title, bodyHtml, actions, helpText) {
     closeModal();
     var wrap = document.createElement('div');
     wrap.id = 'feature-modal';
@@ -71,7 +71,10 @@
     wrap.setAttribute('aria-modal', 'true');
     wrap.innerHTML = '<div class="lock-card">' +
       '<div class="info-modal-head"><h2>' + esc(title) + '</h2>' +
-      '<button type="button" class="btn-choice" data-fm-close>Close</button></div>' +
+      '<span class="feature-head-actions">' +
+      (helpText ? '<button type="button" class="info-btn" data-fm-help aria-label="Information about ' + esc(title) + '">i</button>' : '') +
+      '<button type="button" class="btn-choice" data-fm-close>Close</button></span></div>' +
+      (helpText ? '<p class="feature-help hidden" data-fm-helpbody>' + esc(helpText) + '</p>' : '') +
       '<div data-fm-body>' + bodyHtml + '</div>' +
       '<div class="feature-actions" data-fm-actions></div>' +
       '<div class="feature-error" data-fm-error></div></div>';
@@ -86,6 +89,13 @@
       actionBox.appendChild(b);
     });
     wrap.querySelector('[data-fm-close]').addEventListener('click', closeModal);
+    var helpBtn = wrap.querySelector('[data-fm-help]');
+    if (helpBtn) {
+      helpBtn.addEventListener('click', function () {
+        var h = wrap.querySelector('[data-fm-helpbody]');
+        if (h) h.classList.toggle('hidden');
+      });
+    }
     wrap.addEventListener('click', function (e) { if (e.target === wrap) closeModal(); });
     document.addEventListener('keydown', function escClose(e) {
       if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escClose); }
@@ -98,7 +108,21 @@
   }
   function loading(wrap, msg) {
     var b = wrap && wrap.querySelector('[data-fm-body]');
-    if (b) b.innerHTML = '<p class="empty-note">' + esc(msg || 'Loading…') + '</p>';
+    if (b) b.innerHTML = '<p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>' + esc(msg || 'Loading…') + '</p>';
+  }
+  function modalBusy(wrap, busy, label) {
+    if (!wrap) return;
+    var buttons = wrap.querySelectorAll('[data-fm-actions] .btn-choice');
+    var btn = buttons[buttons.length - 1];
+    if (!btn) return;
+    if (busy) {
+      if (btn.__origLabel === undefined) btn.__origLabel = btn.textContent;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>' + esc(label || 'Working…');
+    } else {
+      btn.disabled = false;
+      if (btn.__origLabel !== undefined) { btn.textContent = btn.__origLabel; delete btn.__origLabel; }
+    }
   }
 
   function toast(message, actionLabel, actionFn) {
@@ -295,6 +319,14 @@
     idbDel('current').catch(function () {});
     idbDel('table').catch(function () {});
   };
+  window.cfRetryFailedBatch = function () {
+    var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
+    var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
+    if (b) { toast('Retrying failed batch…'); b.click(); }
+  };
+  window.cfShowRetry = function (msg) {
+    toast(msg || 'The batch did not finish.', 'Retry failed batch', window.cfRetryFailedBatch);
+  };
   window.cfRestoreDraft = restoreDraft;
 
   /* ---------- split editor ---------- */
@@ -410,17 +442,44 @@
         var txn = it.txn || {};
         var total = 0;
         (txn.items || []).forEach(function (x) { total += Number(x.amount) || 0; });
-        return '<div class="feature-row"><div><b>' + esc(txn.merchant || 'Receipt ' + (i + 1)) +
-          '</b><small>' + esc(txn.transaction_date || '') + ' · ' + esc(txn.transaction_type || '') +
-          ' · ' + esc(v.status || 'extracted') + '</small><small>' +
-          (txn.items || []).slice(0, 6).map(function (x) {
-            return esc(x.description || '') + ' · ' + money(x.amount);
-          }).join('<br>') + '</small></div><div>' + money(total) + '</div></div>';
+        var photo = it.photoUrl
+          ? '<img src="' + esc(it.photoUrl) + '" alt="Receipt ' + (i + 1) + '">'
+          : '<span class="empty-note">No photo</span>';
+        var type = txn.transaction_type === 'Income' ? 'Income' : 'Expense';
+        var currentCat = (txn.items && txn.items[0] && txn.items[0].category) || 'Others';
+        return '<div class="review-item" data-review-id="' + esc(it.row_id) + '">' +
+          '<div class="review-photo">' + photo + '</div>' +
+          '<div class="review-fields">' +
+            '<label>Merchant<input data-rv-merchant value="' + esc(txn.merchant || '') + '"></label>' +
+            '<div class="row2"><div><label>Date<input data-rv-date type="date" value="' + esc(txn.transaction_date || '') + '"></label></div>' +
+            '<div><label>Type<select data-rv-type>' + TYPES.map(function (t) {
+              return '<option' + (t === type ? ' selected' : '') + '>' + t + '</option>';
+            }).join('') + '</select></label></div></div>' +
+            '<div class="row2"><div><label>Category<select data-rv-cat>' + CATEGORIES.map(function (c) {
+              return '<option' + (c === currentCat ? ' selected' : '') + '>' + esc(c) + '</option>';
+            }).join('') + '</select></label></div><div><label>Total<input readonly value="' + esc(money(total)) + '"></label></div></div>' +
+            '<small>' + esc(v.status || 'extracted') + ' · ' +
+            (txn.items || []).slice(0, 6).map(function (x) {
+              return esc(x.description || '') + ' ' + money(x.amount);
+            }).join(' · ') + '</small>' +
+          '</div></div>';
       }).join('');
-      var wrap = openModal('Review before save', '<div class="feature-list">' + rows + '</div>' +
-        '<p class="empty-note" style="margin-top:10px">Verified rows will be written. Rows that still need review are kept in the form.</p>', [
+      var wrap = openModal('Review before save', '<div class="review-list">' + rows + '</div>' +
+        '<p class="empty-note" style="margin-top:10px">Correct merchant, date, type, or category if needed. Verified rows are written; unresolved rows stay in the form.</p>', [
         { label: 'Cancel', onClick: function () { closeModal(); resolve(false); } },
-        { label: 'Save verified rows', primary: true, onClick: function () { closeModal(); resolve(true); } }
+        { label: 'Save verified rows', primary: true, onClick: function (w) {
+          var edits = {};
+          w.querySelectorAll('[data-review-id]').forEach(function (el) {
+            edits[el.getAttribute('data-review-id')] = {
+              merchant: el.querySelector('[data-rv-merchant]').value.trim(),
+              date: el.querySelector('[data-rv-date]').value,
+              type: el.querySelector('[data-rv-type]').value,
+              category: el.querySelector('[data-rv-cat]').value
+            };
+          });
+          closeModal();
+          resolve({ edits: edits });
+        } }
       ]);
       wrap.addEventListener('click', function (e) {
         if (e.target === wrap) resolve(false);
@@ -432,15 +491,28 @@
   };
 
   /* ---------- dashboard ---------- */
+  function setDashBusy(busy, label) {
+    var sub = document.getElementById('dash-sub');
+    var prev = document.getElementById('dash-prev');
+    var next = document.getElementById('dash-next');
+    state.dashBusy = !!busy;
+    if (prev) prev.disabled = !!busy;
+    if (next) next.disabled = !!busy;
+    if (busy && sub) {
+      sub.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>' +
+        esc(label || 'Loading overview…');
+    }
+  }
   function loadDashboard() {
     if (!state.month) state.month = monthNow();
+    setDashBusy(true);
     return api('dashboard', { month: state.month }).then(function (res) {
       state.dashboard = (res && res.data) || null;
       renderDashboard(state.dashboard);
     }).catch(function (err) {
       var sub = document.getElementById('dash-sub');
       if (sub) sub.textContent = err && err.message === 'preview' ? 'Preview mode' : 'Could not load overview.';
-    });
+    }).then(function () { setDashBusy(false); });
   }
   function statCard(label, value, note) {
     return '<div class="stat-card"><span>' + esc(label) + '</span><b>' + esc(value) + '</b>' +
@@ -520,9 +592,9 @@
 
   /* ---------- budgets ---------- */
   function openBudgets() {
-    var wrap = openModal('Budgets', '<div data-budget-body><p class="empty-note">Loading…</p></div>', [
+    var wrap = openModal('Budgets', '<div data-budget-body><p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Loading budgets…</p></div>', [
       { label: 'Add budget', primary: true, onClick: function () { budgetForm(wrap); } }
-    ]);
+    ], 'Set a monthly limit per category. The dashboard compares spending against it and turns the bar red at 80%. Budgets are shared by everyone using this sheet.');
     api('budgets.list').then(function (res) {
       renderBudgetList(wrap, (res && res.budgets) || []);
     }).catch(function (err) { modalError(wrap, err.message); });
@@ -569,9 +641,9 @@
 
   /* ---------- recurring ---------- */
   function openRecurring() {
-    var wrap = openModal('Recurring entries', '<div data-rec-body><p class="empty-note">Loading…</p></div>', [
+    var wrap = openModal('Recurring entries', '<div data-rec-body><p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Loading recurring rules…</p></div>', [
       { label: 'Add rule', primary: true, onClick: function () { recurringForm(wrap); } }
-    ]);
+    ], 'Rules appear under “Recurring due” when their day arrives. “Log now” writes one normal entry using the rule’s amount, category, type, member, and tags; you can edit it afterward.');
     api('recurring.list').then(function (res) { renderRecurring(wrap, (res && res.rules) || []); })
       .catch(function (e) { modalError(wrap, e.message); });
   }
@@ -673,7 +745,7 @@
 
   /* ---------- sessions ---------- */
   function openSessions() {
-    var wrap = openModal('Sessions', '<div data-sess-body><p class="empty-note">Loading…</p></div>', []);
+    var wrap = openModal('Sessions', '<div data-sess-body><p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Loading sessions…</p></div>', []);
     api('sessions.list').then(function (res) { renderSessions(wrap, res.sessions || []); })
       .catch(function (e) { modalError(wrap, e.message); });
   }
@@ -817,7 +889,9 @@
     };
     state.searchActive = true;
     var sub = document.getElementById('history-sub');
-    if (sub) sub.textContent = 'Searching…';
+    var applyBtn = document.getElementById('hist-apply');
+    if (sub) sub.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Searching…';
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.__orig = applyBtn.textContent; applyBtn.textContent = 'Searching…'; }
     api('search', { filters: filters }).then(function (res) {
       var logs = (res.data && res.data.logs) || [];
       if (window.cfRenderLogs) window.cfRenderLogs(logs, false);
@@ -829,6 +903,8 @@
       if (load) load.classList.add('hidden');
     }).catch(function (e) {
       if (sub) sub.textContent = 'Search failed: ' + e.message;
+    }).then(function () {
+      if (applyBtn) { applyBtn.disabled = false; if (applyBtn.__orig) applyBtn.textContent = applyBtn.__orig; delete applyBtn.__orig; }
     });
   }
   function clearSearch() {
@@ -844,6 +920,34 @@
     if (refresh) refresh.click();
   }
 
+  function openQuickText() {
+    var wrap = openModal('Quick text', '<div class="feature-form"><label>Describe the transaction</label>' +
+      '<textarea data-qt-note placeholder="Coffee 35k this morning, or salary 5jt" maxlength="500"></textarea>' +
+      '<p class="empty-note">Gemini turns this sentence into a normal entry using the currency, tags, member, and reimbursement settings above.</p>' +
+      '<div class="feature-error" data-qt-error></div></div>', [
+      { label: 'Cancel', onClick: closeModal },
+      { label: 'Log text', primary: true, onClick: function (w) {
+        var note = w.querySelector('[data-qt-note]').value.trim();
+        if (!note) { modalError(w, 'Type a note first.'); return; }
+        modalBusy(w, true, 'Reading…');
+        var meta = window.cfEntryMetaValues ? window.cfEntryMetaValues() : {};
+        api('quickText', { note: note, meta: meta }).then(function () {
+          closeModal();
+          toast('Text entry logged.');
+          loadDashboard();
+          try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
+        }).catch(function (e) {
+          modalBusy(w, false);
+          modalError(w, e.message || String(e));
+        });
+      } }
+    ]);
+    setTimeout(function () {
+      var t = wrap.querySelector('[data-qt-note]');
+      if (t) t.focus();
+    }, 50);
+  }
+
   /* ---------- init ---------- */
   function wire() {
     var add = function (id, event, fn) {
@@ -851,12 +955,7 @@
       if (el) el.addEventListener(event, fn);
     };
     add('entry-currency', 'change', function () { updateFxField(); scheduleDraft(); });
-    add('quick-text-btn', 'click', function () {
-      var tab = document.getElementById('tabbtn-standard');
-      if (tab) tab.click();
-      var note = document.getElementById('note');
-      if (note) { note.focus(); note.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-    });
+    add('quick-text-btn', 'click', openQuickText);
     ['entry-tags', 'entry-member', 'entry-reimb', 'entry-duplicate', 'note', 'entry-fx'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) { el.addEventListener('input', scheduleDraft); el.addEventListener('change', scheduleDraft); }
@@ -891,14 +990,18 @@
     add('dash-recurring', 'click', openRecurring);
     add('dash-report', 'click', function () {
       var win = null;
+      var btn = document.getElementById('dash-report');
       try { win = window.open('', '_blank'); } catch (e) {}
+      if (btn) { btn.disabled = true; btn.__orig = btn.textContent; btn.innerHTML = '<span class="spinner"></span>Building…'; }
       toast('Building report…');
       api('report.month', { month: state.month || monthNow() }).then(function (res) {
         toast('Report ready.');
         if (res.url && win) win.location.href = res.url;
         else if (res.url) window.open(res.url, '_blank', 'noopener');
         else if (win) win.close();
-      }).catch(function (e) { if (win) win.close(); toast(e.message); });
+      }).catch(function (e) { if (win) win.close(); toast(e.message); }).then(function () {
+        if (btn) { btn.disabled = false; if (btn.__orig) btn.textContent = btn.__orig; delete btn.__orig; }
+      });
     });
     add('household-btn', 'click', openHousehold);
     add('sessions-btn', 'click', openSessions);

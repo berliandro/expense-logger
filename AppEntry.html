@@ -462,6 +462,9 @@
             return;
           }
           setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+          if (typeof window.cfShowRetry === 'function') {
+            try { window.cfShowRetry('The batch did not finish. The rows are still here.'); } catch (e2) {}
+          }
         });
       }
 

@@ -1011,13 +1011,8 @@ function commitReceiptRows(submission, finals, sessionToken) {
     ensureTransactionIdColumn_(ss);
     ensureEntryIdColumn_(ss);
     cfEnsureFeatureSchema_(ss);
-    var dupHashes = {};
-    try {
-      var finalsHashes = finals.map(function (f) { return String(f.receiptHash || ''); }).filter(Boolean);
-      if (finalsHashes.length) {
-        cfCheckDuplicates_(sessionToken, finalsHashes).duplicates.forEach(function (d) { dupHashes[d.hash] = d; });
-      }
-    } catch (eDup) {}
+    var dupSet = {};
+    try { dupSet = cfHashSet_(ss); } catch (eDup) {}
     var ledger = ledgerRead_(ss);
     var rowsOut = [];
     var staged = []; // {final, txn, transactionId, noteFull, status, message}
@@ -1033,17 +1028,18 @@ function commitReceiptRows(submission, finals, sessionToken) {
           message: 'Row ' + (it.origNum || '?') + ' was already logged (' + prior.transactionId + ') - not duplicated.' });
         continue;
       }
-      if (!submission.forceDuplicate && it.receiptHash && dupHashes[String(it.receiptHash)]) {
+      var t = triageRow_(it, toggles);
+      var fp = (it.receiptHash && t.txn) ? cfDuplicateFingerprint_(t.txn, it.receiptHash) : '';
+      if (!submission.forceDuplicate && fp && dupSet[fp]) {
         rowsOut.push({ row_id: it.row_id, origNum: it.origNum, status: 'duplicate-review',
-          transactionId: dupHashes[String(it.receiptHash)].transactionId || '',
+          transactionId: dupSet[fp].transactionId || '',
           message: 'This receipt matches one already in the sheet. Review it, then use “Log anyway” if it is a real second purchase.' });
         continue;
       }
-      var t = triageRow_(it, toggles);
       if (t.status === 'verified') {
         cfApplyTxnMeta_(t.txn, it);
         cfApplySplits_(t.txn, it.splits);
-        staged.push({ final: it, txn: t.txn, triage: t, status: 'logged', message: t.message || '' });
+        staged.push({ final: it, txn: t.txn, triage: t, status: 'logged', message: t.message || '', fingerprint: fp });
         allocDates.push(t.txn.transaction_date);
       } else if (t.status === 'mismatch') {
         var pol = applyTogglePolicy_(t.txn, t.rec, toggles);
@@ -1054,7 +1050,7 @@ function commitReceiptRows(submission, finals, sessionToken) {
           var st = 'force-adjusted';
           cfApplyTxnMeta_(pol.txn, it);
           cfApplySplits_(pol.txn, it.splits);
-          staged.push({ final: it, txn: pol.txn, triage: t, status: st, message: pol.note });
+          staged.push({ final: it, txn: pol.txn, triage: t, status: st, message: pol.note, fingerprint: fp });
           allocDates.push(pol.txn.transaction_date);
         }
       } else {
@@ -1083,8 +1079,8 @@ function commitReceiptRows(submission, finals, sessionToken) {
       }
       var sheet = getOrCreateMonthSheet(ss, st2.txn.transaction_date);
       appendTransactionRows(sheet, appendTxn, noteFull);
-      if (st2.final.receiptHash) {
-        try { cfRecordHashes_(ss, txnId, appendTxn.items, String(st2.final.receiptHash)); } catch (eHash) {}
+      if (st2.fingerprint) {
+        try { cfRecordHashes_(ss, txnId, appendTxn.items, String(st2.fingerprint)); } catch (eHash) {}
       }
       var total = appendTxn.items.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
       ledgerEntries.push({ submissionId: submissionId, rowId: st2.final.row_id,

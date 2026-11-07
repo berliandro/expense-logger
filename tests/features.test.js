@@ -24,7 +24,7 @@ for (const scope of ['spreadsheets', 'script.external_request', 'drive.file', 'u
 // --- backend API surface --------------------------------------------------
 for (const action of ['dashboard', 'search', 'updateEntry', 'sessions.list', 'sessions.revoke',
   'budgets.save', 'recurring.log', 'household.save', 'reimbursement.set', 'duplicates.check',
-  'image.save', 'backup.export', 'backup.import', 'report.month']) {
+  'image.save', 'backup.export', 'backup.import', 'report.month', 'quickText']) {
   assert.ok(features.includes("'" + action + "'"), 'cfApi action: ' + action);
 }
 assert.match(features, /function cfEnsureFeatureSchema_/, 'schema migration');
@@ -37,6 +37,13 @@ assert.match(backend, /SESSIONS_META_KEY/, 'session metadata');
 assert.match(backend, /duplicate-review/, 'duplicate review status');
 assert.match(backend, /cfRecordHashes_/, 'receipt hash recording');
 assert.match(features, /function cfApplySplits_/, 'split backend');
+assert.match(features, /function cfDuplicateFingerprint_/, 'duplicate fingerprint backend');
+assert.match(features, /function cfQuickText_/, 'quick text backend');
+assert.match(features, /function cfReceiptFolder_/, 'Drive folder helper');
+assert.doesNotMatch(features, /DriveApp\.getFoldersByName/, 'report path avoids broad Drive lookup');
+assert.match(features, /function cfExportBackup_[\s\S]*?name\.indexOf\('_CF_'\) !== 0/, 'backup includes system sheets');
+assert.match(features, /_CF_Submissions|LEDGER_SHEET_NAME/, 'ledger restore key');
+assert.match(features, /TRASH_SHEET_NAME/, 'trash restore key');
 assert.match(features, /function cfMonthlyReport_/, 'monthly report backend');
 assert.match(features, /function cfRetainReceiptImage_/, 'image retention backend');
 
@@ -48,7 +55,8 @@ for (const id of ['dashboard-card', 'entry-meta', 'entry-currency', 'entry-tags'
 }
 for (const marker of ['DRAFT_KEY', 'indexedDB', 'cfQueueOffline', 'cfClearDraft',
   'cfReviewBeforeCommit', 'cfSplitRow', 'runSearch', 'openSessions', 'openBackup',
-  'Anomaly callouts', 'markReimbursed', 'report.month', 'cfRenderDashboard']) {
+  'Anomaly callouts', 'markReimbursed', 'report.month', 'cfRenderDashboard',
+  'photoUrl', 'data-rv-merchant', 'openQuickText', 'cfRetryFailedBatch', 'feature-help']) {
   assert.ok(client.includes(marker), 'feature client marker: ' + marker);
 }
 assert.match(client, /cf:trash-mutation/, 'undo hook');
@@ -124,6 +132,23 @@ assert.equal(settingsCtx.get().defaultCurrency, 'IDR');
 settingsCtx.save({ defaultCurrency: 'USD', reviewBeforeCommit: true });
 assert.equal(settingsCtx.get().defaultCurrency, 'USD');
 assert.equal(settingsCtx.get().reviewBeforeCommit, true);
+
+// The duplicate fingerprint must include the image hash, merchant, date, and total.
+let lastSeed = '';
+const fpCtx = {
+  Utilities: {
+    DigestAlgorithm: { SHA_256: 'sha256' },
+    computeDigest: (alg, seed) => { lastSeed = seed; return seed.split('').map((c) => c.charCodeAt(0) % 256); }
+  }
+};
+vm.runInNewContext(grab('cfDuplicateFingerprint_') + '\nthis.fp = cfDuplicateFingerprint_;', fpCtx);
+const baseTxn = { merchant: 'Demo Grocer', transaction_date: '2026-11-07', items: [{ amount: 100 }, { amount: 50 }] };
+const fp1 = fpCtx.fp(baseTxn, 'image-abc');
+assert.match(lastSeed, /image-abc\|demo grocer\|2026-11-07\|150/, 'fingerprint seed includes image, merchant, date, total');
+const fp2 = fpCtx.fp({ merchant: 'Other', transaction_date: '2026-11-07', items: [{ amount: 150 }] }, 'image-abc');
+assert.notEqual(fp1, fp2, 'different merchant produces a different fingerprint');
+const fp3 = fpCtx.fp(baseTxn, 'image-xyz');
+assert.notEqual(fp1, fp3, 'different image hash produces a different fingerprint');
 
 // --- syntax ---------------------------------------------------------------
 for (const f of backendFiles) {

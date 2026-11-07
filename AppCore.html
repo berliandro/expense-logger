@@ -388,23 +388,77 @@
         splits: r.splits || null
       };
     }
-    function cfReviewGate_(pre) {
+    function cfReviewGate_(pre, rows) {
       try {
         if (typeof window.cfReviewBeforeSaveEnabled !== 'function' ||
             !window.cfReviewBeforeSaveEnabled() ||
             typeof window.cfReviewBeforeCommit !== 'function') return Promise.resolve(true);
-        return Promise.resolve(window.cfReviewBeforeCommit(pre.items || [], pre.verdicts || []))
-          .then(function (v) { return v !== false; })
-          .catch(function () { return true; });
+        var byId = {};
+        (rows || []).forEach(function (r) { byId[r.row_id] = r; });
+        var madeUrls = [];
+        var items = (pre.items || []).map(function (it) {
+          var r = byId[it.row_id] || {};
+          var photoUrl = (r.el && r.el._previewUrl) || r.previewUrl || '';
+          if (!photoUrl && r.data) photoUrl = 'data:' + (r.mimeType || 'image/jpeg') + ';base64,' + r.data;
+          if (!photoUrl && r.file && window.URL) {
+            try { photoUrl = URL.createObjectURL(r.file); madeUrls.push(photoUrl); } catch (e) {}
+          }
+          var copy = {};
+          for (var k in it) if (Object.prototype.hasOwnProperty.call(it, k)) copy[k] = it[k];
+          copy.photoUrl = photoUrl;
+          return copy;
+        });
+        return Promise.resolve(window.cfReviewBeforeCommit(items, pre.verdicts || []))
+          .then(function (res) {
+            madeUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+            if (res === false) return false;
+            var edits = (res && res.edits) || {};
+            (pre.items || []).forEach(function (it) {
+              var e = edits[it.row_id];
+              if (!e || !it.txn) return;
+              if (e.merchant !== undefined) it.txn.merchant = e.merchant;
+              if (e.date) it.txn.transaction_date = e.date;
+              if (e.type === 'Income' || e.type === 'Expense') it.txn.transaction_type = e.type;
+              if (e.category && it.txn.items && it.txn.items.length) {
+                it.txn.items[0].category = e.category;
+                if (e.type === 'Income') it.txn.items[0].spending_type = '';
+              }
+            });
+            return true;
+          })
+          .catch(function () { madeUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); return true; });
       } catch (e) { return Promise.resolve(true); }
     }
     function cfEntryMetaSafe() {
       try { return (typeof window.cfEntryMetaValues === 'function' ? window.cfEntryMetaValues() : {}) || {}; }
       catch (e) { return {}; }
     }
-    // Fast, synchronous fingerprint of the source file plus note. It detects
-    // re-selecting the same file and repeated text entries without hashing the
-    // whole image on the phone; the server stores it in _CF_ReceiptHashes.
+    function cfHex_(buf) {
+      var bytes = new Uint8Array(buf);
+      var out = '';
+      for (var i = 0; i < bytes.length; i++) out += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+      return out;
+    }
+    var cfFileHashCache = new Map();
+    function cfFileHash(file) {
+      if (!file || !window.crypto || !crypto.subtle) return Promise.resolve('');
+      if (cfFileHashCache.has(file)) return cfFileHashCache.get(file);
+      var p = file.arrayBuffer().then(function (buf) {
+        return crypto.subtle.digest('SHA-256', buf);
+      }).then(cfHex_)['catch'](function () { return ''; });
+      cfFileHashCache.set(file, p);
+      return p;
+    }
+    function cfDataHash(data) {
+      if (!window.crypto || !crypto.subtle || !data) return Promise.resolve('');
+      try {
+        return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(data)))
+          .then(cfHex_)['catch'](function () { return ''; });
+      } catch (e) { return Promise.resolve(''); }
+    }
+
+    // Fast, synchronous fallback fingerprint; the engine replaces it with a
+    // SHA-256 image hash whenever WebCrypto is available.
     function cfReceiptHash(file, note, data) {
       if (!file) return '';
       var seed = (file ? [file.name || '', file.size || 0, file.lastModified || 0].join('|') : '') +
@@ -553,6 +607,9 @@
         return;
       }
       setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
+      if (typeof window.cfShowRetry === 'function') {
+        try { window.cfShowRetry('The batch did not finish. Your draft is saved.'); } catch (e2) {}
+      }
     }
 
     function setStatus(text, cls) {
@@ -863,6 +920,13 @@
       var quickMode = !!opts.quickForce;
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
       var st = { phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} };
+      chain = chain.then(function () {
+        return Promise.all(rows.map(function (r) {
+          if (!r.hasPhoto) return null;
+          var p = r.file ? cfFileHash(r.file) : cfDataHash(r.data || '');
+          return p.then(function (h) { if (h) r.receiptHash = h; });
+        }));
+      });
       if (window.cfRetainImagesEnabled && window.cfApiCall) {
         chain = chain.then(function () {
           var jobs = rows.map(function (r) {
@@ -1090,7 +1154,7 @@
                    receiptUrl: it.receiptUrl, baseAmount: it.baseAmount, splitGroup: it.splitGroup,
                    splits: it.splits || null };
         });
-        return cfReviewGate_(pre).then(function (ok) {
+        return cfReviewGate_(pre, rows).then(function (ok) {
           if (!ok) throw new Error('Save cancelled - rows kept in the form.');
           progress('Writing validated rows…');
           return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog,

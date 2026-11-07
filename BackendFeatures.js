@@ -685,19 +685,47 @@ function cfApplyTxnMeta_(txn, it) {
   return txn;
 }
 
-function cfCheckDuplicates_(sessionToken, hashes) {
-  requireSession_(sessionToken);
-  hashes = hashes || [];
-  var ss = getSpreadsheet_();
+function cfDuplicateFingerprint_(txn, imageHash) {
+  if (!txn) return '';
+  var total = 0;
+  (txn.items || []).forEach(function (i) { total += Number(i.amount) || 0; });
+  var seed = [
+    String(imageHash || ''),
+    String(txn.merchant || '').trim().toLowerCase(),
+    String(txn.transaction_date || ''),
+    String(Math.round(total))
+  ].join('|');
+  try {
+    var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, seed);
+    return bytes.map(function (b) {
+      var v = (b + 256) % 256;
+      return (v < 16 ? '0' : '') + v.toString(16);
+    }).join('');
+  } catch (e) {
+    // Deterministic fallback for environments without computeDigest.
+    var h = 0;
+    for (var i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+    return 'f' + (h >>> 0).toString(16);
+  }
+}
+
+function cfHashSet_(ss) {
   var sh = cfHashSheet_(ss);
   var d = cfFeatureSheetData_(sh);
-  var found = [];
   var set = {};
   d.rows.forEach(function (r) {
     var h = String(cfValue_(r, d.col, 'Receipt Hash') || '');
     if (h) set[h] = { transactionId: String(cfValue_(r, d.col, 'Transaction ID') || ''),
       entryId: String(cfValue_(r, d.col, 'Entry ID') || '') };
   });
+  return set;
+}
+
+function cfCheckDuplicates_(sessionToken, hashes) {
+  requireSession_(sessionToken);
+  hashes = hashes || [];
+  var set = cfHashSet_(getSpreadsheet_());
+  var found = [];
   hashes.forEach(function (h) { if (h && set[h]) found.push({ hash: h, transactionId: set[h].transactionId }); });
   return { duplicates: found };
 }
@@ -711,19 +739,24 @@ function cfRecordHashes_(ss, txnId, entries, hash) {
   });
 }
 
+function cfReceiptFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(CF_DRIVE_FOLDER_KEY);
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) {}
+  }
+  // drive.file can create and then access app-created folders. Avoid
+  // getFoldersByName(), which requires the broader Drive scope.
+  var folder = DriveApp.createFolder('Cashflow Receipts');
+  try { props.setProperty(CF_DRIVE_FOLDER_KEY, folder.getId()); } catch (e2) {}
+  return folder;
+}
+
 function cfRetainReceiptImage_(sessionToken, data, mimeType, name) {
   requireSession_(sessionToken);
   if (!data) throw new Error('No image data supplied.');
   if (!/^image\//.test(String(mimeType || ''))) throw new Error('Only image files can be retained.');
-  var props = PropertiesService.getScriptProperties();
-  var folderId = props.getProperty(CF_DRIVE_FOLDER_KEY);
-  var folder = null;
-  try { if (folderId) folder = DriveApp.getFolderById(folderId); } catch (e) {}
-  if (!folder) {
-    var it = DriveApp.getFoldersByName('Cashflow Receipts');
-    folder = it.hasNext() ? it.next() : DriveApp.createFolder('Cashflow Receipts');
-    props.setProperty(CF_DRIVE_FOLDER_KEY, folder.getId());
-  }
+  var folder = cfReceiptFolder_();
   var bytes = Utilities.base64Decode(data);
   var safe = String(name || ('receipt-' + Date.now())).replace(/[^\w.\-]+/g, '-').slice(0, 80);
   var blob = Utilities.newBlob(bytes, mimeType, safe);
@@ -739,9 +772,7 @@ function cfExportBackup_(sessionToken) {
   var sheets = ss.getSheets();
   sheets.forEach(function (sh) {
     var name = sh.getName();
-    if (name.indexOf('_CF_') === 0 && name !== CF_BUDGET_SHEET && name !== CF_RECURRING_SHEET && name !== CF_HOUSEHOLD_SHEET) return;
-    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name) &&
-        name !== CF_BUDGET_SHEET && name !== CF_RECURRING_SHEET && name !== CF_HOUSEHOLD_SHEET) return;
+    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name) && name.indexOf('_CF_') !== 0) return;
     var d = cfFeatureSheetData_(sh);
     payload.sheets[name] = { headers: d.headers, rows: d.rows };
   });
@@ -765,8 +796,7 @@ function cfImportBackup_(sessionToken, backup) {
   });
   var added = 0, skipped = 0;
   Object.keys(backup.sheets).forEach(function (name) {
-    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name) &&
-        name !== CF_BUDGET_SHEET && name !== CF_RECURRING_SHEET && name !== CF_HOUSEHOLD_SHEET) return;
+    if (name !== TEMPLATE_SHEET_NAME && !isMonthSheetName_(name) && name.indexOf('_CF_') !== 0) return;
     var src = backup.sheets[name] || {};
     var headers = src.headers || [];
     var rows = src.rows || [];
@@ -775,23 +805,31 @@ function cfImportBackup_(sessionToken, backup) {
     var d = cfFeatureSheetData_(sh);
     if (!d.headers.length) sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     var target = cfFeatureSheetData_(sh);
-    var keyHeader = name === CF_BUDGET_SHEET ? 'category'
-      : (name === CF_RECURRING_SHEET ? 'rule id'
-      : (name === CF_HOUSEHOLD_SHEET ? 'member id' : 'entry id'));
+    var keyHeaders;
+    if (name === CF_BUDGET_SHEET) keyHeaders = ['category'];
+    else if (name === CF_RECURRING_SHEET) keyHeaders = ['rule id'];
+    else if (name === CF_HOUSEHOLD_SHEET) keyHeaders = ['member id'];
+    else if (name === CF_HASH_SHEET) keyHeaders = ['receipt hash'];
+    else if (name === LEDGER_SHEET_NAME) keyHeaders = ['submission id', 'row id'];
+    else if (name === TRASH_SHEET_NAME) keyHeaders = ['trash id'];
+    else keyHeaders = ['entry id'];
+    function keyOfMap(get) {
+      return keyHeaders.map(function (h) { return String(get(h) || ''); }).join('|');
+    }
     var existingKeys = {};
     target.rows.forEach(function (r) {
-      var k = String(cfValue_(r, target.col, keyHeader) || '');
-      if (k) existingKeys[k] = true;
+      var k = keyOfMap(function (h) { return cfValue_(r, target.col, h); });
+      if (k.replace(/\|/g, '')) existingKeys[k] = true;
     });
     var writes = [];
     rows.forEach(function (row) {
       var obj = {};
       headers.forEach(function (h, i) { obj[normHeader_(h)] = row[i]; });
-      var key = String(obj[normHeader_(keyHeader)] || '');
-      if (key && existingKeys[key]) { skipped++; return; }
+      var key = keyOfMap(function (h) { return obj[normHeader_(h)]; });
+      if (key.replace(/\|/g, '') && existingKeys[key]) { skipped++; return; }
       var out = target.headers.map(function (h) { return obj[normHeader_(h)] !== undefined ? obj[normHeader_(h)] : ''; });
       writes.push(out);
-      if (key) existingKeys[key] = true;
+      if (key.replace(/\|/g, '')) existingKeys[key] = true;
       added++;
     });
     if (writes.length) {
@@ -830,15 +868,7 @@ function cfMonthlyReport_(sessionToken, monthKey) {
     }).join('') + '</tbody></table></body></html>';
   var pdf = HtmlService.createHtmlOutput(html).getAs('application/pdf');
   var name = 'Cashflow report ' + data.monthLabel + '.pdf';
-  var props = PropertiesService.getScriptProperties();
-  var folderId = props.getProperty(CF_DRIVE_FOLDER_KEY);
-  var folder = null;
-  try { if (folderId) folder = DriveApp.getFolderById(folderId); } catch (e) {}
-  if (!folder) {
-    var it = DriveApp.getFoldersByName('Cashflow Receipts');
-    folder = it.hasNext() ? it.next() : DriveApp.createFolder('Cashflow Receipts');
-    props.setProperty(CF_DRIVE_FOLDER_KEY, folder.getId());
-  }
+  var folder = cfReceiptFolder_();
   var file = folder.createFile(pdf.setName(name));
   return { ok: true, url: file.getUrl(), name: name };
 }
@@ -895,6 +925,22 @@ function cfSessionLabel_(sessionToken, label) {
   return { ok: true, sessions: cfSessionsList_(sessionToken) };
 }
 
+function cfQuickText_(sessionToken, payload) {
+  requireSession_(sessionToken);
+  payload = payload || {};
+  var note = String(payload.note || '').trim();
+  if (!note) throw new Error('Type a note first.');
+  var txn = sanitizeTransaction(callGemini_(buildPrompt(note, 0), note, [], TRANSACTION_SCHEMA));
+  var meta = payload.meta || {};
+  var report = commitReceiptRows({ submission_id: 'qt-' + Utilities.getUuid(), forceLog: true, quickMode: true },
+    [{ row_id: Utilities.getUuid(), origNum: 1, forcedType: null, note: '',
+       hasPhoto: false, phase1: null, txn: txn, repaired: false,
+       currency: meta.currency || 'IDR', fxRate: meta.fxRate || 1,
+       tags: meta.tags || '', member: meta.member || '',
+       reimbursable: meta.reimbursable ? 'Yes' : 'No' }], sessionToken);
+  return { ok: true, report: report };
+}
+
 function cfApi(sessionToken, action, payload) {
   requireSession_(sessionToken);
   payload = payload || {};
@@ -905,6 +951,7 @@ function cfApi(sessionToken, action, payload) {
       case 'settings.save': return { ok: true, settings: cfSaveFeatureSettings_(payload.settings || {}) };
       case 'dashboard': return { ok: true, data: cfDashboard_(sessionToken, payload.month) };
       case 'search': return { ok: true, data: cfSearchLogs_(sessionToken, payload.filters) };
+      case 'quickText': return cfQuickText_(sessionToken, payload);
       case 'updateEntry': return cfUpdateEntry_(sessionToken, payload.entryId, payload.patch);
       case 'sessions.list': return { ok: true, sessions: cfSessionsList_(sessionToken) };
       case 'sessions.revoke': return cfSessionRevoke_(sessionToken, payload.hash);
