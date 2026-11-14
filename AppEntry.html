@@ -1,5 +1,5 @@
 <script>
-    /* Manual rows tab — dynamic rows, phased two-phase submission */
+    /* Manual entries tab - dynamic rows, phased two-phase submission */
     (function initTableTab() {
       var rowsEl = document.getElementById('table-rows');
       var addBtn = document.getElementById('add-row-btn');
@@ -107,7 +107,8 @@
         note.type = 'text';
         note.className = 'trow-note';
         note.maxLength = 500;
-        note.placeholder = 'Note for this receipt…';
+        note.dir = 'auto';
+        note.placeholder = 'e.g. Kopi 25rb, yesterday';
 
         var typeSel = document.createElement('select');
         typeSel.className = 'trow-type';
@@ -188,7 +189,7 @@
           fileInput.value = '';
           if (!f) return;
           if (!f.type || f.type.indexOf('image/') !== 0) {
-            setStatus('That file is not a photo. Choose a JPG, PNG, WEBP, or HEIC image.', 'error');
+            setStatus('That file is not a photo. Choose a JPG, PNG, WEBP, or HEIC image.', 'error', true);
             return;
           }
           setFile(f);
@@ -358,7 +359,7 @@
         if (counts.errors) parts.push(counts.errors + ' failed');
         var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
         if (counts.forceAdjusted) summary += ' The added line is marked in Notes — please check it.';
-        setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
+        setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success', true);
         if (!(counts.review || counts.errors || counts.duplicateReview) &&
             ((counts.logged || 0) + (counts.forceAdjusted || 0) > 0)) {
           try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e) {}
@@ -404,12 +405,12 @@
 
       function runSubmission(filled, done) {
         if (!filled.length) {
-          setStatus('Add a photo or a note first.', 'error');
+          setStatus('Add a photo or a note first.', 'error', true);
           return;
         }
         if (!navigator.onLine && typeof window.cfQueueOffline === 'function') {
           window.cfQueueOffline();
-          setStatus('Saved offline. Your entries stay here until you can send them.', 'success');
+          setStatus('Saved offline. Your entries stay here until you can send them.', 'success', true);
           return;
         }
         if (!(window.google && google.script && google.script.run)) {
@@ -424,7 +425,7 @@
             updateRetryVisibility();
             setProgress('');
             setLocked(false);
-            setStatus('Logged ' + filled.length + (filled.length === 1 ? ' entry' : ' entries') + ' (preview).', 'success');
+            setStatus('Logged ' + filled.length + (filled.length === 1 ? ' entry' : ' entries') + ' (preview).', 'success', true);
             if (done) done();
           }, 900);
           return;
@@ -455,21 +456,21 @@
           setProgress('');
           setLocked(false);
           if (cfAuthError(err)) {
-            setStatus('Your session expired. Enter your PIN again.', 'error');
+            setStatus('Your session expired. Enter your PIN again.', 'error', true);
             try { cfNoteAuthExpired(); } catch (e) {}
             return;
           }
           if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
-            setStatus('No Gemini API key yet. Add it in Settings → Set API key.', 'error');
+            setStatus('No Gemini API key yet. Add it in Settings → Set Gemini key.', 'error', true);
             try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
             return;
           }
           if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
-            setStatus('No Google Sheet connected. Add it in Settings → Set Sheet.', 'error');
+            setStatus('No Google Sheet connected. Add it in Settings → Set Google Sheet.', 'error', true);
             try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
             return;
           }
-          setStatus('Couldn’t log these entries. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+          setStatus('Couldn’t log these entries. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error', true);
           if (typeof window.cfShowRetry === 'function') {
             try { window.cfShowRetry('That didn’t finish. Your entries are still here.'); } catch (e2) {}
           }
@@ -494,7 +495,7 @@
           return f.hasPhoto || f.note !== '';
         });
         if (!filled.length) {
-          setStatus('Add a photo or a note to this entry first.', 'error');
+          setStatus('Add a photo or a note to this entry first.', 'error', true);
           return;
         }
         filled.forEach(function (f) {
@@ -529,7 +530,7 @@
           };
         }).filter(function (f) { return f.hasPhoto || f.note !== ''; });
         if (!filled.length) {
-          setStatus('The entries left for review are empty. Add a note or photo, or discard them.', 'error');
+          setStatus('The entries left for review are empty. Add a note or photo, or discard them.', 'error', true);
           return;
         }
         filled.forEach(function (f) {

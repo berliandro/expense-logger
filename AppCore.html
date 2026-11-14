@@ -433,13 +433,13 @@
       var noteText = noteEl.value.trim();
 
       if (selectedFiles.length === 0 && !noteText) {
-        setStatus('Add a photo or a note first.', 'error');
+        setStatus('Add a photo or a note first.', 'error', true);
         return;
       }
 
       if (!navigator.onLine && typeof window.cfQueueOffline === 'function') {
         window.cfQueueOffline();
-        setStatus('Saved offline. Open the app when online to send it.', 'success');
+        setStatus('Saved offline. Open the app when online to send it.', 'success', true);
         return;
       }
 
@@ -469,7 +469,7 @@
             failed = true;
             submitBtn.disabled = false;
             submitLabel.textContent = 'Log entry';
-            setStatus('Couldn’t read photo ' + (idx + 1) + '. Try again.', 'error');
+            setStatus('Couldn’t read photo ' + (idx + 1) + '. Try again.', 'error', true);
           };
           reader.readAsDataURL(file);
         });
@@ -704,7 +704,7 @@
         try { if (window.cfClearDraft) window.cfClearDraft(); } catch (e0) {}
       }
       var isIncome = /^income/i.test(summary || '');
-      setStatus(summary, isIncome ? 'success income' : 'success');
+      setStatus(summary, isIncome ? 'success income' : 'success', true);
       // When receipts remain for review, their photos were kept above: keep
       // the note too so the user can resubmit or adjust. Otherwise reset.
       if (!keepForm) {
@@ -721,33 +721,33 @@
       submitBtn.disabled = false;
       submitLabel.textContent = 'Log entry';
       if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
-        setStatus('Your session expired. Enter your PIN again.', 'error');
+        setStatus('Your session expired. Enter your PIN again.', 'error', true);
         try { cfNoteAuthExpired(); } catch (e) {}
         return;
       }
       if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
-        setStatus('No Gemini API key yet. Add it in Settings → Set API key.', 'error');
+        setStatus('No Gemini API key yet. Add it in Settings → Set Gemini key.', 'error', true);
         try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
         return;
       }
       if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
-        setStatus('No Google Sheet connected. Add it in Settings → Set Sheet.', 'error');
+        setStatus('No Google Sheet connected. Add it in Settings → Set Google Sheet.', 'error', true);
         try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
         return;
       }
       if ((!navigator.onLine || /failed to fetch|network|timed? ?out/i.test(String((err && err.message) || err))) &&
           typeof window.cfQueueOffline === 'function') {
         window.cfQueueOffline();
-        setStatus('Connection lost. Your entry is saved on this device and can be sent when you are back online.', 'success');
+        setStatus('Connection lost. Your entry is saved on this device and can be sent when you are back online.', 'success', true);
         return;
       }
-      setStatus('Couldn’t log this entry. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
+      setStatus('Couldn’t log this entry. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error', true);
       if (typeof window.cfShowRetry === 'function') {
         try { window.cfShowRetry('That didn’t finish. Your draft is saved.'); } catch (e2) {}
       }
     }
 
-    function setStatus(text, cls) {
+    function setStatus(text, cls, reveal) {
       if (cls === '' && text) {
         // Reuse the live processing row: progress updates fire many times and
         // must not rebuild the spinner/skeleton DOM on every tick.
@@ -782,6 +782,23 @@
         s.textContent = text;
         statusEl.appendChild(d);
         statusEl.appendChild(s);
+        // The action dock can leave terminal feedback below the fold after a
+        // sticky-button submit. Reveal success and error messages; leave
+        // progress ticks alone.
+        if (reveal && (cls === 'success' || cls === 'success income' || cls === 'error')) {
+          try {
+            var sr = statusEl.getBoundingClientRect();
+            if (sr.top < 0 || sr.bottom > (window.innerHeight || 0)) {
+              // Jump instead of relying on a smooth scroll: feedback must be
+              // visible immediately, including while the tab is backgrounded.
+              var root = document.documentElement;
+              var prev = root.style.scrollBehavior;
+              root.style.scrollBehavior = 'auto';
+              window.scrollTo(0, Math.max(0, window.scrollY + sr.top - Math.max(16, (window.innerHeight - sr.height) / 2)));
+              root.style.scrollBehavior = prev;
+            }
+          } catch (e) {}
+        }
       } else {
         statusEl.__label = null;
         statusEl.textContent = '';
@@ -862,7 +879,7 @@
       });
     })();
 
-    /* Settings popup — consolidates Show intro / Change PIN / Set API key / Log out */
+    /* Settings popup — consolidates Show intro / Change PIN / Set Gemini key / Log out */
     (function initSettings() {
       var btn = document.getElementById('settings-btn');
       var menu = document.getElementById('settings-menu');
@@ -965,7 +982,7 @@
       show('standard'); // Receipt photos is the default workflow on first load
     })();
 
-    /* Shared two-phase submission engine (Manual rows + Receipt photos flows).
+    /* Shared two-phase submission engine (Manual entries + Receipt photos flows).
        Sequential bounded server calls: plan -> Phase 1 batches -> Phase 2
        batches -> triage -> one bounded repair -> commit -> (separate) sort.
        Never concurrent; one Gemini generation request per batch per phase. */

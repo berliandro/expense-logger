@@ -22,9 +22,9 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 
 - **Receipt extraction** — Gemini reads dates, merchants, line items, categories, and Expense/Income type from JPG, PNG, WEBP, or HEIC photos; a typed note works with no photo at all.
 - **Two-phase total reconciliation** — Phase 1 reads each photo's printed total, Phase 2 extracts every line item, and each receipt's item sum must match its printed total exactly.
-- **Batched submission pipeline** — Manual rows (the second tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
+- **Batched submission pipeline** — Manual entries (the second tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
 - **Repair and review handling** — Mismatches get a bounded repair pass (Receipt photos retry still-mismatched receipts up to two more times); unresolved entries stay in the app with their photos for review while valid entries are still logged. Nothing unverified is saved silently.
-- **Save anyway (Manual rows only)** (OFF by default) — after the re-check, adds one clearly labeled balancing line only when the printed total is readable. It handles either missing charges or missing discounts and records an audit note. With Save anyway off, unresolved mismatches remain available for review. The Receipt photos mode follows its fixed automatic receipt-check policy without exposing a toggle.
+- **Save anyway (Manual entries only)** (OFF by default) — after the re-check, adds one clearly labeled balancing line only when the printed total is readable. It handles either missing charges or missing discounts and records an audit note. With Save anyway off, unresolved mismatches remain available for review. The Receipt photos mode follows its fixed automatic receipt-check policy without exposing a toggle.
 - **Transaction IDs** — Every receipt gets a unique `YYYYMMDD` + letter-sequence ID (e.g. `20261231AA`) shared by all its rows; month sheets sort chronologically with rows ordered by Transaction ID after clean reports.
 - **Entry IDs** — Every line item carries a system-managed unique ID that survives sorting, deletion, and recovery. Both IDs are looked up by header name, never by column position.
 - **Google Sheets integration** — Rows append to `MMMM yyyy` month sheets copied from an auto-created `Template`; missing system headers are migrated idempotently.
@@ -37,12 +37,12 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Drafts and offline capture** — notes, table rows, selected photos, and entry metadata autosave locally (IndexedDB for photos) and restore after a reload; offline submissions are queued and can be sent when the connection returns.
 - **Duplicate and review gates** — a SHA-256 image hash plus the merchant, date, and total form a server-side fingerprint checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows the receipt photo, extracted items/totals, and editable merchant, date, type, and category fields before writing.
 - **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
-- **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Manual rows can be split across categories when the split sums to the verified total.
+- **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Manual entries can be split across categories when the split sums to the verified total.
 - **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets (compressed receipt previews are excluded), optional receipt previews live in a hidden sheet, and a server-side session list supports revoke.
 
 ## How it works
 
-1. Start in **Receipt photos** (the default): attach one or more photos, or type a note, then submit. Receipt photos always force-save (receipts that pass the check are logged at once; only unconfirmed photos stay). **Manual rows** (the second tab) adds one photo + note + forced Expense/Income per row and follows your own receipt-check setting. Receipt photos' decision rule is the **printed final Total**, not how complete the line list looks. If that total is readable, the receipt is saved under it — even when the extractor flags the item list as possibly incomplete, in which case the gap is disclosed in that receipt's Notes and status line. A receipt is held back for review only when the total itself cannot be read reliably (missing, uncertain, or not visible), or when the total is readable but the items still do not reconcile after the automatic re-checks. Manual rows keep their stricter behaviour and still hold an incomplete line list back for review.
+1. Start in **Receipt photos** (the default): attach one or more photos, or type a note, then submit. Receipt photos always force-save (receipts that pass the check are logged at once; only unconfirmed photos stay). **Manual entries** (the second tab) adds one photo + note + forced Expense/Income per row and follows your own receipt-check setting. Receipt photos' decision rule is the **printed final Total**, not how complete the line list looks. If that total is readable, the receipt is saved under it — even when the extractor flags the item list as possibly incomplete, in which case the gap is disclosed in that receipt's Notes and status line. A receipt is held back for review only when the total itself cannot be read reliably (missing, uncertain, or not visible), or when the total is readable but the items still do not reconcile after the automatic re-checks. Manual entries keep their stricter behaviour and still hold an incomplete line list back for review.
 2. The app **plans** the submission, then runs **Phase 1** (printed totals) and **Phase 2** (line items) in sequential batches.
 3. Entries are **checked**: exact matches save immediately, mismatches get **one re-check**, and leftovers wait for **review** with their photos.
 4. **Commit** appends verified entries with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
@@ -77,7 +77,7 @@ clasp login          # opens Google OAuth in your browser (auth stays local)
 clasp push           # uploads Code.js, Index.html, the template partials, and appsscript.json
 ```
 
-Then open the web-app `/exec` URL, set a 6-digit PIN on first run, and add the Gemini API key (Settings menu → Set API key) and Google Sheet (Settings menu → Set Sheet) when prompted. If the script was copied from an existing Sheet (container-bound), that sheet is used automatically.
+Then open the web-app `/exec` URL, set a 6-digit PIN on first run, and add the Gemini API key (Settings menu → Set Gemini key) and Google Sheet (Settings menu → Set Google Sheet) when prompted. If the script was copied from an existing Sheet (container-bound), that sheet is used automatically.
 
 ## Configuration
 
@@ -86,7 +86,7 @@ Script Properties (**Project Settings → Script Properties** in the Apps Script
 | Key              | Value                                                              |
 |------------------|--------------------------------------------------------------------|
 | `GEMINI_API_KEY` | Your Gemini key (AI Studio). Also settable in-app via Settings.    |
-| `SPREADSHEET_ID` | Manual fallback for the sheet ID; the in-app Set Sheet prompt is preferred. |
+| `SPREADSHEET_ID` | Manual fallback for the sheet ID; the in-app Google Sheet prompt is preferred. |
 
 No keys ever live in this repo — they stay in Script Properties, and the browser holds only a random session token (configurable lifetime, see below), never the PIN or keys.
 
@@ -97,7 +97,7 @@ The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth sc
 
 ## Deleting and recovering entries
 
-- In **Recent entries**, each card has a **Delete entry** action; the **⋯** menu offers **Delete entire receipt…**, showing merchant, date, Transaction ID, and the exact line-item count before you confirm. Records without a Transaction ID can only delete the single entry.
+- In **Recent entries**, each row keeps **Edit**, **View image**, and **Mark reimbursed** visible. **Move entry to Trash…** and **Move entire receipt to Trash…** live in the **⋯** menu; the receipt option shows the merchant, date, and exact line-item count before you confirm. The sheet and both IDs live in **Edit**. Records without a Transaction ID can only delete the single entry.
 - Deleted rows move to the hidden `_CF_Trash` sheet and stay recoverable for **7 days from deletion**, then are removed automatically.
 - Recover via Settings menu → **Trash** (with Entries and Transactions filters). Restored rows keep their original Entry and Transaction IDs; if an ID already exists live, the restore is blocked with an explanation instead of overwriting.
 - Never edit the system-managed `Transaction ID` / `Entry ID` columns or the hidden `_CF_Submissions` / `_CF_Trash` sheets by hand — logs, delete/restore, and sorting all rely on them.
@@ -160,8 +160,8 @@ node tests/backend-crud.test.js
 
 ## Troubleshooting
 
-- `Google Sheet is not set` (or `Spreadsheet is not configured` / `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log entry means no usable sheet was found. Set it via Settings menu → Set Sheet (Sheet ID or full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then reload the `/exec` URL and retry. A missing `Template` sheet is created automatically with the headers listed under Configuration.
-- `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script Properties or was never saved via Settings menu → Set API key. Add it, then retry.
+- `Google Sheet is not set` (or `Spreadsheet is not configured` / `Could not open the Google Sheet` / legacy `Invalid argument: id`) on Log entry means no usable sheet was found. Set it via Settings menu → Set Google Sheet (Sheet ID or full URL), or manually via `SPREADSHEET_ID` in Script Properties. Then reload the `/exec` URL and retry. A missing `Template` sheet is created automatically with the headers listed under Configuration.
+- `Gemini API key is not set` means `GEMINI_API_KEY` is missing in Script Properties or was never saved via Settings menu → Set Gemini key. Add it, then retry.
 - `Too many PIN attempts - try again later` means 5 wrong PINs within 10 minutes; wait for the window to pass.
 - A restore that reports a missing month sheet recreates it from the `Template` automatically; restores that cannot determine a destination refuse with an explanation and leave the Trash record untouched. Restore is idempotent per sheet key (Entry ID, Trash ID, Submission ID + Row ID, receipt hash, rule/member/category).
 
@@ -172,6 +172,16 @@ node tests/backend-crud.test.js
 - `PIN_HASH` / `PIN_SALT` / hashed sessions live in Script Properties.
 - Receipt photos are sent to Gemini for extraction and are never stored in the Trash ledger or logs beyond the review flow; financial rows live only in your own Google Sheet.
 - `.clasp.json` (Script ID binding), `.clasprc.json` (personal clasp OAuth tokens), `.cashlogger-deployment-id` (Web App deployment ID), and `.opencode/` (agent session state) are git-ignored — never commit them.
+
+### Forgot the PIN?
+
+The PIN is stored only as a hash in Script Properties, so it cannot be read back. The Sheet owner can reset it from the Apps Script editor:
+
+1. Open **Project Settings → Script Properties**.
+2. Delete `PIN_HASH`, `PIN_SALT`, `PIN_FAIL_JSON`, `SESSIONS_JSON`, and `SESSIONS_META_JSON`.
+3. Reload the `/exec` URL. The app returns to first-run setup and asks for a new 6-digit PIN.
+
+This clears the rate-limit counter and revokes every existing session; it does not touch the Sheet or any logged data. Family members should ask the person who set up the Sheet — the gate says so directly.
 
 ### Deployment visibility (read-only, verified)
 
@@ -205,7 +215,7 @@ So with the normal anonymous/public deployment most users will see **Access not 
 | `Styles.html` | Flat light/dark design system: paper surfaces, orange accent, serif display type, small radii |
 | `Layout.html` | Body markup: top bar, entry panel, dashboard, history, dialogs |
 | `AppCore.html` | Shared client helpers, photo previews, lightboxes, submission engine |
-| `AppEntry.html` | Manual rows and batch submission |
+| `AppEntry.html` | Manual entries and batch submission |
 | `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent entries |
 | `AppFeatures.html` | Dashboard, budgets, recurring, household, sessions, backup, edit, search, drafts/offline, review |
 | `appsscript.json` | Timezone, runtime, explicit OAuth scopes, web-app access settings |

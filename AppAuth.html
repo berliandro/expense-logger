@@ -30,6 +30,7 @@
       var histRefresh = document.getElementById('history-refresh');
       var histSub = document.getElementById('history-sub');
       var histEmpty = document.getElementById('history-empty');
+      var histNoResults = document.getElementById('history-noresults');
       var histFilters = document.getElementById('history-filters');
       var histEmptyBtn = document.getElementById('history-empty-btn');
       var trashBtn = document.getElementById('trash-btn');
@@ -100,6 +101,9 @@
         }
         setError(msg || '');
         pinInput.value = '';
+        var recovery = document.getElementById('lock-recovery');
+        if (recovery) recovery.classList.toggle('hidden', mode !== 'login');
+        syncPinSubmit();
         if (!lockEl.classList.contains('hidden')) {
           try { pinInput.focus(); } catch (e) {}
         }
@@ -134,6 +138,17 @@
         lockToLogin(m);
       });
       function valid6(v) { return /^\d{6}$/.test(v || ''); }
+      function pinDigits(v) {
+        return String(v || '')
+          .replace(/[\u0660-\u0669]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); })
+          .replace(/[\u06F0-\u06F9]/g, function (d) { return String(d.charCodeAt(0) - 0x06F0); })
+          .replace(/\D/g, '')
+          .slice(0, 6);
+      }
+      function syncPinSubmit() {
+        if (!pinSubmit) return;
+        pinSubmit.disabled = !valid6((pinInput.value || '').trim());
+      }
       function submitPin() {
         var v = (pinInput.value || '').trim();
         if (!valid6(v)) { setError('PIN must be exactly 6 digits.'); return; }
@@ -147,6 +162,7 @@
           mode = 'setup-confirm';
           pinBusy = false;
           cfBusyBtn(pinSubmit, false);
+          syncPinSubmit();
           paintMode();
           return;
         }
@@ -154,6 +170,7 @@
           if (v !== firstPin) {
             pinBusy = false;
             cfBusyBtn(pinSubmit, false);
+            syncPinSubmit();
             firstPin = '';
             mode = 'setup-new';
             paintMode('PINs do not match — try again.');
@@ -163,6 +180,7 @@
             .withSuccessHandler(function (sess) {
               pinBusy = false;
               cfBusyBtn(pinSubmit, false);
+              syncPinSubmit();
               firstPin = '';
               if (sess && sess.token) {
                 try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
@@ -174,6 +192,7 @@
             .withFailureHandler(function (err) {
               pinBusy = false;
               cfBusyBtn(pinSubmit, false);
+              syncPinSubmit();
               setError('Could not save PIN: ' + (err && err.message ? err.message : err));
             })
             .setupPin(v);
@@ -183,25 +202,29 @@
           .withSuccessHandler(function (sess) {
             pinBusy = false;
             cfBusyBtn(pinSubmit, false);
+            syncPinSubmit();
             if (sess && sess.token) {
               try { cfSaveSession(sess.token, sess.expiresAt); } catch (e) {}
               onUnlocked();
             } else {
               setError('Wrong PIN — try again.');
               pinInput.value = '';
+              syncPinSubmit();
               try { pinInput.focus(); } catch (e) {}
             }
           })
           .withFailureHandler(function (err) {
             pinBusy = false;
             cfBusyBtn(pinSubmit, false);
+            syncPinSubmit();
             setError('Error: ' + (err && err.message ? err.message : err));
           })
           .login(v);
       }
       pinInput.addEventListener('input', function () {
-        pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 6);
+        pinInput.value = pinDigits(pinInput.value);
         setError('');
+        syncPinSubmit();
         if (pinInput.value.length === 6) { setTimeout(function () { if (pinInput.value.length === 6 && !lockEl.classList.contains('hidden')) submitPin(); }, 250); }
       });
       pinInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitPin(); });
@@ -227,6 +250,13 @@
       if (changeBtn) changeBtn.addEventListener('click', openModal);
       var cancelBtn = document.getElementById('pin-change-cancel');
       if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+      ['pin-old', 'pin-new', 'pin-new2'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function () {
+          el.value = pinDigits(el.value);
+        });
+      });
       if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
       var saveBtn = document.getElementById('pin-change-save');
       if (saveBtn) saveBtn.addEventListener('click', function () {
@@ -294,7 +324,7 @@
         if (!apiBtn) return;
         apiHasKey = !!has;
         var label = apiBtn.querySelector('.menu-label');
-        var text = apiHasKey ? 'Change API key' : 'Set API key';
+        var text = apiHasKey ? 'Change Gemini key' : 'Set Gemini key';
         if (label) label.textContent = text;
         else apiBtn.textContent = text;
       }
@@ -396,7 +426,7 @@
         if (!sheetBtn) return;
         sheetHasValue = !!has;
         var label = sheetBtn.querySelector('.menu-label');
-        var text = sheetHasValue ? 'Change Sheet' : 'Set Sheet';
+        var text = sheetHasValue ? 'Change Google Sheet' : 'Set Google Sheet';
         if (label) label.textContent = text;
         else sheetBtn.textContent = text;
       }
@@ -1036,33 +1066,76 @@
 
       // History (session-gated)
       function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
-      function fmtRp(n) { try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); } catch (e) { return 'Rp' + n; } }
+      function fmtMoney(n, code) {
+        var cur = String(code || 'IDR').trim().toUpperCase();
+        if (cur === 'RP') cur = 'IDR';
+        var num = Number(n || 0);
+        if (cur === 'IDR') {
+          var abs = Math.abs(num);
+          var text;
+          try { text = abs.toLocaleString('id-ID'); } catch (e) { text = String(abs); }
+          return (num < 0 ? '\u2212' : '') + 'Rp' + text;
+        }
+        try {
+          return num.toLocaleString('en-US', {
+            style: 'currency', currency: cur, currencyDisplay: 'code'
+          });
+        } catch (e2) {
+          return cur + ' ' + num.toLocaleString('en-US');
+        }
+      }
+      function fmtRp(n) { return fmtMoney(n, 'IDR'); }
+      function fmtCount(n) {
+        try { return Number(n || 0).toLocaleString('en-US'); }
+        catch (e) { return String(n || 0); }
+      }
+      function histDateLabel(d) {
+        var m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return String(d || '').trim();
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var mon = months[Number(m[2]) - 1];
+        if (!mon) return String(d || '').trim();
+        var label = Number(m[3]) + ' ' + mon;
+        return Number(m[1]) === new Date().getFullYear() ? label : label + ' ' + m[1];
+      }
       function renderLogs(logs, append) {
         var parts = [];
+        if (!logs || typeof logs.forEach !== 'function') logs = [];
         logs.forEach(function (lg) {
           var isInc = String(lg.type || '').toLowerCase() === 'income';
           var amt = Number(lg.amount || 0);
-          var desc = lg.description || lg.notes || lg.category || '';
+          var merchant = String(lg.merchant || '').trim();
+          var category = String(lg.category || '').trim();
+          var desc = String(lg.description || lg.notes || '').trim();
+          var descKey = desc.toLowerCase();
+          if (descKey && (descKey === merchant.toLowerCase() || descKey === category.toLowerCase())) desc = '';
+          var meta = [];
+          var dateLabel = histDateLabel(lg.date);
+          if (dateLabel) meta.push(dateLabel);
+          if (category) meta.push(category);
+          var member = String(lg.member || '').trim();
+          if (member && member.toLowerCase() !== 'household') meta.push(member);
           var eid = esc(lg.entryId || '');
           var tid = esc(lg.transactionId || '');
+          var amountText = fmtMoney(amt, lg.currency);
+          var typeLabel = lg.type || (amt < 0 ? 'Expense' : '');
           var imageId = String(lg.receiptUrl || '').indexOf('cfimg:') === 0 ? String(lg.receiptUrl).slice(6) : '';
           // Build the whole page as one string and insert once. The previous
           // per-item appendChild loop forced a layout pass for every row.
           parts.push(
             '<div class="hist-item" data-entry-id="' + eid + '" data-txn-id="' + tid + '">' +
-            '<div class="hist-top"><span class="hist-merchant">' + esc(lg.merchant || 'Unknown') + '</span>' +
-            '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(lg.type || (amt < 0 ? 'Expense' : '')) + '</span></div>' +
-            '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(fmtRp(amt)) + '</div>' +
-            (desc ? '<div class="hist-sub">' + esc(desc) + '</div>' : '') +
-            '<div class="hist-meta">' + esc(lg.date || '') + ' \u00b7 ' + esc(lg.sheet || '') + (lg.category ? ' \u00b7 ' + esc(lg.category) : '') + (lg.transactionId ? ' \u00b7 ' + esc(lg.transactionId) : '') + '</div>' +
+            '<div class="hist-top"><span class="hist-merchant" dir="auto">' + esc(merchant || 'Unknown') + '</span>' +
+            (typeLabel ? '<span class="hist-badge ' + (isInc ? 'income' : 'expense') + '">' + esc(typeLabel) + '</span>' : '') + '</div>' +
+            '<div class="hist-amount' + (amt < 0 ? ' neg' : '') + '">' + esc(amountText) + '</div>' +
+            (desc ? '<div class="hist-sub" dir="auto">' + esc(desc) + '</div>' : '') +
+            (meta.length ? '<div class="hist-meta" dir="auto">' + meta.map(function (v) { return esc(v); }).join(' \u00b7 ') + '</div>' : '') +
             '<div class="hist-actions">' +
-              '<button type="button" class="hist-del" data-act="del-entry" data-entry-id="' + eid + '">Delete entry</button>' +
-              '<button type="button" class="hist-del" data-act="edit" data-entry-id="' + eid + '">Edit</button>' +
-              (imageId ? '<button type="button" class="hist-del" data-act="image" data-image-id="' + esc(imageId) + '">View image</button>' : '') +
+              '<button type="button" class="hist-del" data-act="edit" data-entry-id="' + eid + '" aria-label="Edit ' + esc(merchant || 'entry') + '">Edit</button>' +
+              (imageId ? '<button type="button" class="hist-del" data-act="image" data-image-id="' + esc(imageId) + '" aria-label="View receipt image for ' + esc(merchant || 'this entry') + '">View image</button>' : '') +
               (String(lg.reimbursable || '').toLowerCase() === 'yes' && String(lg.reimbursed || '').toLowerCase() !== 'yes'
-                ? '<button type="button" class="hist-del" data-act="reimburse" data-entry-id="' + eid + '">Mark reimbursed</button>'
+                ? '<button type="button" class="hist-del" data-act="reimburse" data-entry-id="' + eid + '" aria-label="Mark ' + esc(merchant || 'this entry') + ' reimbursed">Mark reimbursed</button>'
                 : '') +
-              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for this entry">&#8943;</button></span>' +
+              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-entry-id="' + eid + '" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ' + esc(merchant || 'this entry') + '" title="More actions">&#8943;</button></span>' +
             '</div></div>'
           );
         });
@@ -1083,13 +1156,14 @@
         }
         return null;
       }
-      function closeHistMenu() {
-        if (histOpenMenu) {
-          try { histOpenMenu.remove(); } catch (e) {}
-          var btn = histOpenMenu && histOpenMenu._owner;
-          if (btn) btn.setAttribute('aria-expanded', 'false');
-          histOpenMenu = null;
-        }
+      function closeHistMenu(returnFocus) {
+        if (!histOpenMenu) return;
+        var menu = histOpenMenu;
+        var btn = menu._owner;
+        try { menu.remove(); } catch (e) {}
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+        histOpenMenu = null;
+        if (returnFocus && btn) { try { btn.focus(); } catch (e2) {} }
       }
       function histBusy(btn, busy, label) { cfBusyBtn(btn, busy, busy ? (label || 'Working…') : null); }
       if (histList) histList.addEventListener('click', function (e) {
@@ -1112,7 +1186,7 @@
         if (histOpenMenu && !histMenuContains(e.target)) closeHistMenu();
       });
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && histOpenMenu) closeHistMenu();
+        if (e.key === 'Escape' && histOpenMenu) closeHistMenu(true);
       });
       function histMenuContains(el) {
         var owner = histOpenMenu && histOpenMenu._owner;
@@ -1130,29 +1204,62 @@
         if (histOpenMenu && histOpenMenu._owner === ownerBtn) { closeHistMenu(); return; }
         closeHistMenu();
         var wrap = ownerBtn.parentNode || ownerBtn.parent;
+        var entryId = ownerBtn.getAttribute('data-entry-id') || '';
         var txnId = ownerBtn.getAttribute('data-txn-id') || '';
         var menu = document.createElement('div');
         menu.className = 'hist-menu';
         menu.setAttribute('role', 'menu');
-        var item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'menu-item';
-        item.setAttribute('role', 'menuitem');
-        if (txnId) {
-          item.textContent = 'Delete entire receipt…';
-          item.setAttribute('data-act', 'del-txn');
-          item.setAttribute('data-txn-id', txnId);
-        } else {
-          item.textContent = 'No receipt group for this record';
-          item.disabled = true;
-          item.title = 'This record has no Transaction ID, so only the single entry can be deleted.';
+        function addItem(label, act, attr, value) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'menu-item';
+          b.setAttribute('role', 'menuitem');
+          b.textContent = label;
+          if (act) b.setAttribute('data-act', act);
+          if (attr && value) b.setAttribute(attr, value);
+          menu.appendChild(b);
+          return b;
         }
-        menu.appendChild(item);
+        if (entryId) addItem('Move entry to Trash…', 'del-entry', 'data-entry-id', entryId);
+        if (txnId) addItem('Move entire receipt to Trash…', 'del-txn', 'data-txn-id', txnId);
+        if (!entryId && !txnId) {
+          var none = addItem('No delete action for this record');
+          none.disabled = true;
+          none.title = 'This record has no Entry ID or Transaction ID.';
+        }
         menu._owner = ownerBtn;
         if (wrap) wrap.appendChild(menu);
+        menu.addEventListener('keydown', function (e) {
+          var items = Array.prototype.filter.call(menu.querySelectorAll('.menu-item'), function (b) { return !b.disabled; });
+          if (!items.length) return;
+          var i = items.indexOf(document.activeElement);
+          var next = -1;
+          if (e.key === 'ArrowDown') next = i < 0 ? 0 : (i + 1) % items.length;
+          else if (e.key === 'ArrowUp') next = i < 0 ? items.length - 1 : (i - 1 + items.length) % items.length;
+          else if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = items.length - 1;
+          if (next >= 0) { e.preventDefault(); items[next].focus(); }
+        });
         ownerBtn.setAttribute('aria-expanded', 'true');
         histOpenMenu = menu;
-        try { item.focus(); } catch (e) {}
+        // Keep the menu inside the card (and the viewport at 320px) instead of
+        // letting a short action row push it past the left edge.
+        try {
+          var card = document.getElementById('history-card');
+          var bounds = (card || document.documentElement).getBoundingClientRect();
+          var wrapRect = wrap.getBoundingClientRect();
+          var menuRect = menu.getBoundingClientRect();
+          var minLeft = bounds.left + 8;
+          if (menuRect.left < minLeft) {
+            menu.style.right = 'auto';
+            menu.style.left = (minLeft - wrapRect.left) + 'px';
+          }
+          if (menuRect.bottom > window.innerHeight - 8 && ownerBtn.getBoundingClientRect) {
+            menu.style.top = 'auto';
+            menu.style.bottom = 'calc(100% + 6px)';
+          }
+        } catch (e4) {}
+        try { (menu.querySelector('.menu-item:not([disabled])') || menu.querySelector('.menu-item')).focus(); } catch (e) {}
       }
       function deleteHistoryEntry(entryId, btn) {
         entryId = String(entryId || '');
@@ -1202,9 +1309,12 @@
           }
           var n = Number(info.count || 0);
           var opId = (typeof cfUuid === 'function') ? cfUuid() : String(Date.now());
+          var day = histDateLabel(info.date);
+          var receipt = info.merchant ? '"' + info.merchant + '"' : 'this receipt';
+          if (day) receipt += ' from ' + day;
           openConfirmModal({
             title: 'Move entire receipt to Trash?',
-            body: 'Move this entire receipt' + (info.merchant ? ' ("' + info.merchant + '")' : '') + ' and all ' + n +
+            body: 'Move ' + receipt + ' and all ' + fmtCount(n) +
               ' line item' + (n === 1 ? '' : 's') + ' to Trash? You can recover it for 7 days. After 7 days, it will be permanently deleted.',
             okLabel: 'Move receipt to Trash',
             danger: true
@@ -1301,20 +1411,25 @@
         histPending[offset] = true;
         histReqGen[offset] = myGen;
         var reqGen = myGen;
-        google.script.run
-          .withSuccessHandler(function (res) {
-            if (histReqGen[offset] === reqGen) histPending[offset] = false;
-            if (reqGen !== histGen) { flushHistWaiters(offset, null, reqGen); return; }
-            res = res || {};
-            cacheHistPage(offset, res);
-            flushHistWaiters(offset, histCache.pages[offset], reqGen);
-            if (offset + (res.logs || []).length < (res.total || 0)) prefetchPage(offset + histLimit);
-          })
-          .withFailureHandler(function (err) {
-            if (histReqGen[offset] === reqGen) histPending[offset] = false;
-            flushHistWaiters(offset, { error: err }, reqGen);
-          })
-          .getRecentLogs(sessionToken, offset, histLimit);
+        try {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (histReqGen[offset] === reqGen) histPending[offset] = false;
+              if (reqGen !== histGen) { flushHistWaiters(offset, null, reqGen); return; }
+              res = res || {};
+              cacheHistPage(offset, res);
+              flushHistWaiters(offset, histCache.pages[offset], reqGen);
+              if (offset + (res.logs || []).length < (res.total || 0)) prefetchPage(offset + histLimit);
+            })
+            .withFailureHandler(function (err) {
+              if (histReqGen[offset] === reqGen) histPending[offset] = false;
+              flushHistWaiters(offset, { error: err }, reqGen);
+            })
+            .getRecentLogs(sessionToken, offset, histLimit);
+        } catch (err) {
+          if (histReqGen[offset] === reqGen) histPending[offset] = false;
+          flushHistWaiters(offset, { error: err }, reqGen);
+        }
       }
       function prefetchPage(offset) {
         if (!hasBackend || !sessionToken) return;
@@ -1328,8 +1443,8 @@
       function noteHistoryMutated() {
         var card = document.getElementById('history-card');
         var visible = !!(card && !card.classList.contains('hidden'));
-        invalidateHistCache();
-        if (visible) fetchHistory(true);
+        if (!visible) { invalidateHistCache(); return; }
+        refreshHistory();
       }
       if (typeof window !== 'undefined' && window.addEventListener) {
         window.addEventListener('cf:history-changed', function () {
@@ -1341,6 +1456,7 @@
       }
       function paintHistoryEmpty(isEmpty) {
         if (histEmpty) histEmpty.classList.toggle('hidden', !isEmpty);
+        if (histNoResults) histNoResults.classList.add('hidden');
         if (histFilters) histFilters.classList.toggle('hidden', isEmpty);
         if (histSub) histSub.classList.toggle('hidden', isEmpty);
         if (isEmpty) {
@@ -1349,13 +1465,13 @@
         }
       }
       function renderHistPage(res, append) {
-        var logs = res.logs || [];
-        var total = Number(res.total || 0);
+        var logs = Array.isArray(res.logs) ? res.logs : [];
+        var total = Math.max(Number(res.total || 0), logs.length);
         renderLogs(logs, append);
         if (!append) histOffset = 0;
         histOffset += logs.length;
         histSub.textContent = total > 0
-          ? 'Showing ' + histOffset + ' of ' + total + ' entries.'
+          ? 'Showing ' + fmtCount(histOffset) + ' of ' + fmtCount(total) + ' entries.'
           : 'Newest first, from all months.';
         paintHistoryEmpty(total === 0);
         if (res.hasMore) {
@@ -1366,13 +1482,19 @@
           if (histOffset > 0) histLoad.classList.add('hidden');
         }
       }
+      var histRefreshing = false;
       function fetchHistory(reset) {
+        if (reset && histRefreshing) return;
         if (reset) histOffset = 0;
         if (!hasBackend) {
           histSub.textContent = 'Preview mode — connect to Apps Script to load real logs.';
           return;
         }
         if (!sessionToken) { try { setStatus('Unlock with your PIN first.', 'error'); } catch (e) {} return; }
+        if (reset) {
+          histRefreshing = true;
+          if (histRefresh) cfBusyBtn(histRefresh, true, 'Refreshing…');
+        }
         var btn = reset ? histLoad : histMore;
         var wantOffset = reset ? 0 : histOffset;
         var gen = histGen;
@@ -1380,10 +1502,20 @@
         if (histList && histList.setAttribute) histList.setAttribute('aria-busy', 'true');
         function settle() {
           cfBusyBtn(btn, false);
+          if (reset) {
+            histRefreshing = false;
+            if (histRefresh) cfBusyBtn(histRefresh, false);
+          }
           if (histList && histList.removeAttribute) histList.removeAttribute('aria-busy');
         }
         requestHistPage(wantOffset, function (page) {
-          if (gen !== histGen) return;
+          if (gen !== histGen) {
+            if (reset) {
+              histRefreshing = false;
+              if (histRefresh) cfBusyBtn(histRefresh, false);
+            }
+            return;
+          }
           settle();
           if (!page || page.error) {
             var err = page && page.error;
@@ -1392,7 +1524,13 @@
               try { setStatus('Your session expired. Enter your PIN again.', 'error'); } catch (e2) {}
               return;
             }
-            try { setStatus('Couldn’t load entries. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e3) {}
+            var msg = typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : String(err || 'Unknown error'));
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) msg = 'You’re offline.';
+            if (histEmpty) histEmpty.classList.add('hidden');
+            if (histSub) {
+              histSub.classList.remove('hidden');
+              histSub.textContent = 'Couldn’t load entries. ' + msg + ' Tap Refresh to try again.';
+            }
             return;
           }
           renderHistPage(page, !reset);
@@ -1435,9 +1573,24 @@
         }
         fetchHistory(false);
       }
-      // Refresh always goes to the server, never to the cache.
+      // Refresh always goes to the server, never to the cache. With filters
+      // showing, refresh the filtered view instead of silently dropping them.
+      function histFiltersActive() {
+        var q = document.getElementById('hist-search');
+        if (q && String(q.value || '').trim()) return true;
+        var t = document.getElementById('hist-type');
+        if (t && t.value && t.value !== 'All') return true;
+        var c = document.getElementById('hist-category');
+        if (c && c.value && c.value !== 'All') return true;
+        var m = document.getElementById('hist-member');
+        if (m && m.value && m.value !== 'All') return true;
+        var r = document.getElementById('hist-reimb');
+        return !!(r && r.value);
+      }
       function refreshHistory() {
         invalidateHistCache();
+        var apply = document.getElementById('hist-apply');
+        if (histFiltersActive() && apply) { apply.click(); return; }
         fetchHistory(true);
       }
       if (histLoad) histLoad.addEventListener('click', function () { showFirstPage(); });

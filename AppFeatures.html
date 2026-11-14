@@ -25,8 +25,11 @@
     });
   }
   function money(n) {
-    try { return 'Rp' + Number(n || 0).toLocaleString('id-ID'); }
-    catch (e) { return 'Rp' + n; }
+    var num = Number(n || 0);
+    var abs = Math.abs(num);
+    var text;
+    try { text = abs.toLocaleString('id-ID'); } catch (e) { text = String(abs); }
+    return (num < 0 ? '\u2212' : '') + 'Rp' + text;
   }
   function monthNow() {
     var d = new Date();
@@ -586,10 +589,14 @@
     if (!d) return;
     var title = document.getElementById('dash-title');
     var sub = document.getElementById('dash-sub');
-    if (title) title.textContent = d.monthLabel || monthLabel(d.month);
+    if (title) {
+      var titleText = d.monthLabel || monthLabel(d.month);
+      if (title.textContent !== titleText) title.textContent = titleText;
+    }
     if (sub) {
       var count = (d.totals && d.totals.count) || 0;
-      sub.textContent = (count ? count + (count === 1 ? ' entry' : ' entries') : 'No entries this month') +
+      var countText = count ? Number(count).toLocaleString('en-US') : '';
+      sub.textContent = (count ? countText + (count === 1 ? ' entry' : ' entries') : 'No entries this month') +
         (d.reimbursements && d.reimbursements.outstanding ? ' · ' + money(d.reimbursements.outstanding) + ' to be reimbursed' : '');
     }
     var stats = document.getElementById('dash-stats');
@@ -601,14 +608,14 @@
     renderDots(d);
     var an = document.getElementById('dash-anomalies');
     if (an) {
-      var list = (d.anomalies || []).map(function (a) {
+      var list = (Array.isArray(d.anomalies) ? d.anomalies : []).map(function (a) {
         return '<div class="anomaly"><span>' + esc(a.category) + '</span><b>+' + esc(a.percent) + '%</b></div>';
       }).join('');
       an.innerHTML = list ? '<h3>Bigger than last month</h3>' + list : '';
     }
     var budgets = document.getElementById('dash-budgets');
     if (budgets) {
-      var bl = (d.budgets || []).map(function (b) {
+      var bl = (Array.isArray(d.budgets) ? d.budgets : []).map(function (b) {
         return '<div class="budget-row"><div class="budget-top"><span>' + esc(b.category) +
           '</span><span>' + money(b.spent) + ' / ' + money(b.limit) + ' · ' + esc(b.percent) + '%</span></div>' +
           '<div class="budget-bar' + (b.alert ? ' warn' : '') + '"><i style="width:' + Math.min(100, b.percent) + '%"></i></div></div>';
@@ -617,9 +624,10 @@
     }
     var rec = document.getElementById('dash-recurring-list');
     if (rec) {
-      var rl = (d.dueRecurring || []).map(function (r) {
+      var rl = (Array.isArray(d.dueRecurring) ? d.dueRecurring : []).map(function (r) {
+        var logLabel = r.description ? 'Log ' + r.description + ' now' : 'Log this recurring entry now';
         return '<div class="due-row"><span>' + esc(r.description) + ' · ' + money(r.amount) +
-          '</span><button type="button" class="btn-choice" data-log-rule="' + esc(r.ruleId) + '">Log now</button></div>';
+          '</span><button type="button" class="btn-choice" data-log-rule="' + esc(r.ruleId) + '" aria-label="' + esc(logLabel) + '">Log now</button></div>';
       }).join('');
       rec.innerHTML = rl ? '<h3>Recurring due</h3>' + rl : '';
     }
@@ -805,7 +813,7 @@
 
   /* ---------- sessions ---------- */
   function openSessions() {
-    var wrap = openModal('Sessions', '<div data-sess-body><p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Loading sessions…</p></div>', []);
+    var wrap = openModal('Active sessions', '<div data-sess-body><p class="empty-note"><span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Loading sessions…</p></div>', []);
     api('sessions.list').then(function (res) { renderSessions(wrap, res.sessions || []); })
       .catch(function (e) { modalError(wrap, e.message); });
   }
@@ -830,14 +838,14 @@
     });
   }
 
-  /* ---------- app settings ---------- */
+  /* ---------- entry settings ---------- */
   function openSettings() {
     var s = state.settings || {};
-    var wrap = openModal('App settings', '<div class="feature-form">' +
-      '<label><input type="checkbox" data-s-retain ' + (s.retainImages ? 'checked' : '') + '> Retain compressed receipt previews</label>' +
-      '<label><input type="checkbox" data-s-review ' + (s.reviewBeforeCommit ? 'checked' : '') + '> Review extracted entries before saving</label>' +
-      '<label><input type="checkbox" data-s-household ' + (s.householdMode !== false ? 'checked' : '') + '> Household attribution</label>' +
-      '<label><input type="checkbox" data-s-reimb ' + (s.reimbursementEnabled !== false ? 'checked' : '') + '> Reimbursement tracking</label>' +
+    var wrap = openModal('Entry settings', '<div class="feature-form">' +
+      '<label class="meta-check"><input type="checkbox" data-s-retain ' + (s.retainImages ? 'checked' : '') + '> Retain compressed receipt previews</label>' +
+      '<label class="meta-check"><input type="checkbox" data-s-review ' + (s.reviewBeforeCommit ? 'checked' : '') + '> Review extracted entries before saving</label>' +
+      '<label class="meta-check"><input type="checkbox" data-s-household ' + (s.householdMode !== false ? 'checked' : '') + '> Household attribution</label>' +
+      '<label class="meta-check"><input type="checkbox" data-s-reimb ' + (s.reimbursementEnabled !== false ? 'checked' : '') + '> Reimbursement tracking</label>' +
       '<p class="empty-note">Retained previews are compressed and stored in the hidden _CF_ReceiptImages sheet. Only new photos are retained; no Drive permission is needed.</p>' +
       '</div>', [
       { label: 'Save settings', primary: true, onClick: function (w) {
@@ -895,16 +903,21 @@
     api('search', { filters: { entryId: entryId, limit: 1 } }).then(function (res) {
       var row = (res.data && res.data.logs && res.data.logs[0]) || null;
       if (!row) { toast('Entry not found.'); return; }
+      var detail = [];
+      if (row.sheet) detail.push(esc(row.sheet));
+      if (row.transactionId) detail.push('Transaction ' + esc(row.transactionId));
+      if (row.entryId) detail.push('Entry ' + esc(row.entryId));
       var wrap = openModal('Edit entry', '<div class="feature-form">' +
-        '<label>Merchant</label><input data-e-merchant value="' + esc(row.merchant) + '">' +
-        '<label>Description</label><input data-e-desc value="' + esc(row.description) + '">' +
+        '<label>Merchant</label><input data-e-merchant dir="auto" maxlength="160" value="' + esc(row.merchant) + '">' +
+        '<label>Description</label><input data-e-desc dir="auto" maxlength="500" value="' + esc(row.description) + '">' +
         '<div class="row2"><div><label>Amount</label><input data-e-amount type="number" step="0.01" value="' + esc(row.amount) + '"></div>' +
         '<div><label>Type</label><select data-e-type>' + TYPES.map(function (t) { return '<option' + (t === row.type ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div></div>' +
         '<div class="row2"><div><label>Category</label><select data-e-cat>' + CATEGORIES.map(function (c) { return '<option' + (c === row.category ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
         '<div><label>Member</label><select data-e-member><option value="">Household</option>' + state.household.map(function (m) { return '<option' + (m.name === row.member ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select></div></div>' +
-        '<label>Tags</label><input data-e-tags value="' + esc(row.tags) + '">' +
-        '<label><input type="checkbox" data-e-reimb ' + (row.reimbursable === 'Yes' ? 'checked' : '') + '> Reimbursable</label>' +
-        '<label><input type="checkbox" data-e-reimbursed ' + (row.reimbursed === 'Yes' ? 'checked' : '') + '> Reimbursed</label>' +
+        '<label>Tags</label><input data-e-tags dir="auto" maxlength="120" value="' + esc(row.tags) + '">' +
+        '<label class="meta-check"><input type="checkbox" data-e-reimb ' + (row.reimbursable === 'Yes' ? 'checked' : '') + '> Reimbursable</label>' +
+        '<label class="meta-check"><input type="checkbox" data-e-reimbursed ' + (row.reimbursed === 'Yes' ? 'checked' : '') + '> Reimbursed</label>' +
+        (detail.length ? '<p class="entry-detail-meta">' + detail.join(' · ') + '</p>' : '') +
         '<div class="feature-error" data-e-error></div></div>', [
         { label: 'Save changes', primary: true, onClick: function (w) {
           var patch = {
@@ -950,7 +963,44 @@
   }
 
   /* ---------- search ---------- */
+  var searchTicket = 0;
+  function histFilterValue(id) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || '') : '';
+  }
+  function activeHistFilters() {
+    var n = 0;
+    var t = histFilterValue('hist-type');
+    if (t && t !== 'All') n++;
+    var c = histFilterValue('hist-category');
+    if (c && c !== 'All') n++;
+    var m = histFilterValue('hist-member');
+    if (m && m !== 'All') n++;
+    if (histFilterValue('hist-reimb')) n++;
+    return n;
+  }
+  function paintHistFilterCount() {
+    var n = activeHistFilters();
+    var badge = document.getElementById('hist-filter-count');
+    if (badge) {
+      badge.textContent = String(n);
+      badge.classList.toggle('hidden', n === 0);
+    }
+    var btn = document.getElementById('hist-filter-toggle');
+    if (btn) btn.setAttribute('aria-label', n ? 'Filters, ' + n + ' active' : 'Filters');
+  }
+  function toggleHistFilters(open) {
+    var panel = document.getElementById('history-filter-panel');
+    var btn = document.getElementById('hist-filter-toggle');
+    if (!panel || !btn) return;
+    var next = typeof open === 'boolean' ? open : panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !next);
+    btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+  }
   function runSearch() {
+    paintHistFilterCount();
+    searchTicket++;
+    var ticket = searchTicket;
     var filters = {
       q: (document.getElementById('hist-search') || {}).value || '',
       type: (document.getElementById('hist-type') || {}).value || 'All',
@@ -962,31 +1012,63 @@
     state.searchActive = true;
     var sub = document.getElementById('history-sub');
     var applyBtn = document.getElementById('hist-apply');
-    if (sub) sub.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Searching…';
-    if (applyBtn) { applyBtn.disabled = true; applyBtn.__orig = applyBtn.textContent; applyBtn.textContent = 'Searching…'; }
+    var noResults = document.getElementById('history-noresults');
+    var baseEmpty = document.getElementById('history-empty');
+    if (sub) {
+      sub.classList.remove('hidden');
+      sub.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Searching…';
+    }
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.setAttribute('aria-busy', 'true'); }
     api('search', { filters: filters }).then(function (res) {
-      var logs = (res.data && res.data.logs) || [];
+      if (ticket !== searchTicket) return;
+      var data = (res && res.data) || {};
+      var logs = Array.isArray(data.logs) ? data.logs : [];
+      var total = Math.max(Number(data.total || 0), logs.length);
       if (window.cfRenderLogs) window.cfRenderLogs(logs, false);
+      if (baseEmpty) baseEmpty.classList.add('hidden');
+      if (noResults) noResults.classList.toggle('hidden', logs.length > 0);
       if (sub) sub.textContent = logs.length
-        ? 'Showing ' + logs.length + ' of ' + (res.data.total || 0) + ' matching entries.'
+        ? 'Showing ' + Number(logs.length).toLocaleString('en-US') + ' of ' + total.toLocaleString('en-US') + ' matching entries.' +
+          (total > logs.length ? ' Refine the search to narrow it.' : '')
         : 'No entries match these filters.';
       var more = document.getElementById('history-more');
       if (more) more.classList.add('hidden');
       var load = document.getElementById('history-load');
       if (load) load.classList.add('hidden');
     }).catch(function (e) {
-      if (sub) sub.textContent = 'Search failed: ' + e.message;
+      if (ticket !== searchTicket) return;
+      if (typeof cfAuthError === 'function' && cfAuthError(e)) {
+        try { cfNoteAuthExpired(); } catch (e2) {}
+        return;
+      }
+      var msg = typeof cfCleanError === 'function' ? cfCleanError(e) : (e && e.message ? e.message : String(e));
+      var offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      if (noResults) noResults.classList.add('hidden');
+      if (sub) {
+        sub.classList.remove('hidden');
+        sub.textContent = offline
+          ? 'Couldn’t search. You’re offline. Reconnect, then try again.'
+          : 'Couldn’t search. ' + msg.replace(/[.!?]$/, '') + '. Try again.';
+      }
     }).then(function () {
-      if (applyBtn) { applyBtn.disabled = false; if (applyBtn.__orig) applyBtn.textContent = applyBtn.__orig; delete applyBtn.__orig; }
+      if (ticket !== searchTicket) return;
+      if (applyBtn) { applyBtn.disabled = false; applyBtn.removeAttribute('aria-busy'); }
     });
   }
   function clearSearch() {
     state.searchActive = false;
+    searchTicket++;
     ['hist-search', 'hist-type', 'hist-category', 'hist-member', 'hist-reimb'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
       el.value = (id === 'hist-type' || id === 'hist-category' || id === 'hist-member') ? 'All' : '';
     });
+    paintHistFilterCount();
+    toggleHistFilters(false);
+    var noResults = document.getElementById('history-noresults');
+    if (noResults) noResults.classList.add('hidden');
+    var toggle = document.getElementById('hist-filter-toggle');
+    try { if (toggle) toggle.focus(); } catch (e) {}
     var load = document.getElementById('history-load');
     if (load) load.classList.remove('hidden');
     var refresh = document.getElementById('history-refresh');
@@ -995,7 +1077,7 @@
 
   function openQuickText() {
     var wrap = openModal('Log a single line', '<div class="feature-form"><label>Describe the transaction</label>' +
-      '<textarea data-qt-note placeholder="Coffee 35k this morning, or salary 5jt" maxlength="500"></textarea>' +
+      '<textarea data-qt-note dir="auto" placeholder="Coffee 35k this morning, or salary 5jt" maxlength="500"></textarea>' +
       '<p class="empty-note">Gemini turns this sentence into an entry using the currency, tags, member, and reimbursement settings above.</p>' +
       '<div class="feature-error" data-qt-error></div></div>', [
       { label: 'Cancel', onClick: closeModal },
@@ -1010,7 +1092,7 @@
           try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
         }).catch(function (e) {
           modalBusy(w, false);
-          modalError(w, e.message || String(e));
+          modalError(w, typeof cfCleanError === 'function' ? cfCleanError(e) : (e.message || String(e)));
         });
       } }
     ]);
@@ -1110,7 +1192,18 @@
     add('feature-settings-btn', 'click', openSettings);
     add('hist-apply', 'click', runSearch);
     add('hist-clear', 'click', clearSearch);
+    add('history-noresults-clear', 'click', clearSearch);
+    add('hist-filter-toggle', 'click', function () { toggleHistFilters(); });
     add('hist-search', 'keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
+    add('hist-search', 'search', function () {
+      var el = document.getElementById('hist-search');
+      if (el && !el.value) runSearch();
+    });
+    ['hist-type', 'hist-category', 'hist-member', 'hist-reimb'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function () { paintHistFilterCount(); runSearch(); });
+    });
+    paintHistFilterCount();
 
     var cat = document.getElementById('hist-category');
     if (cat) cat.innerHTML = '<option value="All">All categories</option>' + CATEGORIES.map(function (c) {
