@@ -29,6 +29,9 @@
       var histMore = document.getElementById('history-more');
       var histRefresh = document.getElementById('history-refresh');
       var histSub = document.getElementById('history-sub');
+      var histEmpty = document.getElementById('history-empty');
+      var histFilters = document.getElementById('history-filters');
+      var histEmptyBtn = document.getElementById('history-empty-btn');
       var trashBtn = document.getElementById('trash-btn');
       var householdBtn = document.getElementById('household-btn');
       var sessionsBtn = document.getElementById('sessions-btn');
@@ -106,11 +109,12 @@
         try { window.dispatchEvent(new CustomEvent('cf:unlocked')); } catch (e) {}
         checkSpreadsheetAndKey();
         // Access state is only ever shown after the server confirms it. Until
-        // then the pill reads "Access unknown" (see paintAccessPill).
+        // then the pill reads "Access not checked" (see paintAccessPill).
         refreshAccessStatus();
-        // Warm the first history page after the UI is interactive. Deferred
-        // so unlock and the entry form never wait on it; silent by design.
-        deferIdle(function () { prefetchPage(0); });
+        // Show the first history page after the UI is interactive. Deferred
+        // so unlock and the entry form never wait on it; a first run shows the
+        // empty state instead of a manual "show entries" step.
+        deferIdle(function () { showFirstPage(); });
         refreshSessionState();
       }
       function lockToLogin(msg) {
@@ -206,13 +210,20 @@
       // Change PIN modal (session + old PIN required server-side)
       function openModal() {
         if (!modal) return;
+        modal._returnFocus = document.activeElement;
         modal.classList.remove('hidden');
         var e2 = document.getElementById('pin-change-error');
         if (e2) e2.textContent = '';
         ['pin-old', 'pin-new', 'pin-new2'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
         try { var f = document.getElementById('pin-old'); if (f) f.focus(); } catch (e) {}
       }
-      function closeModal() { if (modal) modal.classList.add('hidden'); }
+      function closeModal() {
+        if (!modal || modal.classList.contains('hidden')) return;
+        var back = modal._returnFocus;
+        modal._returnFocus = null;
+        modal.classList.add('hidden');
+        try { if (back && back.focus) back.focus(); } catch (e) {}
+      }
       if (changeBtn) changeBtn.addEventListener('click', openModal);
       var cancelBtn = document.getElementById('pin-change-cancel');
       if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
@@ -265,13 +276,20 @@
       }
       function openApiModal(msg) {
         if (!apiModal) return;
+        apiModal._returnFocus = document.activeElement;
         paintApiText();
         if (apiError) apiError.textContent = msg || '';
         if (apiInput) apiInput.value = '';
         apiModal.classList.remove('hidden');
         try { if (apiInput) apiInput.focus(); } catch (e) {}
       }
-      function closeApiModal() { if (apiModal) apiModal.classList.add('hidden'); }
+      function closeApiModal() {
+        if (!apiModal || apiModal.classList.contains('hidden')) return;
+        var back = apiModal._returnFocus;
+        apiModal._returnFocus = null;
+        apiModal.classList.add('hidden');
+        try { if (back && back.focus) back.focus(); } catch (e) {}
+      }
       function setApiKeyLabel(has) {
         if (!apiBtn) return;
         apiHasKey = !!has;
@@ -352,13 +370,28 @@
       }
       function openSheetModal(msg) {
         if (!sheetModal) return;
+        sheetModal._returnFocus = document.activeElement;
         paintSheetText();
         if (sheetError) sheetError.textContent = msg || '';
         if (sheetInput) sheetInput.value = '';
         sheetModal.classList.remove('hidden');
         try { if (sheetInput) sheetInput.focus(); } catch (e) {}
       }
-      function closeSheetModal() { if (sheetModal) sheetModal.classList.add('hidden'); }
+      function closeSheetModal() {
+        if (!sheetModal || sheetModal.classList.contains('hidden')) return;
+        var back = sheetModal._returnFocus;
+        sheetModal._returnFocus = null;
+        sheetModal.classList.add('hidden');
+        try { if (back && back.focus) back.focus(); } catch (e) {}
+      }
+      // The three small configuration dialogs share one Escape path; each closes
+      // only itself and returns focus to whatever opened it.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (modal && !modal.classList.contains('hidden')) { closeModal(); return; }
+        if (apiModal && !apiModal.classList.contains('hidden')) { closeApiModal(); return; }
+        if (sheetModal && !sheetModal.classList.contains('hidden')) { closeSheetModal(); return; }
+      });
       function setSheetLabel(has) {
         if (!sheetBtn) return;
         sheetHasValue = !!has;
@@ -380,7 +413,7 @@
         var mode = s.verified && s.access === 'public' ? 'public'
           : (s.verified && s.access === 'private' ? 'private' : 'unknown');
         var text = mode === 'public' ? 'Public'
-          : (mode === 'private' ? 'Private' : 'Access unknown');
+          : (mode === 'private' ? 'Private' : 'Access not checked');
         if (dot) dot.className = 'dot ' + mode;
         if (label) {
           label.textContent = text;
@@ -681,13 +714,17 @@
       var infoClose = document.getElementById('info-close');
       var infoReturnFocus = null;
       var infoCopy = {
-        entry: { title: 'How logging works', body: 'The app reads the printed total first, then extracts line items and checks their sum. A mismatch gets a bounded repair. Unreadable totals or unresolved mismatches stay available for review unless Table Layout Force-save is enabled with a reliable total. You can also log a typed note without a photo.' },
-        reconciliation: { title: 'Reconciliation options', body: 'Receipts whose extracted items match the printed total are saved. A mismatch gets a repair first. With Force-save off, an unresolved mismatch waits for review. With Force-save on, a reliably read printed total can be balanced by one clearly labeled line after repair. An unreadable total is never force-saved.' },
+        entry: { title: 'How logging works', body: 'The app reads the printed total on each receipt first, then the items, and checks that they add up. If they don’t, it checks again. Anything it still can’t confirm stays here for you to review. You can also log a note without a photo.' },
+        reconciliation: { title: 'Receipt check', body: 'If the items add up to the printed total, the entry is saved. If they don’t, the app checks again. With Save anyway off, anything still unmatched waits here for review. With Save anyway on, a total that was clearly readable can be balanced with one labeled line after the check. A total that could not be read is never saved this way.' },
         photos: { title: 'Receipt photos', body: 'Supported formats: JPG, PNG, WEBP, and HEIC. Camera captures one new photo at a time. Use Gallery to select multiple existing photos.' },
         note: { title: 'Notes', body: 'The note applies to all selected photos. To describe individual receipts, use wording such as “first photo is a top-up; third photo is food for a friend”.' },
-        'one-row': { title: 'One row per receipt', body: 'Each receipt is written as one spreadsheet row at its reliably read printed total. Its item detail is preserved in Notes. Quantity and unit price are included only when they were clearly readable on the receipt.' }
+        'one-row': { title: 'One entry per receipt', body: 'Each receipt is written as one spreadsheet row at its reliably read printed total. Its item detail is preserved in Notes. Quantity and unit price are included only when they were clearly readable on the receipt.' }
       };
       function syncSpecialModalScrollLock() {
+        if (typeof window.cfSyncModalScrollLock === 'function') {
+          window.cfSyncModalScrollLock();
+          return;
+        }
         var sessionOpen = sessModal && !sessModal.classList.contains('hidden');
         var infoOpen = infoModal && !infoModal.classList.contains('hidden');
         document.body.classList.toggle('modal-open', !!(sessionOpen || infoOpen));
@@ -757,6 +794,7 @@
       // Generic confirm dialog. Resolves true on explicit confirm, false on
       // cancel/backdrop/Escape. Never destructive on its own.
       var confirmResolve = null;
+      var confirmReturnFocus = null;
       function openConfirmModal(opts) {
         opts = opts || {};
         if (!confirmModal) return Promise.resolve(false);
@@ -768,12 +806,17 @@
           confirmOk.disabled = false;
         }
         if (confirmError) confirmError.textContent = '';
+        confirmReturnFocus = document.activeElement;
         confirmModal.classList.remove('hidden');
         try { if (confirmCancel) confirmCancel.focus(); } catch (e) {}
         return new Promise(function (resolve) { confirmResolve = resolve; });
       }
       function closeConfirmModal(result) {
+        var wasOpen = confirmModal && !confirmModal.classList.contains('hidden');
         if (confirmModal) confirmModal.classList.add('hidden');
+        var back = confirmReturnFocus;
+        confirmReturnFocus = null;
+        if (wasOpen) { try { if (back && back.focus) back.focus(); } catch (e) {} }
         if (typeof confirmResolve === 'function') {
           var r = confirmResolve;
           confirmResolve = null;
@@ -800,6 +843,7 @@
       // Trash / recovery view (unified screen, two filter sections).
       var trashFilter = 'entries';
       var trashGroupsCache = [];
+      var trashReturnFocus = null;
       function setTrashFilter(f) {
         trashFilter = (f === 'transactions') ? 'transactions' : 'entries';
         if (trashFilterEntries) trashFilterEntries.setAttribute('aria-selected', trashFilter === 'entries' ? 'true' : 'false');
@@ -808,13 +852,20 @@
       }
       function openTrashModal(filter) {
         if (!trashModal) return;
+        trashReturnFocus = document.activeElement;
         if (trashTitle) trashTitle.textContent = 'Trash — recover deleted items';
         trashModal.classList.remove('hidden');
         setTrashFilter(filter || 'entries');
         refreshTrashList();
         try { if (trashClose) trashClose.focus(); } catch (e) {}
       }
-      function closeTrashModal() { if (trashModal) trashModal.classList.add('hidden'); }
+      function closeTrashModal() {
+        if (!trashModal || trashModal.classList.contains('hidden')) return;
+        trashModal.classList.add('hidden');
+        var back = trashReturnFocus;
+        trashReturnFocus = null;
+        try { if (back && back.focus) back.focus(); } catch (e) {}
+      }
       function trashRowBusy(btn, busy) { cfBusyBtn(btn, busy, busy ? 'Restoring…' : null); }
       function refreshTrashList() {
         if (!trashList) return;
@@ -926,7 +977,7 @@
             noteHistoryMutated();
             try {
               setStatus(g.type === 'transaction'
-                ? 'Receipt restored (' + (res && res.restored) + ' rows).'
+                ? 'Receipt restored (' + (res && res.restored) + ' entries).'
                 : 'Entry restored.', 'success');
             } catch (e) {}
           }, function (err) {
@@ -1015,7 +1066,10 @@
             '</div></div>'
           );
         });
-        if (!parts.length) return;
+        if (!parts.length) {
+          if (!append) histList.innerHTML = '';
+          return;
+        }
         var markup = parts.join('');
         if (append) histList.insertAdjacentHTML('beforeend', markup);
         else histList.innerHTML = markup;
@@ -1142,7 +1196,7 @@
           histBusy(btn, false);
           info = info || {};
           if (!info.hasLiveRows) {
-            try { setStatus('No live rows carry that Transaction ID - it may already be in Trash.', 'error'); } catch (e) {}
+            try { setStatus('No live entries carry that Transaction ID — it may already be in Trash.', 'error'); } catch (e) {}
             noteHistoryMutated();
             return;
           }
@@ -1160,7 +1214,7 @@
             cfCall('deleteTransaction', [sessionToken, txnId, opId]).then(function (res) {
               histBusy(btn, false);
               try {
-                setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' rows). Recover it within 7 days.', 'success');
+                setStatus('Receipt moved to Trash (' + ((res && res.moved) || n) + ' entries). Recover it within 7 days.', 'success');
               } catch (e) {}
               noteHistoryMutated();
               refreshTrashIfOpen();
@@ -1272,8 +1326,8 @@
       // the cache alone. Same-scope callers use this directly; other scopes
       // announce through the cf:history-changed event below.
       function noteHistoryMutated() {
-        var visible = false;
-        try { visible = histOffset > 0; } catch (e) {}
+        var card = document.getElementById('history-card');
+        var visible = !!(card && !card.classList.contains('hidden'));
         invalidateHistCache();
         if (visible) fetchHistory(true);
       }
@@ -1285,19 +1339,31 @@
       function announceHistoryChanged() {
         try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
       }
+      function paintHistoryEmpty(isEmpty) {
+        if (histEmpty) histEmpty.classList.toggle('hidden', !isEmpty);
+        if (histFilters) histFilters.classList.toggle('hidden', isEmpty);
+        if (histSub) histSub.classList.toggle('hidden', isEmpty);
+        if (isEmpty) {
+          if (histLoad) histLoad.classList.add('hidden');
+          if (histMore) histMore.classList.add('hidden');
+        }
+      }
       function renderHistPage(res, append) {
         var logs = res.logs || [];
+        var total = Number(res.total || 0);
         renderLogs(logs, append);
         if (!append) histOffset = 0;
         histOffset += logs.length;
-        histSub.textContent = 'Showing ' + histOffset + ' of ' + (res.total || 0) + ' rows.';
+        histSub.textContent = total > 0
+          ? 'Showing ' + histOffset + ' of ' + total + ' entries.'
+          : 'Newest first, from all months.';
+        paintHistoryEmpty(total === 0);
         if (res.hasMore) {
           histMore.classList.remove('hidden');
           histLoad.classList.add('hidden');
         } else {
           histMore.classList.add('hidden');
           if (histOffset > 0) histLoad.classList.add('hidden');
-          if (histOffset === 0) histSub.textContent = 'No logged rows yet.';
         }
       }
       function fetchHistory(reset) {
@@ -1323,10 +1389,10 @@
             var err = page && page.error;
             if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
               try { cfNoteAuthExpired(); } catch (e) {}
-              try { setStatus('Session expired - please log in again.', 'error'); } catch (e2) {}
+              try { setStatus('Your session expired. Enter your PIN again.', 'error'); } catch (e2) {}
               return;
             }
-            try { setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e3) {}
+            try { setStatus('Couldn’t load entries. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error'); } catch (e3) {}
             return;
           }
           renderHistPage(page, !reset);
@@ -1377,6 +1443,14 @@
       if (histLoad) histLoad.addEventListener('click', function () { showFirstPage(); });
       if (histMore) histMore.addEventListener('click', function () { showNextPage(); });
       if (histRefresh) histRefresh.addEventListener('click', function () { refreshHistory(); });
+      if (histEmptyBtn) histEmptyBtn.addEventListener('click', function () {
+        var card = document.querySelector('.shell > .card');
+        try { if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+        var zone = document.getElementById('upload-zone');
+        if (zone && zone.focus) {
+          try { zone.focus({ preventScroll: true }); } catch (e2) { try { zone.focus(); } catch (e3) {} }
+        }
+      });
 
       // Boot: PIN paints first (already visible). A stored unexpired token
       // auto-loads the actual page; otherwise stay on the PIN screen.

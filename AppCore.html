@@ -38,6 +38,97 @@
       previewUrlCache.delete(file);
       try { URL.revokeObjectURL(url); } catch (e) {}
     }
+
+    /* ---------- Shared dialog resilience: focus containment + scroll lock ---------- */
+    var CF_DIALOG_SELECTORS = ['#feature-modal', '#info-modal', '#confirm-modal', '#trash-modal',
+      '#sess-modal', '#api-modal', '#sheet-modal', '#pin-modal', '#lock-screen', '.lightbox.open'];
+    function cfVisible(el) {
+      if (!el || !el.getClientRects) return false;
+      if (el.hasAttribute('disabled') || el.getAttribute('aria-hidden') === 'true') return false;
+      try { if (el.closest('[inert]')) return false; } catch (e) {}
+      var cs = null;
+      try { cs = getComputedStyle(el); } catch (e) {}
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+      return el.getClientRects().length > 0;
+    }
+    function cfDialogList() {
+      var list = [];
+      CF_DIALOG_SELECTORS.forEach(function (sel) {
+        var nodes = document.querySelectorAll(sel);
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          if (el.classList.contains('hidden') || el.hasAttribute('inert')) continue;
+          if (cfVisible(el)) list.push(el);
+        }
+      });
+      return list;
+    }
+    function cfTopDialog() {
+      var list = cfDialogList();
+      return list.length ? list[list.length - 1] : null;
+    }
+    function cfFocusable(root) {
+      if (!root) return [];
+      var nodes = root.querySelectorAll('a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]');
+      var out = [];
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.tagName === 'INPUT' && el.type === 'hidden') continue;
+        if (el.getAttribute && el.getAttribute('tabindex') === '-1') continue;
+        if (!cfVisible(el)) continue;
+        out.push(el);
+      }
+      return out;
+    }
+    function cfSyncModalScrollLock() {
+      document.body.classList.toggle('modal-open', !!cfTopDialog());
+    }
+    window.cfSyncModalScrollLock = cfSyncModalScrollLock;
+    // One document-level Tab guard keeps every dialog usable from the keyboard,
+    // including dialogs created later (feature modal, confirmations, lightboxes).
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Tab') return;
+      var open = cfDialogList();
+      if (!open.length) return;
+      var dialog = null;
+      for (var i = open.length - 1; i >= 0; i--) {
+        if (open[i].contains(document.activeElement)) { dialog = open[i]; break; }
+      }
+      if (!dialog) dialog = open[open.length - 1];
+      var items = cfFocusable(dialog);
+      if (!items.length) { e.preventDefault(); return; }
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (!dialog.contains(document.activeElement)) {
+        e.preventDefault();
+        try { first.focus(); } catch (e2) {}
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        try { last.focus(); } catch (e3) {}
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        try { first.focus(); } catch (e4) {}
+      }
+    });
+    // Modal open/close is spread across four files; observe visibility changes and
+    // keep the body scroll lock truthful without editing every opener.
+    (function observeDialogVisibility() {
+      if (typeof MutationObserver === 'undefined') return;
+      var queued = false;
+      function sync() {
+        if (queued) return;
+        queued = true;
+        setTimeout(function () { queued = false; cfSyncModalScrollLock(); }, 0);
+      }
+      try {
+        new MutationObserver(sync).observe(document.body, {
+          subtree: true, childList: true, attributes: true,
+          attributeFilter: ['class', 'hidden', 'inert', 'style']
+        });
+      } catch (e) {}
+    })();
     function releaseAllPreviewUrls() {
       previewUrlCache.forEach(function (url) { try { URL.revokeObjectURL(url); } catch (e) {} });
       previewUrlCache.clear();
@@ -274,9 +365,12 @@
       if (!selectedFiles.length) return;
       lbIndex = Math.max(0, Math.min(i, selectedFiles.length - 1));
       showLbPhoto();
+      lightbox._returnFocus = document.activeElement;
       lightbox.classList.add('open');
-      document.body.style.overflow = 'hidden';
-      document.getElementById('lightbox-close').focus();
+      lightbox.removeAttribute('inert');
+      lightbox.setAttribute('aria-hidden', 'false');
+      cfSyncModalScrollLock();
+      try { document.getElementById('lightbox-close').focus(); } catch (e) {}
     }
     function showLbPhoto() {
       lightboxImg.src = previewUrlFor(selectedFiles[lbIndex]);
@@ -289,8 +383,13 @@
     function closeLightbox() {
       if (!lightbox.classList.contains('open')) return;
       lightbox.classList.remove('open');
-      document.body.style.overflow = '';
+      lightbox.setAttribute('inert', '');
+      lightbox.setAttribute('aria-hidden', 'true');
       lightboxImg.src = '';
+      cfSyncModalScrollLock();
+      var back = lightbox._returnFocus;
+      lightbox._returnFocus = null;
+      try { if (back && back.focus) back.focus(); } catch (e) {}
     }
     function stepLightbox(d) {
       var n = lbIndex + d;
@@ -334,7 +433,7 @@
       var noteText = noteEl.value.trim();
 
       if (selectedFiles.length === 0 && !noteText) {
-        setStatus('Add a photo or a description first.', 'error');
+        setStatus('Add a photo or a note first.', 'error');
         return;
       }
 
@@ -347,9 +446,9 @@
       submitBtn.disabled = true;
       submitLabel.textContent = 'Saving…';
       if (selectedFiles.length > 1) {
-        setStatus('Reading ' + selectedFiles.length + ' receipts in one pass…', '');
+        setStatus('Reading ' + selectedFiles.length + ' receipts…', '');
       } else {
-        setStatus('Processing…', '');
+        setStatus('Working…', '');
       }
 
       if (selectedFiles.length > 0) {
@@ -370,7 +469,7 @@
             failed = true;
             submitBtn.disabled = false;
             submitLabel.textContent = 'Log entry';
-            setStatus('Could not read photo ' + (idx + 1) + '. Try again.', 'error');
+            setStatus('Couldn’t read photo ' + (idx + 1) + '. Try again.', 'error');
           };
           reader.readAsDataURL(file);
         });
@@ -527,7 +626,7 @@
         cfEngineSubmit({
           rows: rows,
           sessionToken: sessionToken,
-          // Quick-Input (this panel) always force-saves; see cfEngineSubmit.
+          // Receipt photos (this panel) always force-save; see cfEngineSubmit.
           quickForce: true,
           forceDuplicate: !!meta.allowDuplicate,
           oneRowPerReceipt: oneRow,
@@ -568,15 +667,15 @@
           (report.rows || []).forEach(function (r) {
             if (r.status === 'logged' || r.duplicate) return;
             if (r.status === 'force-adjusted') {
-              parts.push('Adjusted row (' + (r.transactionId || '?') + '): ' + (r.message || ''));
+              parts.push('Saved with an adjustment (' + (r.transactionId || '?') + '): ' + (r.message || ''));
             } else {
-              parts.push(r.message || 'Row needs review.');
+              parts.push(r.message || 'This entry needs review.');
             }
           });
           var okN = (counts.logged || 0) + (counts.forceAdjusted || 0);
           if (okN > 0) {
             var msg = 'Logged ' + okN + ' receipt' + (okN === 1 ? '' : 's');
-            if (counts.forceAdjusted) msg += ' (includes a clearly marked balancing line - please verify)';
+            if (counts.forceAdjusted) msg += ' (includes a clearly marked adjustment — please check it)';
             msg += '.';
             if (parts.length) msg += ' ' + parts.join(' ');
             var hasUnresolved = (report.rows || []).some(function (r) {
@@ -584,7 +683,7 @@
             });
             onSuccess(msg, hasUnresolved);
           } else {
-            onFailure({ message: parts.join(' ') || 'Nothing was logged.' });
+            onFailure({ message: parts.join(' ') || 'Nothing was saved.' });
             return;
           }
           if (report.sortEligible) {
@@ -622,29 +721,29 @@
       submitBtn.disabled = false;
       submitLabel.textContent = 'Log entry';
       if (typeof cfIsAuthError === 'function' && cfIsAuthError(err)) {
-        setStatus('Session expired - please log in again.', 'error');
+        setStatus('Your session expired. Enter your PIN again.', 'error');
         try { cfNoteAuthExpired(); } catch (e) {}
         return;
       }
       if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
-        setStatus('Gemini API key is missing - please add it.', 'error');
+        setStatus('No Gemini API key yet. Add it in Settings → Set API key.', 'error');
         try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
         return;
       }
       if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
-        setStatus('Google Sheet is not set - please add it.', 'error');
+        setStatus('No Google Sheet connected. Add it in Settings → Set Sheet.', 'error');
         try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
         return;
       }
       if ((!navigator.onLine || /failed to fetch|network|timed? ?out/i.test(String((err && err.message) || err))) &&
           typeof window.cfQueueOffline === 'function') {
         window.cfQueueOffline();
-        setStatus('Connection lost. The entry is saved on this device and can be sent when you are back online.', 'success');
+        setStatus('Connection lost. Your entry is saved on this device and can be sent when you are back online.', 'success');
         return;
       }
-      setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
+      setStatus('Couldn’t log this entry. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : (err && err.message ? err.message : err)), 'error');
       if (typeof window.cfShowRetry === 'function') {
-        try { window.cfShowRetry('The batch did not finish. Your draft is saved.'); } catch (e2) {}
+        try { window.cfShowRetry('That didn’t finish. Your draft is saved.'); } catch (e2) {}
       }
     }
 
@@ -727,7 +826,6 @@
         var text = hidden ? 'Show intro' : 'Hide intro';
         if (label) label.textContent = text;
         else btn.textContent = text;
-        btn.setAttribute('aria-pressed', hidden ? 'true' : 'false');
       }
       var localHidden = false;
       try { localHidden = localStorage.getItem('cf-hero-hidden') === '1'; } catch (e) {}
@@ -770,29 +868,62 @@
       var menu = document.getElementById('settings-menu');
       if (!btn || !menu) return;
       function isOpen() { return !menu.classList.contains('hidden'); }
+      function visibleItems() {
+        return Array.prototype.filter.call(menu.querySelectorAll('.menu-item'), function (item) {
+          return !item.classList.contains('hidden');
+        });
+      }
       function open() {
         menu.classList.remove('hidden');
         btn.setAttribute('aria-expanded', 'true');
+        var items = visibleItems();
+        if (items.length) { try { items[0].focus(); } catch (e) {} }
       }
-      function close() {
+      function close(restoreFocus) {
+        if (!isOpen()) return;
         menu.classList.add('hidden');
         btn.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) { try { btn.focus(); } catch (e) {} }
       }
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        if (isOpen()) close();
+        if (isOpen()) close(false);
         else open();
       });
       menu.addEventListener('click', function (e) { e.stopPropagation(); });
-      document.addEventListener('click', function () { if (isOpen()) close(); });
+      document.addEventListener('click', function () { if (isOpen()) close(false); });
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && isOpen()) { close(); try { btn.focus(); } catch (e2) {} }
+        if (e.key === 'Escape' && isOpen()) close(true);
+      });
+      menu.addEventListener('keydown', function (e) {
+        var items = visibleItems();
+        if (!items.length) return;
+        var at = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          try { items[(at + 1) % items.length].focus(); } catch (e2) {}
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          try { items[(at - 1 + items.length) % items.length].focus(); } catch (e3) {}
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          try { items[0].focus(); } catch (e4) {}
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          try { items[items.length - 1].focus(); } catch (e5) {}
+        } else if (e.key === 'Tab') {
+          close(false);
+        }
       });
       // Close the popup after choosing an item; the item's own handler still runs.
+      // Focus returns to the gear first, so a dialog opened by the item captures
+      // the gear as its own return target.
       menu.querySelectorAll('.menu-item').forEach(function (item) {
-        item.addEventListener('click', function () { close(); });
+        item.addEventListener('click', function () {
+          close(true);
+        });
       });
-      window.addEventListener('cf:close-settings', close);
+      window.addEventListener('cf:close-settings', function () { close(false); });
     })();
 
     /* Pill tabs */
@@ -809,16 +940,32 @@
         btnT.classList.toggle('active', !isStd);
         btnS.setAttribute('aria-selected', isStd ? 'true' : 'false');
         btnT.setAttribute('aria-selected', !isStd ? 'true' : 'false');
+        btnS.tabIndex = isStd ? 0 : -1;
+        btnT.tabIndex = isStd ? -1 : 0;
         panelS.classList.toggle('active', isStd);
         panelT.classList.toggle('active', !isStd);
         if (recon) recon.classList.toggle('hidden', isStd);
       }
+      var tabs = [btnS, btnT];
+      tabs.forEach(function (tab, i) {
+        tab.addEventListener('keydown', function (e) {
+          var next = null;
+          if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = tabs[(i + 1) % tabs.length];
+          else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = tabs[(i - 1 + tabs.length) % tabs.length];
+          else if (e.key === 'Home') next = tabs[0];
+          else if (e.key === 'End') next = tabs[tabs.length - 1];
+          if (!next) return;
+          e.preventDefault();
+          try { next.focus(); } catch (e2) {}
+          next.click();
+        });
+      });
       btnS.addEventListener('click', function () { show('standard'); });
       btnT.addEventListener('click', function () { show('table'); });
-      show('table'); // Table Layout is the default workflow on first load
+      show('standard'); // Receipt photos is the default workflow on first load
     })();
 
-    /* Shared two-phase submission engine (Table Layout + Standard image flows).
+    /* Shared two-phase submission engine (Manual rows + Receipt photos flows).
        Sequential bounded server calls: plan -> Phase 1 batches -> Phase 2
        batches -> triage -> one bounded repair -> commit -> (separate) sort.
        Never concurrent; one Gemini generation request per batch per phase. */
@@ -929,7 +1076,7 @@
             var half = Math.ceil(job.rows.length / 2);
             queue.unshift({ rows: job.rows.slice(half), depth: job.depth + 1 });
             queue.unshift({ rows: job.rows.slice(0, half), depth: job.depth + 1 });
-            progress('Batch too large - split ' + job.rows.length + ' rows (' + half + ' + ' + (job.rows.length - half) + ') and retrying.');
+            progress('That was too much at once. Splitting it up and trying again.');
           }
           return pump();
         });
@@ -943,15 +1090,15 @@
       var token = opts.sessionToken;
       var progress = opts.progress || function () {};
       var submissionId = cfUuid();
-      // Quick-Input always force-saves: the mode is for speed, not detailed
+      // Receipt photos always force-save: the mode is for speed, not detailed
       // ledgers. The saved toggle preferences are never touched; the override
       // applies to this submission only.
       var tg = opts.quickForce ? { forceLog: true } : cfReadToggles();
-      // One-row-per-receipt is a Quick-Input-only presentation option: it
+      // One-row-per-receipt is a Receipt photos-only presentation option: it
       // never changes triage, repair, or toggle policy, only how commit
       // writes verified rows to the sheet.
       var oneRowFlag = !!opts.oneRowPerReceipt;
-      // Quick-Input policy travels with every server call so the authoritative
+      // Receipt photos policy travels with every server call so the authoritative
       // triage/commit layer - not the client - decides what may be saved.
       var quickMode = !!opts.quickForce;
       var chain = Promise.resolve({ phase1ById: {}, okById: {}, failedById: {}, repairedTxnById: {} });
@@ -996,7 +1143,7 @@
           return { row_id: r.row_id, origNum: r.origNum, note: r.note, type: r.type,
                    hasPhoto: !!r.hasPhoto, imageBytes: r.file ? Math.ceil((r.file.size || 0) * 4 / 3) : String(r.data || '').length };
         });
-        progress('Planning ' + meta.length + ' row(s)…');
+        progress('Planning ' + meta.length + (meta.length === 1 ? ' entry…' : ' entries…'));
         return cfCall('planReceiptSubmission', [meta, token]);
       }).then(function (plan) {
         st.plan = plan;
@@ -1010,7 +1157,7 @@
         }).filter(function (l) { return l.length; });
         return cfRunBatchQueue(p1jobs, function (job, canSplit) {
           var batchRows = job.rows;
-          progress('Phase 1: reading totals (' + batchRows.length + ' photo row(s))…');
+          progress('Reading ' + batchRows.length + ' receipt' + (batchRows.length === 1 ? '' : 's') + '…');
           var reads = batchRows.map(function (r) {
             var getData = r.file ? cfReadFileBase64(r.file) : Promise.resolve(r.data || '');
             return getData.then(function (b64) { return { r: r, b64: b64 }; });
@@ -1021,16 +1168,17 @@
             });
             return cfCall('runPhase1Batch', [submissionId, payload, token]).then(function (res) {
               (res.results || []).forEach(function (one) { st.phase1ById[one.row_id] = one; });
-              progress('Phase 1: totals recorded for ' + (res.results || []).length + ' photo row(s).');
+              var readN = (res.results || []).length;
+              progress('Totals read for ' + readN + ' receipt' + (readN === 1 ? '' : 's') + '.');
               return {};
             }).catch(function (err) {
               if (cfAuthError(err)) throw err;
               if (cfSizeError(err) && canSplit) return { split: true };
               batchRows.forEach(function (r) {
-                st.failedById[r.row_id] = 'Total extraction failed for this batch: ' +
-                  ((err && err.message) || err) + ' Other batches continued.';
+                st.failedById[r.row_id] = 'Couldn’t read the printed total on this photo: ' +
+                  ((err && err.message) || err) + ' Other receipts continued.';
               });
-              progress('Phase 1: a batch failed; continuing with the rest.');
+              progress('Some totals could not be read. Continuing with the rest.');
               return {};
             });
           });
@@ -1050,7 +1198,7 @@
         }).filter(function (l) { return l.length; });
         return cfRunBatchQueue(p2jobs, function (job, canSplit) {
           var batchRows = job.rows;
-          progress('Phase 2: extracting lines (' + batchRows.length + ' row(s))…');
+          progress('Reading items for ' + batchRows.length + ' receipt' + (batchRows.length === 1 ? '' : 's') + '…');
             var reads = batchRows.map(function (r) {
               if (!r.hasPhoto) return Promise.resolve(null);
               if (st.failedById[r.row_id] || !st.phase1ById[r.row_id]) return Promise.resolve(null);
@@ -1066,7 +1214,7 @@
                   return;
                 }
                 if (!datas[k] || !st.phase1ById[r.row_id]) {
-                  st.failedById[r.row_id] = 'No printed total was recorded for this photo - nothing from this row was appended.';
+                  st.failedById[r.row_id] = 'No printed total was found on this photo. Nothing from this entry was saved.';
                   return;
                 }
                 payload.push({ row_id: r.row_id, origNum: r.origNum, forcedType: r.type, note: r.note,
@@ -1077,16 +1225,16 @@
               return cfCall('runPhase2Batch', [submissionId, payload, token]).then(function (res) {
                 (res.ok || []).forEach(function (o) { st.okById[o.row_id] = o.txn; });
                 (res.failed || []).forEach(function (f) { st.failedById[f.row_id] = f.error; });
-                progress('Phase 2: lines recorded for ' + payload.length + ' row(s).');
+                progress('Items read for ' + payload.length + ' receipt' + (payload.length === 1 ? '' : 's') + '.');
                 return {};
               }).catch(function (err) {
                 if (cfAuthError(err)) throw err;
                 if (cfSizeError(err) && canSplit) return { split: true };
                 payload.forEach(function (p) {
-                  st.failedById[p.row_id] = 'Line extraction failed for this batch: ' +
-                    ((err && err.message) || err) + ' Other batches continued.';
+                  st.failedById[p.row_id] = 'Couldn’t read the items on this receipt: ' +
+                    ((err && err.message) || err) + ' Other receipts continued.';
                 });
-                progress('Phase 2: a batch failed; continuing with the rest.');
+                progress('Some items could not be read. Continuing with the rest.');
                 return {};
               });
             });
@@ -1112,15 +1260,15 @@
           .then(function (res) { return { items: items, verdicts: res.rows || [] }; });
       }).then(function (tri) {
         // 5. bounded repair for eligible mismatches (grouped, budget-aware).
-        // Base pipeline runs one pass. Quick-Input retries rows that are
+        // Base pipeline runs one pass. Receipt photos retry rows that are
         // still mismatched up to two extra times; each extra round re-triages
         // the repaired results and only continues for readable-total
         // mismatches (server verdict), never for uncertain/review rows.
         var byId = {};
         tri.items.forEach(function (it) { byId[it.row_id] = it; });
         var QUICK_EXTRA_REPAIRS = 2;
-        function runRepairBatch(list, label) {
-          progress(label + ': re-checking ' + list.length + ' mismatched row(s)…');
+        function runRepairBatch(list) {
+          progress('Checking ' + list.length + ' ' + (list.length === 1 ? 'entry' : 'entries') + ' again…');
           var rjobs = [];
           for (var i = 0; i < list.length; i += 12) rjobs.push(list.slice(i, i + 12));
           return cfRunBatchQueue(rjobs, function (job, canSplit) {
@@ -1138,12 +1286,12 @@
             return Promise.all(reads).then(function (payload) {
               return cfCall('repairReceiptRows', [submissionId, payload, token]).then(function (res) {
                 (res.ok || []).forEach(function (o) { st.repairedTxnById[o.row_id] = o.txn; });
-                progress(label + ': re-checked ' + payload.length + ' row(s).');
+                progress('Checked ' + payload.length + ' ' + (payload.length === 1 ? 'entry' : 'entries') + ' again.');
                 return {};
               }).catch(function (err) {
                 if (cfAuthError(err)) throw err;
                 if (cfSizeError(err) && canSplit) return { split: true };
-                progress(label + ': a group failed; keeping originals for review.');
+                progress('Some entries could not be checked. They are kept for review.');
                 return {};
               });
             });
@@ -1161,7 +1309,7 @@
             .then(function (res) { return res.rows || []; })
             .catch(function (err) {
               if (cfAuthError(err)) throw err;
-              progress('Repair re-check skipped; keeping latest results for review.');
+              progress('Couldn’t re-check the totals. Keeping the latest results for review.');
               return [];
             });
         }
@@ -1175,12 +1323,12 @@
             var still = verdicts.filter(function (v) { return v.status === 'mismatch'; });
             if (!still.length) return;
             extraLeft--;
-            progress('Quick-Input retry (' + (QUICK_EXTRA_REPAIRS - extraLeft) + ' of ' + QUICK_EXTRA_REPAIRS + ')…');
-            return runRepairBatch(still, 'Quick-Input retry').then(extraRound);
+            progress('Checking again (' + (QUICK_EXTRA_REPAIRS - extraLeft) + ' of ' + QUICK_EXTRA_REPAIRS + ')…');
+            return runRepairBatch(still).then(extraRound);
           });
         }
-        progress('Repair pass: re-checking ' + eligible.length + ' mismatched row(s)…');
-        return runRepairBatch(eligible, 'Repair pass').then(extraRound).then(done);
+        progress('Checking ' + eligible.length + ' ' + (eligible.length === 1 ? 'entry' : 'entries') + ' again…');
+        return runRepairBatch(eligible).then(extraRound).then(done);
       }).then(function (pre) {
         // 6. optional human review before the commit, then commit.
         var finals = pre.items.map(function (it) {
@@ -1193,8 +1341,8 @@
                    splits: it.splits || null };
         });
         return cfReviewGate_(pre, rows).then(function (ok) {
-          if (!ok) throw new Error('Save cancelled - rows kept in the form.');
-          progress('Writing validated rows…');
+          if (!ok) throw new Error('Save cancelled. Your entries are still in the form.');
+          progress('Saving entries…');
           return cfCall('commitReceiptRows', [{ submission_id: submissionId, forceLog: tg.forceLog,
             oneRowPerReceipt: oneRowFlag, quickMode: quickMode,
             forceDuplicate: !!opts.forceDuplicate }, finals, token]);

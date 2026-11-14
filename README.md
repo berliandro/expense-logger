@@ -3,12 +3,12 @@
 Snap a receipt → Gemini structures it → rows land in Google Sheets. Self-hosted expense-and-income logging for individuals and families, running entirely on Google Apps Script + Google Sheets.
 
 <p align="center">
-  <img src="docs/screenshots/cashflow-desktop.png" alt="Cashflow Log desktop interface showing the New entry form with the Table Layout tab, reconciliation option switches, receipt rows, and submit button">
+  <img src="docs/screenshots/cashflow-desktop.png" alt="Cashflow Log desktop interface showing the New entry form with the Receipt photos tab, photo upload zone, optional note, and submit button">
   <br><em>Desktop preview</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/cashflow-mobile.png" alt="Cashflow Log on a narrow mobile viewport showing the stacked entry form, reconciliation switches, and receipt rows remaining readable" width="300">
+  <img src="docs/screenshots/cashflow-mobile.png" alt="Cashflow Log on a narrow mobile viewport showing the Receipt photos form, monthly overview, and recent entries stacked and readable" width="300">
   <br><em>Mobile preview</em>
 </p>
 
@@ -18,13 +18,13 @@ Cashflow Log removes the spreadsheet chore from expense tracking. Photograph a r
 
 It is useful for anyone who already lives in Google Sheets and wants receipt logging without another paid service, another account, or data leaving their own Google account — plus a one-click Windows installer so non-technical family members can run their own copy.
 
-- **One row per receipt** (Quick-Input only) — writes exactly one spreadsheet row per receipt at its verified signed total. The Description uses the receipt's own printed title when there is one, otherwise the item description, or `Merchant · Category (N items)`. Notes carry your shared note plus that receipt's own items, written as `Item ×qty @ unit price = line total` whenever the printed quantity and unit price were legible — and as `Item: line total` when they were not, so nothing is ever invented. Each receipt repeats your note but never mixes in another photo's items.
+- **One entry per receipt** (Receipt photos only) — writes exactly one spreadsheet row per receipt at its verified signed total. The Description uses the receipt's own printed title when there is one, otherwise the item description, or `Merchant · Category (N items)`. Notes carry your shared note plus that receipt's own items, written as `Item ×qty @ unit price = line total` whenever the printed quantity and unit price were legible — and as `Item: line total` when they were not, so nothing is ever invented. Each receipt repeats your note but never mixes in another photo's items.
 
 - **Receipt extraction** — Gemini reads dates, merchants, line items, categories, and Expense/Income type from JPG, PNG, WEBP, or HEIC photos; a typed note works with no photo at all.
 - **Two-phase total reconciliation** — Phase 1 reads each photo's printed total, Phase 2 extracts every line item, and each receipt's item sum must match its printed total exactly.
-- **Batched submission pipeline** — Table Layout rows (the default tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
-- **Repair and review handling** — Mismatches get a bounded repair pass (Quick-Input retries still-mismatched receipts up to two more times); unresolved rows stay in the app with their photos for review while valid rows are still logged. Nothing unverified is saved silently.
-- **Force-save (Table Layout only)** (OFF by default) — after repair, adds one clearly labeled balancing line only when the printed total is readable. It handles either missing charges or missing discounts and records an audit note. With Force-save off, unresolved mismatches remain available for review. Quick-Input follows its fixed automatic reconciliation policy without exposing a toggle.
+- **Batched submission pipeline** — Manual rows (the second tab) grow dynamically with no row cap and submit as sequential bounded batches that split automatically when a batch is too large.
+- **Repair and review handling** — Mismatches get a bounded repair pass (Receipt photos retry still-mismatched receipts up to two more times); unresolved entries stay in the app with their photos for review while valid entries are still logged. Nothing unverified is saved silently.
+- **Save anyway (Manual rows only)** (OFF by default) — after the re-check, adds one clearly labeled balancing line only when the printed total is readable. It handles either missing charges or missing discounts and records an audit note. With Save anyway off, unresolved mismatches remain available for review. The Receipt photos mode follows its fixed automatic receipt-check policy without exposing a toggle.
 - **Transaction IDs** — Every receipt gets a unique `YYYYMMDD` + letter-sequence ID (e.g. `20261231AA`) shared by all its rows; month sheets sort chronologically with rows ordered by Transaction ID after clean reports.
 - **Entry IDs** — Every line item carries a system-managed unique ID that survives sorting, deletion, and recovery. Both IDs are looked up by header name, never by column position.
 - **Google Sheets integration** — Rows append to `MMMM yyyy` month sheets copied from an auto-created `Template`; missing system headers are migrated idempotently.
@@ -32,23 +32,23 @@ It is useful for anyone who already lives in Google Sheets and wants receipt log
 - **Seven-day retention** — Trash records expire strictly from the server deletion timestamp (7 × 24 h, whole transaction groups together), never from receipt dates.
 - **Light default, dark mode included** — flat paper-white surfaces, editorial serif headings, small radii, compact controls, keyboard support, accessible information dialogs, and reduced-motion respect; the layout stays readable down to 320px.
 - **Advanced options** — currency/rate, tags, and household member live in a collapsible panel with a live summary; its expanded state is saved server-side and restored on every device.
-- **Monthly overview** — spend, income, net, category totals, a 30/31-dot daily ledger, anomaly callouts, budget progress, and recurring items due.
+- **Monthly overview** — spend, income, net, category totals, a 30/31-dot daily ledger, a bigger-than-last-month callout, budget progress, and recurring items due.
 - **Search, edit, and undo** — filter logs by text, type, category, member, or reimbursement; edit fields with an audit note; undo a delete from the toast while the record is still in Trash.
 - **Drafts and offline capture** — notes, table rows, selected photos, and entry metadata autosave locally (IndexedDB for photos) and restore after a reload; offline submissions are queued and can be sent when the connection returns.
 - **Duplicate and review gates** — a SHA-256 image hash plus the merchant, date, and total form a server-side fingerprint checked against `_CF_ReceiptHashes`; possible repeats are held for review with an explicit “Allow duplicate” override. “Review before save” shows the receipt photo, extracted items/totals, and editable merchant, date, type, and category fields before writing.
 - **Household, reimbursement, and budgets** — member attribution, reimbursable/reimbursed flags with filters, and monthly category limits with 80% alerts.
-- **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Table Layout rows can be split across categories when the split sums to the verified total.
+- **Multi-currency and splits** — each entry can carry a currency and rate; `Base Amount` keeps dashboard totals comparable. Tags are shared per entry, and Manual rows can be split across categories when the split sums to the verified total.
 - **Reports, backup, and sessions** — a monthly PDF report downloads directly in the browser, JSON backup/restore covers month sheets, the submission ledger, Trash, receipt hashes, and feature sheets (compressed receipt previews are excluded), optional receipt previews live in a hidden sheet, and a server-side session list supports revoke.
 
 ## How it works
 
-1. Add rows in **Table Layout** (one photo + note + forced Expense/Income each) or use the **Quick-Input** tab, then submit. Quick-Input always force-saves (receipts that pass the check are logged at once; only unconfirmed photos stay), while Table Layout follows your own reconciliation toggles. Quick-Input's decision rule is the **printed final Total**, not how complete the line list looks. If that total is readable, the receipt is saved under it — even when the extractor flags the item list as possibly incomplete, in which case the gap is disclosed in that receipt's Notes and status line. A receipt is held back for review only when the total itself cannot be read reliably (missing, uncertain, or not visible), or when the total is readable but the items still do not reconcile after the bounded repair attempts. Table Layout keeps its stricter behaviour and still holds an incomplete line list back for review.
+1. Start in **Receipt photos** (the default): attach one or more photos, or type a note, then submit. Receipt photos always force-save (receipts that pass the check are logged at once; only unconfirmed photos stay). **Manual rows** (the second tab) adds one photo + note + forced Expense/Income per row and follows your own receipt-check setting. Receipt photos' decision rule is the **printed final Total**, not how complete the line list looks. If that total is readable, the receipt is saved under it — even when the extractor flags the item list as possibly incomplete, in which case the gap is disclosed in that receipt's Notes and status line. A receipt is held back for review only when the total itself cannot be read reliably (missing, uncertain, or not visible), or when the total is readable but the items still do not reconcile after the automatic re-checks. Manual rows keep their stricter behaviour and still hold an incomplete line list back for review.
 2. The app **plans** the submission, then runs **Phase 1** (printed totals) and **Phase 2** (line items) in sequential batches.
-3. Rows are **triaged**: exact matches log immediately, mismatches get **one repair pass**, and leftovers wait for **review** with their photos.
-4. **Commit** appends verified rows with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
-5. **Sorting** runs separately once the report has zero unresolved rows.
+3. Entries are **checked**: exact matches save immediately, mismatches get **one re-check**, and leftovers wait for **review** with their photos.
+4. **Commit** appends verified entries with stable Transaction and Entry IDs and records an idempotency ledger (`_CF_Submissions`), so retries never duplicate rows.
+5. **Sorting** runs separately once the report has zero unresolved entries.
 6. **Delete** moves rows to `_CF_Trash`; **Trash** in the Settings menu restores them with original IDs intact. Restores never overwrite live data.
-7. The **overview** reads the selected month, its feature columns, budgets, recurring rules, and the previous month for anomaly comparison. Recent-log pages and overview reads are cached briefly and invalidated by writes.
+7. The **overview** reads the selected month, its feature columns, budgets, recurring rules, and the previous month for the bigger-than-last-month comparison. Recent-entry pages and overview reads are cached briefly and invalidated by writes.
 8. **Feature data** lives in hidden system sheets: `_CF_Budgets`, `_CF_Recurring`, `_CF_Household`, `_CF_ReceiptHashes`, `_CF_ReceiptImages`, plus the new month-sheet columns (`Currency`, `FX Rate`, `Base Amount`, `Tags`, `Member`, `Reimbursable`, `Reimbursed`, `Receipt Hash`, `Receipt URL`, `Split Group`). Headers are added idempotently; existing columns never move.
 
 ## Getting started
@@ -97,7 +97,7 @@ The app runs with timezone `Asia/Jakarta` (`appsscript.json`). Explicit OAuth sc
 
 ## Deleting and recovering entries
 
-- In **Recent logs**, each card has a **Delete entry** action; the **⋯** menu offers **Delete entire receipt…**, showing merchant, date, Transaction ID, and the exact line-item count before you confirm. Records without a Transaction ID can only delete the single entry.
+- In **Recent entries**, each card has a **Delete entry** action; the **⋯** menu offers **Delete entire receipt…**, showing merchant, date, Transaction ID, and the exact line-item count before you confirm. Records without a Transaction ID can only delete the single entry.
 - Deleted rows move to the hidden `_CF_Trash` sheet and stay recoverable for **7 days from deletion**, then are removed automatically.
 - Recover via Settings menu → **Trash** (with Entries and Transactions filters). Restored rows keep their original Entry and Transaction IDs; if an ID already exists live, the restore is blocked with an explanation instead of overwriting.
 - Never edit the system-managed `Transaction ID` / `Entry ID` columns or the hidden `_CF_Submissions` / `_CF_Trash` sheets by hand — logs, delete/restore, and sorting all rely on them.
@@ -146,7 +146,7 @@ node tests/backend-restore.test.js
 node tests/backend-crud.test.js
 ```
 
-`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Quick-Input policy, and Force-save. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. `features.test.js` covers the manifest scopes, `cfApi` surface, layout/client feature surfaces, split math, currency metadata, month helpers, sessions, scan caps, duplicate disposition, quick-text commit wiring, backup/report/image hooks, and parses every backend module. `backend-dashboard.test.js` runs the dashboard/search functions against a mocked spreadsheet and checks totals, category grouping, budgets, anomalies, recurring due items, reimbursements, and filters. `backend-restore.test.js` verifies that a backup containing household, budget, ledger, and month rows restores once and skips every key on a second import. `backend-crud.test.js` verifies budget, recurring, and household create/list/delete against mocked sheets. Browser layout and physical Android testing are reported separately when available.
+`ui-polish.test.js` covers document structure, header/modal contracts, copy, tabs, legacy ledger idempotency, Receipt photos policy, and Save anyway. `design-perf.test.js` guards the flat design (no blur or decorative gradients), the orange accent, system fonts, batched history rendering, cached image URLs, history-cache invalidation, and JavaScript syntax. `features.test.js` covers the manifest scopes, `cfApi` surface, layout/client feature surfaces, split math, currency metadata, month helpers, sessions, scan caps, duplicate disposition, quick-text commit wiring, backup/report/image hooks, and parses every backend module. `backend-dashboard.test.js` runs the dashboard/search functions against a mocked spreadsheet and checks totals, category grouping, budgets, anomalies, recurring due items, reimbursements, and filters. `backend-restore.test.js` verifies that a backup containing household, budget, ledger, and month rows restores once and skips every key on a second import. `backend-crud.test.js` verifies budget, recurring, and household create/list/delete against mocked sheets. Browser layout and physical Android testing are reported separately when available.
 
 ## Performance and design notes
 
@@ -175,15 +175,15 @@ node tests/backend-crud.test.js
 
 ### Deployment visibility (read-only, verified)
 
-The header pill reports the deployment's access state **only when the server can positively prove it**. A running Apps Script cannot read a deployment's access setting (there is no getter for it, and `appsscript.json` only describes *new* deployments), so the pill is conservative by design — it shows `Access unknown` far more often than `Public`:
+The header pill reports the deployment's access state **only when the server can positively prove it**. A running Apps Script cannot read a deployment's access setting (there is no getter for it, and `appsscript.json` only describes *new* deployments), so the pill is conservative by design — it shows `Access not checked` far more often than `Public`:
 
 | Pill shows | When the server proves it |
 |---|---|
 | **Public** (green dot) | **Only** when the active user is positively identified as a *different* account than the deploying owner. A verified non-owner who can execute this endpoint proves the deployment is not owner-only. |
 | **Private** (red dot) | **Never from this endpoint.** Nothing inside a running script can verify an owner-only deployment, so this state is never shown. |
-| **Access unknown** (grey dot) | Everything else — the caller is the deploying owner, the caller carries **no identity** (the app runs in a sandboxed iframe, so the Google session may not propagate; a blank email proves nothing), the owner identity could not be read, or the identity API failed. |
+| **Access not checked** (grey dot) | Everything else — the caller is the deploying owner, the caller carries **no identity** (the app runs in a sandboxed iframe, so the Google session may not propagate; a blank email proves nothing), the owner identity could not be read, or the identity API failed. |
 
-So with the normal anonymous/public deployment most users will see **Access unknown**, which is the honest answer: the app cannot tell you who else can open it. Ask the owner, or check *Deploy → Manage deployments*. No email address, token, or owner credential is ever sent to the browser — only a boolean and a source label.
+So with the normal anonymous/public deployment most users will see **Access not checked**, which is the honest answer: the app cannot tell you who else can open it. Ask the owner, or check *Deploy → Manage deployments*. No email address, token, or owner credential is ever sent to the browser — only a boolean and a source label.
 
 **There is deliberately no visibility toggle in Settings.** Changing Google deployment access needs an owner OAuth token with the `script.deployments` scope, which must never be sent to a browser or stored in this app; Apps Script also exposes no API to read or write an existing deployment's access mode. Shipping a switch that could not be owner-authorized would let anyone who knows the family PIN lock every other user out.
 
@@ -205,8 +205,8 @@ So with the normal anonymous/public deployment most users will see **Access unkn
 | `Styles.html` | Flat light/dark design system: paper surfaces, orange accent, serif display type, small radii |
 | `Layout.html` | Body markup: top bar, entry panel, dashboard, history, dialogs |
 | `AppCore.html` | Shared client helpers, photo previews, lightboxes, submission engine |
-| `AppEntry.html` | Table Layout rows and batch submission |
-| `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent Logs |
+| `AppEntry.html` | Manual rows and batch submission |
+| `AppAuth.html` | PIN gate, session UI, configuration dialogs, Trash, Recent entries |
 | `AppFeatures.html` | Dashboard, budgets, recurring, household, sessions, backup, edit, search, drafts/offline, review |
 | `appsscript.json` | Timezone, runtime, explicit OAuth scopes, web-app access settings |
 | `.claspignore` | Keeps tests, docs, previews, installer scripts, and local artifacts out of `clasp push` |

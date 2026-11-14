@@ -1,5 +1,5 @@
 <script>
-    /* Table Layout tab — dynamic rows, phased two-phase submission */
+    /* Manual rows tab — dynamic rows, phased two-phase submission */
     (function initTableTab() {
       var rowsEl = document.getElementById('table-rows');
       var addBtn = document.getElementById('add-row-btn');
@@ -17,7 +17,7 @@
 
       function updateCount() {
         var n = rowsEl.querySelectorAll('.trow').length;
-        if (countLabel) countLabel.textContent = n + (n === 1 ? ' row' : ' rows');
+        if (countLabel) countLabel.textContent = n + (n === 1 ? ' entry' : ' entries');
       }
 
       function rowIsFilled(row) {
@@ -54,20 +54,27 @@
         var img = document.getElementById('trow-lightbox-img');
         var cap = document.getElementById('trow-lightbox-counter');
         if (!lb || !img || !row._previewUrl) return;
+        lb._returnFocus = document.activeElement;
         img.src = row._previewUrl;
         img.alt = 'Row ' + (row._origNum || '?') + ' receipt full view';
         if (cap) cap.textContent = 'Row ' + (row._origNum || '?') + ' receipt';
         lb.classList.add('open');
+        lb.removeAttribute('inert');
+        lb.setAttribute('aria-hidden', 'false');
+        if (window.cfSyncModalScrollLock) window.cfSyncModalScrollLock();
         try { document.getElementById('trow-lightbox-close').focus(); } catch (e) {}
-        lb._returnFocus = document.activeElement;
       }
       function closeRowViewer() {
         var lb = document.getElementById('trow-lightbox');
         var img = document.getElementById('trow-lightbox-img');
         if (!lb) return;
         lb.classList.remove('open');
+        lb.setAttribute('inert', '');
+        lb.setAttribute('aria-hidden', 'true');
         if (img) img.src = '';
+        if (window.cfSyncModalScrollLock) window.cfSyncModalScrollLock();
         try { if (lb._returnFocus && lb._returnFocus.focus) lb._returnFocus.focus(); } catch (e) {}
+        lb._returnFocus = null;
       }
 
       function setRowStatus(row, kind, text) {
@@ -181,7 +188,7 @@
           fileInput.value = '';
           if (!f) return;
           if (!f.type || f.type.indexOf('image/') !== 0) {
-            setStatus('Row needs an image file.', 'error');
+            setStatus('That file is not a photo. Choose a JPG, PNG, WEBP, or HEIC image.', 'error');
             return;
           }
           setFile(f);
@@ -214,7 +221,7 @@
         submitBtnT.disabled = locked;
         addBtn.disabled = locked;
         if (retryBtn) retryBtn.disabled = locked;
-        if (submitLabelT) submitLabelT.textContent = locked ? 'Working…' : 'Submit Batch';
+        if (submitLabelT) submitLabelT.textContent = locked ? 'Working…' : 'Log entries';
       }
 
       addBtn.addEventListener('click', function () {
@@ -294,7 +301,7 @@
             return;
           }
           if (r.status === 'force-adjusted') {
-            setRowStatus(dom, 'adjusted', 'Force-saved' +
+            setRowStatus(dom, 'adjusted', 'Saved with an adjustment' +
               (r.transactionId ? ' (' + r.transactionId + ')' : '') + (r.message ? ' — ' + r.message : ''));
             dom.setAttribute('data-state', 'adjusted');
             if (dom._previewUrl) { try { URL.revokeObjectURL(dom._previewUrl); } catch (e) {} }
@@ -315,7 +322,7 @@
               var forceBtn = document.createElement('button');
               forceBtn.type = 'button';
               forceBtn.className = 'btn-choice';
-              forceBtn.textContent = 'Force log this row';
+              forceBtn.textContent = 'Save anyway';
               forceBtn.addEventListener('click', function () { resubmitRows([dom]); });
               actions.appendChild(forceBtn);
             }
@@ -344,13 +351,13 @@
           pendingSort = true;
         }
         var parts = [];
-        if (counts.logged) parts.push(counts.logged + ' logged');
-        if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' force-logged (verify receipts)');
+        if (counts.logged) parts.push(counts.logged + ' saved');
+        if (counts.forceAdjusted) parts.push(counts.forceAdjusted + ' saved with an adjustment');
         if (counts.review) parts.push(counts.review + ' left for review');
-        if (counts.duplicateReview) parts.push(counts.duplicateReview + ' possible duplicate(s)');
+        if (counts.duplicateReview) parts.push(counts.duplicateReview + ' possible duplicate' + (counts.duplicateReview === 1 ? '' : 's'));
         if (counts.errors) parts.push(counts.errors + ' failed');
         var summary = parts.length ? 'Done: ' + parts.join(', ') + '.' : 'Done.';
-        if (counts.forceAdjusted) summary += ' Synthetic lines are marked in Notes - please verify.';
+        if (counts.forceAdjusted) summary += ' The added line is marked in Notes — please check it.';
         setStatus(summary, (counts.review || counts.errors) ? 'error' : 'success');
         if (!(counts.review || counts.errors || counts.duplicateReview) &&
             ((counts.logged || 0) + (counts.forceAdjusted || 0) > 0)) {
@@ -371,16 +378,17 @@
       }
 
       function runSortCall() {
-        setProgress('Report shown. Sorting sheets…');
+        setProgress('Saved. Sorting the sheet…');
         return cfCall('sortCashflowSheets', [sessionToken]).then(function (res) {
           pendingSort = false;
           var n = (res && res.sheets && res.sheets.length) || 0;
-          setStatus('Sheets sorted (' + n + ' month sheet(s)' +
-            ((res && res.rowsMoved) ? ', ' + res.rowsMoved + ' rows ordered' : '') + ').', 'success');
+          var moved = (res && res.rowsMoved) || 0;
+          setStatus('Entries sorted across ' + n + ' month' + (n === 1 ? '' : 's') +
+            (moved ? ' (' + moved + ' reordered)' : '') + '.', 'success');
           return true;
         }).catch(function (err) {
           if (cfAuthError(err)) { try { cfNoteAuthExpired(); } catch (e) {} return false; }
-          setStatus('Sorting skipped: ' + ((err && err.message) || err), 'error');
+          setStatus('Entries saved, but the sheet could not be sorted.', 'error');
           return false;
         });
       }
@@ -396,12 +404,12 @@
 
       function runSubmission(filled, done) {
         if (!filled.length) {
-          setStatus('Add at least one filled row (photo or note) first.', 'error');
+          setStatus('Add a photo or a note first.', 'error');
           return;
         }
         if (!navigator.onLine && typeof window.cfQueueOffline === 'function') {
           window.cfQueueOffline();
-          setStatus('Saved offline. The rows stay here until you can send them.', 'success');
+          setStatus('Saved offline. Your entries stay here until you can send them.', 'success');
           return;
         }
         if (!(window.google && google.script && google.script.run)) {
@@ -416,7 +424,7 @@
             updateRetryVisibility();
             setProgress('');
             setLocked(false);
-            setStatus('Logged ' + filled.length + ' rows (preview).', 'success');
+            setStatus('Logged ' + filled.length + (filled.length === 1 ? ' entry' : ' entries') + ' (preview).', 'success');
             if (done) done();
           }, 900);
           return;
@@ -447,23 +455,23 @@
           setProgress('');
           setLocked(false);
           if (cfAuthError(err)) {
-            setStatus('Session expired - please log in again.', 'error');
+            setStatus('Your session expired. Enter your PIN again.', 'error');
             try { cfNoteAuthExpired(); } catch (e) {}
             return;
           }
           if (typeof cfIsMissingKeyError === 'function' && cfIsMissingKeyError(err)) {
-            setStatus('Gemini API key is missing - please add it.', 'error');
+            setStatus('No Gemini API key yet. Add it in Settings → Set API key.', 'error');
             try { window.dispatchEvent(new CustomEvent('cf:missing-key')); } catch (e) {}
             return;
           }
           if (typeof cfIsSpreadsheetError === 'function' && cfIsSpreadsheetError(err)) {
-            setStatus('Google Sheet is not set - please add it.', 'error');
+            setStatus('No Google Sheet connected. Add it in Settings → Set Sheet.', 'error');
             try { window.dispatchEvent(new CustomEvent('cf:missing-sheet')); } catch (e) {}
             return;
           }
-          setStatus('Error: ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
+          setStatus('Couldn’t log these entries. ' + (typeof cfCleanError === 'function' ? cfCleanError(err) : ((err && err.message) || err)), 'error');
           if (typeof window.cfShowRetry === 'function') {
-            try { window.cfShowRetry('The batch did not finish. The rows are still here.'); } catch (e2) {}
+            try { window.cfShowRetry('That didn’t finish. Your entries are still here.'); } catch (e2) {}
           }
         });
       }
@@ -486,7 +494,7 @@
           return f.hasPhoto || f.note !== '';
         });
         if (!filled.length) {
-          setStatus('Add a photo or note to the row first.', 'error');
+          setStatus('Add a photo or a note to this entry first.', 'error');
           return;
         }
         filled.forEach(function (f) {
@@ -521,7 +529,7 @@
           };
         }).filter(function (f) { return f.hasPhoto || f.note !== ''; });
         if (!filled.length) {
-          setStatus('Review rows are empty - edit a note/photo or discard them.', 'error');
+          setStatus('The entries left for review are empty. Add a note or photo, or discard them.', 'error');
           return;
         }
         filled.forEach(function (f) {

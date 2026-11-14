@@ -8,12 +8,12 @@
       </div>
     </div>
     <div class="topbar-right">
-      <div class="pill" id="session-pill" title="App access status is confirmed by the server on unlock."><span class="dot unknown" id="pill-dot" aria-hidden="true"></span><span id="pill-access">Access unknown</span><span class="pill-sep" aria-hidden="true">&middot;</span><span id="pill-env">Gemini &middot; Sheets</span><span id="sess-count" class="sess-count hidden"></span></div>
+      <div class="pill" id="session-pill" title="App access status is confirmed by the server on unlock."><span class="dot unknown" id="pill-dot" aria-hidden="true"></span><span id="pill-access">Access not checked</span><span class="pill-sep" aria-hidden="true">&middot;</span><span id="pill-env">Gemini &middot; Sheets</span><span id="sess-count" class="sess-count hidden"></span></div>
             <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle light and dark mode"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
       <div class="settings-wrap">
         <button type="button" class="theme-toggle" id="settings-btn" aria-label="Open settings" aria-haspopup="menu" aria-expanded="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
         <div id="settings-menu" class="hidden" role="menu" aria-label="Settings">
-          <button type="button" class="menu-item" id="hero-toggle" role="menuitem" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="menu-label">Show intro</span></button>
+          <button type="button" class="menu-item" id="hero-toggle" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="menu-label">Show intro</span></button>
           <div class="menu-sep" aria-hidden="true"></div>
           <button type="button" class="menu-item hidden" id="pin-change-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span class="menu-label">Change PIN</span></button>
           <button type="button" class="menu-item hidden" id="api-key-btn" role="menuitem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span class="menu-label">Set API key</span></button>
@@ -39,7 +39,7 @@
       <div class="eyebrow">Receipt &rarr; Sheet in seconds</div>
       <h1>Log cashflow <span class="thin">without the spreadsheet chore.</span></h1>
       <p class="lede">Add a receipt photo or a note below. Each photo becomes its own receipt: Gemini extracts the items, checks them against the printed total, and saves the rows to your month sheet.</p>
-      <p class="hero-compact-note">Snap a receipt or describe income / expense below.</p>
+      <p class="hero-compact-note">Snap a receipt, or type a note below.</p>
 
       <ul class="steps">
         <li><div class="step-n">1</div><div><b>Attach or type</b><span>Photos optional — attach several receipts at once. A short note like “Gaji bulanan 5jt” works. Empty rows are ignored.</span></div></li>
@@ -68,18 +68,17 @@
     <main class="card" aria-label="Log entry form">
       <div class="card-head">
         <div>
-          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="Information about how logging works">i</button></div>
+          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="How logging works">i</button></div>
           <p>Add a photo or a note.</p>
         </div>
         <div class="head-actions">
-          <button type="button" class="btn-choice" id="quick-text-btn">Quick text</button>
           <div class="date-badge" id="today-badge">Today</div>
         </div>
       </div>
 
       <div class="tabs" role="tablist" aria-label="Entry mode">
-        <button type="button" class="tab active" id="tabbtn-table" role="tab" aria-selected="true" aria-controls="tab-table">Table Layout</button>
-        <button type="button" class="tab" id="tabbtn-standard" role="tab" aria-selected="false" aria-controls="tab-standard">Quick-Input</button>
+        <button type="button" class="tab active" id="tabbtn-standard" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-standard">Receipt photos</button>
+        <button type="button" class="tab" id="tabbtn-table" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-table">Manual rows</button>
       </div>
 
       <div class="entry-advanced-head">
@@ -122,19 +121,19 @@
         <label class="meta-check"><input type="checkbox" id="entry-duplicate"> Allow duplicate</label>
       </div>
 
-      <fieldset class="recon-toggles" id="recon-options" aria-label="Receipt reconciliation options">
-        <legend><span class="recon-legend-label">Reconciliation options</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="Information about reconciliation options">i</button></legend>
+      <fieldset class="recon-toggles hidden" id="recon-options" aria-label="Receipt check">
+        <legend><span class="recon-legend-label">Receipt check</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="How the receipt check works">i</button></legend>
         <label class="switch">
-          <span class="txt"><b>Force-save</b></span>
-          <input type="checkbox" id="toggle-force" aria-label="Force-save">
+          <span class="txt"><b>Save anyway</b></span>
+          <input type="checkbox" id="toggle-force" aria-label="Save anyway">
           <span class="track" aria-hidden="true"><span class="thumb"></span></span>
         </label>
       </fieldset>
 
-      <div id="tab-standard" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-standard">
+      <div id="tab-standard" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-standard">
       <form id="expense-form" novalidate>
         <div class="form-group">
-          <div class="field-heading"><label class="label" id="upload-label">Receipt photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="Information about receipt photos">i</button></div>
+          <div class="field-heading"><label class="label" id="upload-label">Photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="How receipt photos are read">i</button></div>
           <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-labelledby="upload-label" aria-describedby="drop-hint">
             <div id="upload-placeholder" class="upload-placeholder">
               <div class="upload-icon">
@@ -143,7 +142,7 @@
                   <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
                 </svg>
               </div>
-              <div class="upload-title">Drag receipts here, or choose</div>
+              <div class="upload-title">Add receipt photos</div>
               <div class="upload-subtitle" id="drop-hint">Camera takes a new photo. Gallery lets you choose existing photos.</div>
               <div class="upload-actions">
                 <button type="button" class="btn-choice" id="camera-btn">
@@ -175,9 +174,9 @@
         </div>
 
         <div class="form-group">
-          <div class="field-heading"><label class="label" for="note">Note / description <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="Information about notes">i</button></div>
+          <div class="field-heading"><label class="label" for="note">Note <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="How the note applies">i</button></div>
           <div class="textarea-wrap">
-            <textarea id="note" maxlength="1000" placeholder="Optional note for these receipt(s)…"></textarea>
+            <textarea id="note" maxlength="1000" placeholder="Optional note for these receipts…"></textarea>
             <div class="char-count" aria-hidden="true"></div>
           </div>
           <div class="chips" aria-label="Templates">
@@ -186,10 +185,13 @@
             <button type="button" class="chip" data-text="Weekly groceries">Weekly</button>
             <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
           </div>
+          <div class="note-shortcut">
+            <button type="button" class="link-quiet" id="quick-text-btn">Or log a single line</button>
+          </div>
         </div>
 
         <div class="switch one-row-switch" style="margin-top:12px">
-          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>One row per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="Information about one row per receipt">i</button></span></span>
+          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>One entry per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="How one entry per receipt works">i</button></span></span>
           <input type="checkbox" id="toggle-onerow" aria-label="One row per receipt">
           <label for="toggle-onerow" class="track" aria-hidden="true"><span class="thumb"></span></label>
         </div>
@@ -203,21 +205,21 @@
 
       <div id="tab-table" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-table">
         <div class="form-group">
-          <label class="label">Rows — photo optional <span class="opt" id="table-count-label">0 rows</span></label>
+          <label class="label">Entries — photo optional <span class="opt" id="table-count-label">0 entries</span></label>
           <div id="table-rows" aria-live="polite"></div>
           <div class="table-actions">
-            <button type="button" id="add-row-btn">+ Add Row</button>
-            <button type="button" id="retry-rows-btn" class="hidden">Retry review rows</button>
+            <button type="button" id="add-row-btn">+ Add entry</button>
+            <button type="button" id="retry-rows-btn" class="hidden">Retry entries</button>
           </div>
         </div>
         <p class="recon-progress" id="table-progress" role="status" aria-live="polite"></p>
         <button type="button" id="table-submit-btn">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          <span id="table-submit-label">Submit Batch</span>
+          <span id="table-submit-label">Log entries</span>
         </button>
       </div>
 
-      <div class="lightbox" id="trow-lightbox" role="dialog" aria-modal="true" aria-label="Receipt viewer">
+      <div class="lightbox" id="trow-lightbox" role="dialog" aria-modal="true" aria-label="Receipt viewer" aria-hidden="true" inert>
         <div class="lightbox-top">
           <span id="trow-lightbox-counter">Row receipt</span>
           <button type="button" class="lightbox-close" id="trow-lightbox-close" aria-label="Close viewer">
@@ -237,7 +239,7 @@
     <div class="dashboard-head">
       <div>
         <h2 id="dash-title">This month</h2>
-        <p id="dash-sub">Loading overview…</p>
+        <p id="dash-sub">Loading this month…</p>
       </div>
       <div class="dash-actions">
         <button type="button" class="btn-choice" id="dash-prev" aria-label="Previous month">‹</button>
@@ -257,26 +259,31 @@
     <div id="dash-recurring-list" class="dash-section"></div>
   </section>
 
-  <section id="history-card" class="card history-card hidden" aria-label="Recent logs">
+  <section id="history-card" class="card history-card hidden" aria-label="Recent entries">
     <div class="history-head">
       <div>
-        <h2>Recent logs</h2>
-        <p id="history-sub">Newest first, across all month sheets.</p>
+        <h2>Recent entries</h2>
+        <p id="history-sub">Newest first, from all months.</p>
       </div>
-      <button type="button" class="theme-toggle" id="history-refresh" aria-label="Refresh recent logs">Refresh</button>
+      <button type="button" class="theme-toggle" id="history-refresh" aria-label="Refresh recent entries">Refresh</button>
     </div>
     <div class="history-filters" id="history-filters">
-      <input type="search" id="hist-search" placeholder="Search merchant, note, tag…" aria-label="Search logs">
+      <input type="search" id="hist-search" placeholder="Search entries…" aria-label="Search entries">
       <select id="hist-type" aria-label="Filter by type"><option value="All">All types</option><option>Expense</option><option>Income</option></select>
       <select id="hist-category" aria-label="Filter by category"><option value="All">All categories</option></select>
       <select id="hist-member" aria-label="Filter by member"><option value="All">All members</option></select>
-      <select id="hist-reimb" aria-label="Filter by reimbursement"><option value="">All</option><option value="outstanding">Reimbursable outstanding</option><option value="yes">Reimbursable</option></select>
+      <select id="hist-reimb" aria-label="Filter by reimbursement"><option value="">All</option><option value="outstanding">To be reimbursed</option><option value="yes">Reimbursable</option></select>
       <button type="button" class="btn-choice" id="hist-apply">Search</button>
       <button type="button" class="btn-choice" id="hist-clear">Clear</button>
     </div>
     <div id="history-list" aria-live="polite"></div>
+    <div id="history-empty" class="history-empty hidden">
+      <p class="history-empty-title">No entries yet</p>
+      <p class="history-empty-copy">Log your first receipt and it will appear here.</p>
+      <button type="button" class="btn-choice" id="history-empty-btn">Log a receipt</button>
+    </div>
     <div class="history-foot">
-      <button type="button" class="btn-choice" id="history-load">Show recent 10</button>
+      <button type="button" class="btn-choice" id="history-load">Show 10 entries</button>
       <button type="button" class="btn-choice hidden" id="history-more">Show 10 more</button>
     </div>
   </section>
@@ -289,7 +296,7 @@
   <div class="credit">Made by @berliandro</div>
 
   <!-- Fullscreen photo viewer -->
-  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" aria-hidden="true" inert>
     <div class="lightbox-top">
       <span id="lightbox-counter">1 / 1</span>
       <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close viewer">

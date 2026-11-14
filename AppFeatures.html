@@ -64,16 +64,26 @@
   /* ---------- modal ---------- */
   function closeModal() {
     var m = document.getElementById('feature-modal');
-    if (m) m.remove();
+    if (!m) return;
+    if (m.__escClose) {
+      try { document.removeEventListener('keydown', m.__escClose); } catch (e) {}
+      m.__escClose = null;
+    }
+    var back = m.__returnFocus;
+    m.remove();
+    if (window.cfSyncModalScrollLock) window.cfSyncModalScrollLock();
+    try { if (back && back.focus) back.focus(); } catch (e2) {}
   }
   function openModal(title, bodyHtml, actions, helpText) {
     closeModal();
+    var returnFocus = document.activeElement;
     var wrap = document.createElement('div');
     wrap.id = 'feature-modal';
     wrap.setAttribute('role', 'dialog');
     wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-labelledby', 'fm-title');
     wrap.innerHTML = '<div class="lock-card">' +
-      '<div class="info-modal-head"><h2>' + esc(title) + '</h2>' +
+      '<div class="info-modal-head"><h2 id="fm-title">' + esc(title) + '</h2>' +
       '<span class="feature-head-actions">' +
       (helpText ? '<button type="button" class="info-btn" data-fm-help aria-label="Information about ' + esc(title) + '">i</button>' : '') +
       '<button type="button" class="btn-choice" data-fm-close>Close</button></span></div>' +
@@ -82,6 +92,7 @@
       '<div class="feature-actions" data-fm-actions></div>' +
       '<div class="feature-error" data-fm-error></div></div>';
     document.body.appendChild(wrap);
+    wrap.__returnFocus = returnFocus;
     var actionBox = wrap.querySelector('[data-fm-actions]');
     (actions || []).forEach(function (a) {
       var b = document.createElement('button');
@@ -100,9 +111,22 @@
       });
     }
     wrap.addEventListener('click', function (e) { if (e.target === wrap) closeModal(); });
-    document.addEventListener('keydown', function escClose(e) {
-      if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escClose); }
-    });
+    var escClose = function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+    };
+    wrap.__escClose = escClose;
+    document.addEventListener('keydown', escClose);
+    if (window.cfSyncModalScrollLock) window.cfSyncModalScrollLock();
+    // Focus the first control the dialog exists for; fall back to its primary
+    // action, then to Close. The trap then keeps Tab inside the dialog.
+    setTimeout(function () {
+      if (!document.body.contains(wrap)) return;
+      var first = wrap.querySelector('[data-fm-body] input:not([type="hidden"]):not([disabled]), ' +
+        '[data-fm-body] textarea:not([disabled]), [data-fm-body] select:not([disabled])');
+      if (!first) first = wrap.querySelector('[data-fm-actions] .btn-choice.primary') ||
+        wrap.querySelector('[data-fm-actions] .btn-choice') || wrap.querySelector('[data-fm-close]');
+      try { if (first) first.focus(); } catch (e) {}
+    }, 30);
     return wrap;
   }
   function modalError(wrap, msg) {
@@ -300,7 +324,7 @@
           } catch (e) {}
         });
       }
-      toast(d.queued ? 'Queued submission restored. Tap Send when online.' : 'Draft restored.', d.queued ? 'Send' : null, d.queued ? function () {
+      toast(d.queued ? 'Queued entries restored. Tap Send when online.' : 'Draft restored.', d.queued ? 'Send' : null, d.queued ? function () {
         var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
         var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
         if (b) b.click();
@@ -325,10 +349,10 @@
   window.cfRetryFailedBatch = function () {
     var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
     var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
-    if (b) { toast('Retrying failed batch…'); b.click(); }
+    if (b) { toast('Retrying the failed entries…'); b.click(); }
   };
   window.cfShowRetry = function (msg) {
-    toast(msg || 'The batch did not finish.', 'Retry failed batch', window.cfRetryFailedBatch);
+    toast(msg || 'That didn’t finish.', 'Retry entries', window.cfRetryFailedBatch);
   };
   window.cfRestoreDraft = restoreDraft;
 
@@ -361,7 +385,7 @@
           var amt = Number(r.querySelector('[data-split-amt]').value) || 0;
           if (amt > 0) out.push({ category: cat, amount: amt });
         });
-        if (out.length < 2) { modalError(w, 'Add at least two lines.'); return; }
+        if (out.length < 2) { modalError(w, 'Add at least two amounts.'); return; }
         done(out); closeModal();
       } }
     ]);
@@ -493,9 +517,9 @@
           '</div></div>';
       }).join('');
       var wrap = openModal('Review before save', '<div class="review-list">' + rows + '</div>' +
-        '<p class="empty-note" style="margin-top:10px">Correct merchant, date, type, or category if needed. Verified rows are written; unresolved rows stay in the form.</p>', [
+        '<p class="empty-note" style="margin-top:10px">Correct merchant, date, type, or category if needed. Verified entries are saved; unresolved entries stay in the form.</p>', [
         { label: 'Cancel', onClick: function () { closeModal(); resolve(false); } },
-        { label: 'Save verified rows', primary: true, onClick: function (w) {
+        { label: 'Save verified entries', primary: true, onClick: function (w) {
           var edits = {};
           w.querySelectorAll('[data-review-id]').forEach(function (el) {
             edits[el.getAttribute('data-review-id')] = {
@@ -529,7 +553,7 @@
     if (next) next.disabled = !!busy;
     if (busy && sub) {
       sub.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>' +
-        esc(label || 'Loading overview…');
+        esc(label || 'Loading this month…');
     }
   }
   function loadDashboard(force) {
@@ -548,7 +572,7 @@
       renderDashboard(state.dashboard);
     }).catch(function (err) {
       var sub = document.getElementById('dash-sub');
-      if (sub) sub.textContent = err && err.message === 'preview' ? 'Preview mode' : 'Could not load overview.';
+      if (sub) sub.textContent = err && err.message === 'preview' ? 'Preview mode' : 'Couldn’t load this month.';
     }).then(function () { setDashBusy(false); });
   }
   function statCard(label, value, note) {
@@ -564,9 +588,9 @@
     var sub = document.getElementById('dash-sub');
     if (title) title.textContent = d.monthLabel || monthLabel(d.month);
     if (sub) {
-      sub.textContent = (d.totals && d.totals.count ? d.totals.count + ' rows' : 'No rows yet') +
-        (d.scan ? ' · scanned in ' + d.scan.ms + ' ms' : '') +
-        (d.reimbursements && d.reimbursements.outstanding ? ' · ' + money(d.reimbursements.outstanding) + ' reimbursable outstanding' : '');
+      var count = (d.totals && d.totals.count) || 0;
+      sub.textContent = (count ? count + (count === 1 ? ' entry' : ' entries') : 'No entries this month') +
+        (d.reimbursements && d.reimbursements.outstanding ? ' · ' + money(d.reimbursements.outstanding) + ' to be reimbursed' : '');
     }
     var stats = document.getElementById('dash-stats');
     if (stats) {
@@ -580,7 +604,7 @@
       var list = (d.anomalies || []).map(function (a) {
         return '<div class="anomaly"><span>' + esc(a.category) + '</span><b>+' + esc(a.percent) + '%</b></div>';
       }).join('');
-      an.innerHTML = list ? '<h3>Anomaly callouts</h3>' + list : '';
+      an.innerHTML = list ? '<h3>Bigger than last month</h3>' + list : '';
     }
     var budgets = document.getElementById('dash-budgets');
     if (budgets) {
@@ -811,7 +835,7 @@
     var s = state.settings || {};
     var wrap = openModal('App settings', '<div class="feature-form">' +
       '<label><input type="checkbox" data-s-retain ' + (s.retainImages ? 'checked' : '') + '> Retain compressed receipt previews</label>' +
-      '<label><input type="checkbox" data-s-review ' + (s.reviewBeforeCommit ? 'checked' : '') + '> Review extracted rows before saving</label>' +
+      '<label><input type="checkbox" data-s-review ' + (s.reviewBeforeCommit ? 'checked' : '') + '> Review extracted entries before saving</label>' +
       '<label><input type="checkbox" data-s-household ' + (s.householdMode !== false ? 'checked' : '') + '> Household attribution</label>' +
       '<label><input type="checkbox" data-s-reimb ' + (s.reimbursementEnabled !== false ? 'checked' : '') + '> Reimbursement tracking</label>' +
       '<p class="empty-note">Retained previews are compressed and stored in the hidden _CF_ReceiptImages sheet. Only new photos are retained; no Drive permission is needed.</p>' +
@@ -836,7 +860,7 @@
 
   /* ---------- backup ---------- */
   function openBackup() {
-    var wrap = openModal('Backup & restore', '<p class="empty-note">Export all month sheets and feature data as JSON. Restore only adds rows whose Entry ID is not already live; it never overwrites or deletes.</p>' +
+    var wrap = openModal('Backup & restore', '<p class="empty-note">Export all month sheets and feature data as JSON. Restore only adds entries whose Entry ID is not already live; it never overwrites or deletes.</p>' +
       '<div class="feature-form"><label>Restore backup (.json)</label><input type="file" accept="application/json,.json" data-backup-file></div>', [
       { label: 'Download backup', primary: true, onClick: function (w) {
         api('backup.export').then(function (res) {
@@ -859,7 +883,7 @@
               toast('Restore complete: ' + res.added + ' added, ' + res.skipped + ' already present.');
               try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
             }).catch(function (e) { modalError(w, e.message); });
-          } catch (e) { modalError(w, 'That file is not valid JSON.'); }
+          } catch (e) { modalError(w, 'That file isn’t a valid backup.'); }
         };
         reader.readAsText(input.files[0]);
       } }
@@ -904,7 +928,7 @@
   }
 
   function openRetainedImage(id) {
-    toast('Loading receipt image…');
+    toast('Opening receipt image…');
     api('image.get', { id: id }).then(function (res) {
       if (!res || !res.data) throw new Error('Image not found.');
       var raw = atob(res.data);
@@ -943,8 +967,9 @@
     api('search', { filters: filters }).then(function (res) {
       var logs = (res.data && res.data.logs) || [];
       if (window.cfRenderLogs) window.cfRenderLogs(logs, false);
-      if (sub) sub.textContent = 'Showing ' + logs.length + ' of ' + (res.data.total || 0) +
-        ' matching rows' + (res.data.scan ? ' · ' + res.data.scan.ms + ' ms' : '') + '.';
+      if (sub) sub.textContent = logs.length
+        ? 'Showing ' + logs.length + ' of ' + (res.data.total || 0) + ' matching entries.'
+        : 'No entries match these filters.';
       var more = document.getElementById('history-more');
       if (more) more.classList.add('hidden');
       var load = document.getElementById('history-load');
@@ -969,19 +994,19 @@
   }
 
   function openQuickText() {
-    var wrap = openModal('Quick text', '<div class="feature-form"><label>Describe the transaction</label>' +
+    var wrap = openModal('Log a single line', '<div class="feature-form"><label>Describe the transaction</label>' +
       '<textarea data-qt-note placeholder="Coffee 35k this morning, or salary 5jt" maxlength="500"></textarea>' +
-      '<p class="empty-note">Gemini turns this sentence into a normal entry using the currency, tags, member, and reimbursement settings above.</p>' +
+      '<p class="empty-note">Gemini turns this sentence into an entry using the currency, tags, member, and reimbursement settings above.</p>' +
       '<div class="feature-error" data-qt-error></div></div>', [
       { label: 'Cancel', onClick: closeModal },
-      { label: 'Log text', primary: true, onClick: function (w) {
+      { label: 'Log line', primary: true, onClick: function (w) {
         var note = w.querySelector('[data-qt-note]').value.trim();
-        if (!note) { modalError(w, 'Type a note first.'); return; }
+        if (!note) { modalError(w, 'Type a line first.'); return; }
         modalBusy(w, true, 'Reading…');
         var meta = window.cfEntryMetaValues ? window.cfEntryMetaValues() : {};
         api('quickText', { note: note, meta: meta }).then(function () {
           closeModal();
-          toast('Text entry logged.');
+          toast('Line logged.');
           try { window.dispatchEvent(new CustomEvent('cf:history-changed')); } catch (e) {}
         }).catch(function (e) {
           modalBusy(w, false);
@@ -1052,9 +1077,9 @@
       var btn = document.getElementById('dash-report');
       try { win = window.open('', '_blank'); } catch (e) {}
       if (btn) { btn.disabled = true; btn.__orig = btn.textContent; btn.innerHTML = '<span class="spinner"></span>Building…'; }
-      toast('Building report…');
+      toast('Preparing report…');
       api('report.month', { month: state.month || monthNow() }).then(function (res) {
-        toast('Report ready.');
+        toast('Report downloaded.');
         if (res.pdfBase64) {
           var raw = atob(res.pdfBase64);
           var bytes = new Uint8Array(raw.length);
@@ -1132,7 +1157,7 @@
       var queued = false;
       try { var d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); queued = !!(d && d.queued); } catch (e) {}
       if (queued) {
-        toast('Back online. Queued entry is ready.', 'Send', function () {
+        toast('Back online. Your queued entry is ready.', 'Send', function () {
           var tableActive = document.getElementById('tab-table') && document.getElementById('tab-table').classList.contains('active');
           var b = document.getElementById(tableActive ? 'table-submit-btn' : 'submit-btn');
           if (b) b.click();

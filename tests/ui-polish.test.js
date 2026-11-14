@@ -41,18 +41,43 @@ assert.equal(count(html, /<fieldset\b/gi), 1, 'one reconciliation fieldset openi
 assert.equal(count(html, /<\/fieldset>/gi), 1, 'one reconciliation fieldset closing tag');
 assert.match(html, /\.recon-toggles\s*\{[^}]*margin:\s*0 0 10px;/s, 'tight bottom spacing after reconciliation options');
 assert.match(html, /id="recon-options"/, 'reconciliation fieldset');
-assert.match(html, /recon\.classList\.toggle\('hidden', isStd\)/, 'Quick-Input hides settings');
-assert.match(html, /id="toggle-force"/, 'Force-save toggle');
+assert.match(html, /recon\.classList\.toggle\('hidden', isStd\)/, 'Receipt photos hides settings');
+assert.match(html, /class="recon-toggles hidden" id="recon-options"/, 'reconciliation starts hidden in the photo-first default');
+assert.match(html, /id="tabbtn-standard"[^>]*aria-selected="true"[^>]*>Receipt photos</, 'Receipt photos is the default tab');
+assert.match(html, /id="tabbtn-table"[^>]*aria-selected="false"[^>]*>Manual rows</, 'Manual rows is the secondary tab');
+assert.match(html, /id="tab-standard" class="tab-panel active"/, 'photo panel starts active');
+assert.match(html, /show\('standard'\);/, 'photo-first default is wired in the tab controller');
+assert.match(html, /\.hero-compact-note \{ display: block;/, 'mobile keeps a one-line intro');
+assert.match(html, /id="quick-text-btn"[^>]*>Or log a single line</, 'typed entry stays available beside the note');
+assert.match(html, /id="history-empty"/, 'empty Recent entries state');
+assert.match(html, /id="history-empty-btn"/, 'empty state points back to the form');
+assert.doesNotMatch(html, /Anomaly callouts|Submit Batch|Reconciliation options|Force-save/, 'operator labels removed from the working surface');
+assert.match(html, /id="toggle-force"/, 'Save anyway toggle');
 assert.doesNotMatch(html, /toggle-discount|discount-note|Auto-discount|autoDiscount|auto-discount-adjusted|discountAdjusted/i, 'no Auto-discount UI/client feature or stale summary counter');
 assert.match(html, /class="switch one-row-switch"/, 'one-row toggle must reuse shared switch styling');
 assert.match(html, /#tab-standard \.one-row-switch \.track \{ grid-row: 1; \}/, 'one-row toggle track stays on the title row');
 assert.match(html, /<label for="toggle-onerow" class="track" aria-hidden="true">/, 'tapping one-row track toggles checkbox');
+assert.match(html, /--faint:\s*#6f6a61/, 'metadata text passes contrast');
+assert.match(html, /\.info-btn\s*\{[^}]*width:\s*44px;\s*height:\s*44px/, 'info help has a 44px target');
+assert.match(html, /\.btn-choice\.primary\s*\{[^}]*background:\s*var\(--accent-solid\)/, 'feature dialog primary action is styled');
+assert.match(html, /Touch targets: 44px/, 'mobile controls meet the touch floor');
 assert.doesNotMatch(readme, /Auto-discount/i, 'README does not advertise Auto-discount');
 
 for (const key of ['entry', 'reconciliation', 'photos', 'note', 'one-row']) {
   assert.match(html, new RegExp('data-info="' + key + '"'), 'info trigger: ' + key);
 }
 assert.match(html, /id="info-modal"[^>]*role="dialog"[^>]*aria-modal="true"/, 'accessible info dialog');
+assert.match(html, /id="lightbox"[^>]*aria-hidden="true" inert/, 'closed photo viewer is inert');
+assert.match(html, /id="trow-lightbox"[^>]*aria-hidden="true" inert/, 'closed row viewer is inert');
+assert.match(html, /lightbox\.removeAttribute\('inert'\)/, 'photo viewer leaves inert on open');
+assert.match(html, /lightbox\.setAttribute\('inert', ''\)/, 'photo viewer returns to inert on close');
+assert.match(html, /function cfDialogList\(\)/, 'shared dialog focus containment');
+assert.match(html, /cfFocusable\(dialog\)/, 'Tab stays inside the active dialog');
+assert.match(html, /wrap\.setAttribute\('aria-labelledby', 'fm-title'\)/, 'feature dialog is named');
+assert.match(html, /btnS\.tabIndex = isStd \? 0 : -1/, 'tabs use roving tabindex');
+assert.match(html, /ArrowRight[\s\S]{0,140}tabs\[/, 'tabs respond to arrow keys');
+assert.match(html, /id="hero-toggle" role="menuitem"/, 'intro action is an action item');
+assert.doesNotMatch(html, /id="hero-toggle"[^>]*aria-pressed/, 'no misleading pressed state on the intro action');
 assert.match(html, /infoBody\.textContent\s*=\s*copy\.body/, 'info content uses textContent');
 assert.match(html, /if \(e\.target === infoModal\) closeInfoModal\(\)/, 'info backdrop close');
 assert.match(html, /Escape[\s\S]{0,180}closeInfoModal\(\)/, 'info Escape close');
@@ -60,7 +85,7 @@ assert.match(html, /if \(focus && focus\.focus\) focus\.focus\(\)/, 'restore foc
 
 assert.match(html, /<p>Add a photo or a note\.<\/p>/, 'short entry helper');
 assert.match(html, /Camera takes a new photo\. Gallery lets you choose existing photos\./, 'short photo helper');
-assert.match(html, /placeholder="Optional note for these receipt\(s\)…"/, 'short note placeholder');
+assert.match(html, /placeholder="Optional note for these receipts…"/, 'short note placeholder');
 assert.doesNotMatch(html, /Quick-Input logs fast|Photo optional\. Note optional|Applies to all photos, e\.g\.|Each row = optional photo|Each photo is logged as its own receipt —/, 'redundant copy removed');
 
 assert.doesNotMatch(code, /autoDiscount|AUTO DISCOUNT/i, 'no Auto-discount backend option/policy');
@@ -102,4 +127,4 @@ assert.equal(negative.applied,'force-discount'); assert.equal(negative.txn.items
 assert.equal(negative.txn.items[1].amount,-2000); assert.equal(negative.txn.items[1].description,'Missing/hidden discount');
 assert.equal(context.policy(JSON.parse(JSON.stringify(txn)),{verdict:'mismatch',difference:2000},{forceLog:false}).applied,'none');
 assert.equal(context.policy(JSON.parse(JSON.stringify(txn)),{verdict:'uncertain',difference:null},{forceLog:true}).applied,'none');
-console.log('UI polish checks passed: document, header, modal, copy, tabs, legacy idempotency, Quick-Input policy and Force-save.');
+console.log('UI polish checks passed: document, header, modal, copy, tabs, legacy idempotency, Receipt photos policy and Save anyway.');

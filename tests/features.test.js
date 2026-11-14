@@ -57,7 +57,7 @@ for (const id of ['dashboard-card', 'entry-meta', 'entry-currency', 'entry-tags'
 }
 for (const marker of ['DRAFT_KEY', 'indexedDB', 'cfQueueOffline', 'cfClearDraft',
   'cfReviewBeforeCommit', 'cfSplitRow', 'runSearch', 'openSessions', 'openBackup',
-  'Anomaly callouts', 'markReimbursed', 'report.month', 'cfRenderDashboard',
+  'Bigger than last month', 'markReimbursed', 'report.month', 'cfRenderDashboard',
   'photoUrl', 'data-rv-merchant', 'openQuickText', 'cfRetryFailedBatch', 'feature-help',
   'advanced-toggle', 'paintAdvanced', 'dashboardCache', 'openRetainedImage']) {
   assert.ok(client.includes(marker), 'feature client marker: ' + marker);

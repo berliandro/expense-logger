@@ -44,7 +44,7 @@ assert.match(css, /\.card \{[\s\S]*?box-shadow: none/, 'cards are flat, not floa
 // --- Visual system: warm paper + one burnt-orange accent -------------------
 assert.doesNotMatch(css, /#e60023|#ff6a00|--accent-grad|linear-gradient\(135deg/i, 'no old neon red/orange palette');
 assert.match(css, /--accent:\s*#e08a5a/, 'orange accent');
-assert.match(css, /--accent-solid:\s*#c9632f/, 'burnt-orange action');
+assert.match(css, /--accent-solid:\s*#b4562a/, 'burnt-orange action');
 assert.match(css, /--bg:\s*#121110/, 'warm graphite dark background');
 assert.match(css, /--bg:\s*#f3f1ec/, 'warm paper light background');
 assert.match(css, /--surface:\s*#ffffff/, 'white flat cards');
