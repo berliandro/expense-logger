@@ -1135,7 +1135,7 @@
               (String(lg.reimbursable || '').toLowerCase() === 'yes' && String(lg.reimbursed || '').toLowerCase() !== 'yes'
                 ? '<button type="button" class="hist-del" data-act="reimburse" data-entry-id="' + eid + '" aria-label="Mark ' + esc(merchant || 'this entry') + ' reimbursed">Mark reimbursed</button>'
                 : '') +
-              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-entry-id="' + eid + '" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ' + esc(merchant || 'this entry') + '" title="More actions">&#8943;</button></span>' +
+              '<span class="hist-more-wrap"><button type="button" class="hist-del" data-act="more" data-entry-id="' + eid + '" data-txn-id="' + tid + '" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ' + esc(merchant || 'this entry') + '" title="More actions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></span>' +
             '</div></div>'
           );
         });

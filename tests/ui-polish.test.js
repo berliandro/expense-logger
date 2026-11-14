@@ -30,6 +30,33 @@ assert.ok(pillAt >= 0 && themeAt > pillAt && settingsAt > themeAt, 'header order
 assert.doesNotMatch(html, /\.pill\s*\{\s*display:\s*none\s*!important?\s*;/i, 'status pill remains on mobile');
 assert.match(html, /#pill-env,\s*\.pill-sep\s*\{\s*display:\s*none;\s*\}/, 'environment suffix collapses on mobile');
 
+// --- Envelope Binder shell: rail, bottom tabs, strip, settings panel --------
+assert.match(html, /class="binder-body"/, 'binder spread wraps the working surface');
+assert.match(html, /id="binder-rail" aria-label="Sections"/, 'desktop rail is labeled');
+assert.match(html, /id="binder-nav" aria-label="Sections"/, 'mobile nav is labeled');
+for (const target of ['entry', 'overview', 'history', 'settings']) {
+  assert.match(html, new RegExp('class="binder-nav-item[^"]*" data-binder-target="' + target + '"'), 'bottom tab: ' + target);
+  assert.match(html, new RegExp('class="binder-rail-item[^"]*" data-binder-target="' + target + '"'), 'rail item: ' + target);
+  assert.match(html, new RegExp('data-binder-panel="' + target + '"'), 'panel target: ' + target);
+}
+assert.match(html, /body\[data-binder-tab="overview"\] \[data-binder-panel="overview"\]/, 'mobile swaps panels by tab');
+assert.match(html, /function initBinderShell\(\)/, 'shell controller is wired');
+assert.match(html, /id="settings-panel-list"/, 'mobile settings has a panel list');
+assert.match(html, /function refreshSettingsPanel\(\)/, 'settings panel mirrors the menu actions');
+assert.match(html, /id="month-strip"[^>]*aria-label="This month"/, 'hybrid month strip is labeled');
+assert.match(html, /id="strip-spent"/, 'strip shows month spend');
+assert.match(html, /id="strip-net"/, 'strip shows net');
+assert.match(html, /body\.locked \.binder-rail, body\.locked \.binder-nav/, 'locked gate hides the binder shell');
+assert.match(html, /body\.locked \.month-strip/, 'locked gate hides the month strip');
+assert.match(html, /@media \(min-width: 921px\)[\s\S]*?\.month-strip \{[\s\S]*?display: flex;/, 'desktop month strip sits above the capture envelope');
+assert.match(html, /#submit-btn,[\s\S]*?background: var\(--accent-solid\)/, 'commit action is the amber primary action');
+assert.match(html, /\.stamp-warn \{ background: var\(--accent-solid\)/, 'light stamp fill keeps ink contrast');
+assert.match(html, /\.info-btn svg \{ width: 18px; height: 18px; \}/, 'info control is a drawn icon');
+assert.doesNotMatch(html, />i<\/button>/, 'no text-glyph info controls');
+assert.doesNotMatch(html, /id="dash-prev"[^>]*>‹</, 'month back control is a drawn icon');
+assert.doesNotMatch(html, /id="dash-next"[^>]*>›</, 'month forward control is a drawn icon');
+assert.doesNotMatch(html, /&#8943;/, 'row menu is a drawn icon');
+
 const overlay = html.match(/#lock-screen,\s*#pin-modal,\s*#api-modal,\s*#sheet-modal,[^{}]*#info-modal\s*\{/);
 assert.ok(overlay && overlay[0].includes('#sess-modal'), 'session modal uses overlay CSS');
 assert.match(html, /#sess-modal\s*\{\s*z-index:\s*110;\s*\}/, 'session modal z-index');
@@ -87,7 +114,7 @@ assert.match(html, /id="dash-title" aria-live="polite"/, 'month changes are anno
 assert.match(html, /function fmtMoney\(n, code\)/, 'history amounts respect their currency');
 assert.match(html, /fmtMoney\(amt, lg\.currency\)/, 'row amount uses the stored currency');
 assert.match(html, /function fmtCount\(n\)/, 'large counts are grouped');
-assert.match(html, /--income:\s*#31664f/, 'light income ink meets contrast');
+assert.match(html, /--income:\s*#2e6a49/, 'light income ink meets contrast');
 assert.match(html, /\.adv-toggle \{[^}]*min-height:\s*44px/, 'advanced toggle has a full target');
 assert.match(html, /\.meta-check \{[^}]*min-height:\s*32px/, 'flag rows have a desktop target');
 assert.match(html, /\.one-row-switch \.track::before/, 'switch track has an expanded hit area');
@@ -123,12 +150,12 @@ assert.doesNotMatch(html, /toggle-discount|discount-note|Auto-discount|autoDisco
 assert.match(html, /class="switch one-row-switch"/, 'one-row toggle must reuse shared switch styling');
 assert.match(html, /#tab-standard \.one-row-switch \.track \{ grid-row: 1; \}/, 'one-row toggle track stays on the title row');
 assert.match(html, /<label for="toggle-onerow" class="track" aria-hidden="true">/, 'tapping one-row track toggles checkbox');
-assert.match(html, /--faint:\s*#6f6a61/, 'metadata text passes contrast');
+assert.match(html, /--faint:\s*#6b665d/, 'metadata text passes contrast');
 assert.match(html, /\.info-btn\s*\{[^}]*width:\s*44px;\s*height:\s*44px/, 'info help has a 44px target');
 assert.match(html, /\.btn-choice\.primary\s*\{[^}]*background:\s*var\(--accent-solid\)/, 'feature dialog primary action is styled');
 assert.match(html, /Touch targets: 44px/, 'mobile controls meet the touch floor');
 assert.equal(count(html, /class="submit-dock"/g), 2, 'both entry modes share the action dock');
-assert.match(html, /\.submit-dock\s*\{[^}]*position:\s*sticky;[^}]*bottom:\s*0;/, 'primary action stays in view');
+assert.match(html, /\.submit-dock \{[\s\S]*?position: sticky;[\s\S]*?bottom: calc\(var\(--binder-nav-h\)/, 'primary action stays above the mobile nav');
 assert.match(html, /function setStatus\(text, cls, reveal\)/, 'form status can request reveal');
 assert.doesNotMatch(readme, /Auto-discount/i, 'README does not advertise Auto-discount');
 

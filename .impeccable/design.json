@@ -1,0 +1,499 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-14T14:10:48.922Z",
+  "title": "Design System: Cashflow Log",
+  "extensions": {
+    "colorMeta": {
+      "graphite-desk": {
+        "role": "primary",
+        "displayName": "Graphite Desk",
+        "canonical": "#0e0d0c",
+        "purpose": "Page field in dark theme.",
+        "tonalRamp": [
+          "#292623",
+          "#47423d",
+          "#665e57",
+          "#847a71",
+          "#9e968e",
+          "#b8b3ad",
+          "#d5d1ce",
+          "#f3f2f1"
+        ]
+      },
+      "warm-graphite": {
+        "role": "neutral",
+        "displayName": "Warm Graphite",
+        "canonical": "#171513",
+        "purpose": "Envelope and binder page surface.",
+        "tonalRamp": [
+          "#2a2623",
+          "#49423c",
+          "#675e55",
+          "#867a6f",
+          "#a0968c",
+          "#bab3ab",
+          "#d5d1cd",
+          "#f3f2f1"
+        ]
+      },
+      "raised-envelope": {
+        "role": "neutral",
+        "displayName": "Raised Envelope",
+        "canonical": "#1d1a17",
+        "purpose": "Menus, dialogs, and the mobile nav.",
+        "tonalRamp": [
+          "#2b2622",
+          "#4a423b",
+          "#695e53",
+          "#897a6c",
+          "#a3968a",
+          "#bbb3aa",
+          "#d6d1cc",
+          "#f4f2f1"
+        ]
+      },
+      "ledger-ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "#f2ede4",
+        "purpose": "Primary text on dark surfaces.",
+        "tonalRamp": [
+          "#342a19",
+          "#5a492b",
+          "#7f683d",
+          "#a58750",
+          "#bba172",
+          "#cdba98",
+          "#e1d6c1",
+          "#f7f4ee"
+        ]
+      },
+      "pencil-muted": {
+        "role": "neutral",
+        "displayName": "Pencil Muted",
+        "canonical": "#b5ac9f",
+        "purpose": "Secondary text and metadata.",
+        "tonalRamp": [
+          "#2b2721",
+          "#4b443a",
+          "#6b6152",
+          "#8a7d6b",
+          "#a49989",
+          "#bcb4a9",
+          "#d7d2cb",
+          "#f4f3f1"
+        ]
+      },
+      "ledger-line": {
+        "role": "neutral",
+        "displayName": "Ledger Line",
+        "canonical": "#332e28",
+        "purpose": "Hairlines and input strokes.",
+        "tonalRamp": [
+          "#2b2722",
+          "#4a433a",
+          "#6a5f53",
+          "#897c6c",
+          "#a3988a",
+          "#bcb3a9",
+          "#d7d2cc",
+          "#f4f2f1"
+        ]
+      },
+      "amber-tab": {
+        "role": "primary",
+        "displayName": "Amber Tab",
+        "canonical": "#f0a44b",
+        "purpose": "Active tab, active nav item, and accent text.",
+        "tonalRamp": [
+          "#472906",
+          "#7a470a",
+          "#ae650f",
+          "#e28313",
+          "#ef9d3e",
+          "#f3b872",
+          "#f8d4aa",
+          "#fdf3e7"
+        ]
+      },
+      "amber-stamp": {
+        "role": "primary",
+        "displayName": "Amber Stamp",
+        "canonical": "#e08a32",
+        "purpose": "Primary actions and the binder tab.",
+        "tonalRamp": [
+          "#42270a",
+          "#734311",
+          "#a45f19",
+          "#d57b20",
+          "#e49749",
+          "#ebb37a",
+          "#f3d1af",
+          "#fcf2e9"
+        ]
+      },
+      "amber-soft": {
+        "role": "primary",
+        "displayName": "Amber Soft",
+        "canonical": "#2e2418",
+        "purpose": "Active tab and nav background fills.",
+        "tonalRamp": [
+          "#32271a",
+          "#57442d",
+          "#7c6141",
+          "#a17e54",
+          "#b79976",
+          "#cbb59a",
+          "#e0d2c3",
+          "#f6f3ee"
+        ]
+      },
+      "stamp-ink": {
+        "role": "neutral",
+        "displayName": "Stamp Ink",
+        "canonical": "#1b1207",
+        "purpose": "Text on amber and green stamps.",
+        "tonalRamp": [
+          "#3d2810",
+          "#69461b",
+          "#966427",
+          "#c28232",
+          "#d49d59",
+          "#e0b785",
+          "#ecd4b6",
+          "#faf3eb"
+        ]
+      },
+      "income-green": {
+        "role": "secondary",
+        "displayName": "Income Green",
+        "canonical": "#9ed8a9",
+        "purpose": "Income amounts and stamps.",
+        "tonalRamp": [
+          "#16371c",
+          "#265f31",
+          "#368745",
+          "#46af5a",
+          "#6ac37b",
+          "#92d39e",
+          "#bee5c5",
+          "#edf8ef"
+        ]
+      },
+      "income-soft": {
+        "role": "secondary",
+        "displayName": "Income Soft",
+        "canonical": "#1c2a20",
+        "purpose": "Income badge background.",
+        "tonalRamp": [
+          "#1f2e23",
+          "#35503d",
+          "#4b7156",
+          "#629370",
+          "#82ab8d",
+          "#a3c2ac",
+          "#c8dacd",
+          "#f0f5f1"
+        ]
+      },
+      "ink-red": {
+        "role": "tertiary",
+        "displayName": "Ink Red",
+        "canonical": "#e98c7e",
+        "purpose": "Destructive actions and errors.",
+        "tonalRamp": [
+          "#41120b",
+          "#712013",
+          "#a12d1b",
+          "#d13a24",
+          "#e1604c",
+          "#e98a7c",
+          "#f2b9b1",
+          "#fbece9"
+        ]
+      },
+      "paper-desk": {
+        "role": "primary",
+        "displayName": "Paper Desk",
+        "canonical": "#eceae5",
+        "purpose": "Page field in light theme.",
+        "tonalRamp": [
+          "#2c2920",
+          "#4d4738",
+          "#6d6550",
+          "#8d8367",
+          "#a79d86",
+          "#beb8a7",
+          "#d8d4ca",
+          "#f4f3f0"
+        ]
+      },
+      "envelope-paper": {
+        "role": "neutral",
+        "displayName": "Envelope Paper",
+        "canonical": "#faf8f4",
+        "purpose": "Envelope surface in light theme.",
+        "tonalRamp": [
+          "#352b18",
+          "#5b4b29",
+          "#826a3b",
+          "#a88a4d",
+          "#bea46f",
+          "#cfbc96",
+          "#e2d7c0",
+          "#f7f4ed"
+        ]
+      },
+      "raised-paper": {
+        "role": "neutral",
+        "displayName": "Raised Paper",
+        "canonical": "#ffffff",
+        "purpose": "Menus and dialogs in light theme.",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5e5e5e",
+          "#7a7a7a",
+          "#969696",
+          "#b3b3b3",
+          "#d1d1d1",
+          "#f2f2f2"
+        ]
+      },
+      "paper-line": {
+        "role": "neutral",
+        "displayName": "Paper Line",
+        "canonical": "#ddd7cd",
+        "purpose": "Hairlines in light theme.",
+        "tonalRamp": [
+          "#2e281f",
+          "#4f4536",
+          "#70634c",
+          "#928063",
+          "#aa9b83",
+          "#c1b6a4",
+          "#dad3c8",
+          "#f5f3f0"
+        ]
+      },
+      "amber-ink": {
+        "role": "primary",
+        "displayName": "Amber Ink",
+        "canonical": "#a34e0f",
+        "purpose": "Accent text in light theme.",
+        "tonalRamp": [
+          "#462206",
+          "#793a0b",
+          "#ad5310",
+          "#e06b15",
+          "#ed8a40",
+          "#f2a973",
+          "#f7cbab",
+          "#fdf1e8"
+        ]
+      },
+      "income-ink": {
+        "role": "secondary",
+        "displayName": "Income Ink",
+        "canonical": "#2e6a49",
+        "purpose": "Income text in light theme.",
+        "tonalRamp": [
+          "#173525",
+          "#285c40",
+          "#39845b",
+          "#4aab76",
+          "#6dc092",
+          "#94d1af",
+          "#bfe3cf",
+          "#edf7f2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Cover statement on desktop and the entry heading."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Card, month, modal, and empty-state titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Merchant names, row titles, and menu labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Explanatory copy, form text, and settings descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, stamps, month tabs, and section labels."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Month spend and dashboard stat values."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-surface",
+        "value": "0 12px 28px -18px rgba(0, 0, 0, 0.65)",
+        "purpose": "Binder rail and month strip at rest."
+      },
+      {
+        "name": "modal-lift",
+        "value": "0 22px 50px -30px rgba(0, 0, 0, 0.85)",
+        "purpose": "Menus, dialogs, and the PIN gate card."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-ease",
+        "value": "0.18s ease",
+        "purpose": "Border and background state changes on controls and pockets."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-small",
+        "value": "360px"
+      },
+      {
+        "name": "phone",
+        "value": "480px"
+      },
+      {
+        "name": "binder",
+        "value": "920px"
+      },
+      {
+        "name": "desktop",
+        "value": "921px"
+      },
+      {
+        "name": "laptop-compact",
+        "value": "1366px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Amber action inside dialogs and feature forms.",
+      "html": "<button class=\"ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent-solid); color: var(--accent-ink); font: 650 13px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor: pointer; transition: background 0.18s ease; } .ds-btn-primary:hover { background: var(--accent-hover); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Commit Button",
+      "kind": "button",
+      "refersTo": "button-commit",
+      "description": "Full-width footer action that commits the current entry.",
+      "html": "<button class=\"ds-btn-commit\">+ Log entry</button>",
+      "css": ".ds-btn-commit { width: 100%; min-height: 52px; padding: 10px 16px; border: 0; border-radius: 999px; background: var(--accent-solid); color: var(--accent-ink); font: 750 13px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.01em; cursor: pointer; transition: background 0.18s ease, color 0.18s ease; } .ds-btn-commit:hover { background: var(--accent-hover); color: var(--accent-ink); } .ds-btn-commit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action beside a primary button.",
+      "html": "<button class=\"ds-btn-ghost\">Gallery</button>",
+      "css": ".ds-btn-ghost { min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: 650 13px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease; } .ds-btn-ghost:hover { background: var(--field-hover); border-color: var(--muted); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Envelope Card",
+      "kind": "card",
+      "refersTo": "envelope-card",
+      "description": "The main working surface with its amber binder tab.",
+      "html": "<section class=\"ds-envelope\"><div class=\"ds-tab\"></div><h2>New entry</h2><p>Add a photo or a note.</p></section>",
+      "css": ".ds-envelope { position: relative; padding: 26px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: none; } .ds-tab { position: absolute; top: -1px; left: 22px; width: 68px; height: 6px; border-radius: 0 0 5px 5px; background: var(--accent); } .ds-envelope h2 { margin: 0 0 4px; font: 800 22px/1.15 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.035em; } .ds-envelope p { margin: 0; font: 400 15px/1.6 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; color: var(--muted); }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Filled field used for notes, PINs, and dialog forms.",
+      "html": "<label class=\"ds-field\"><span>Note</span><input value=\"Weekly groceries\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; color: var(--faint); font: 700 10px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; } .ds-field input { min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font: 400 15px/1.5 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0; text-transform: none; outline: none; } .ds-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }"
+    },
+    {
+      "name": "Month Strip",
+      "kind": "custom",
+      "refersTo": "month-strip",
+      "description": "Compact first-screen month summary above the capture envelope.",
+      "html": "<section class=\"ds-strip\"><div class=\"ds-strip-top\"><span>November 2026</span><a href=\"#\">View month</a></div><div class=\"ds-strip-main\"><div><span>Spent</span><b>Rp4.380.000</b></div><div class=\"ds-strip-net\"><span>Net</span><b>Rp8.120.000</b></div></div><div class=\"ds-strip-foot\"><span class=\"ds-stamp\">Rp450.000 to be reimbursed</span><span class=\"ds-strip-count\">42 entries</span></div></section>",
+      "css": ".ds-strip { width: 100%; padding: 12px 14px 10px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: 0 12px 28px -18px rgba(0,0,0,0.65); } .ds-strip-top { display: flex; justify-content: space-between; align-items: center; font: 700 10px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); } .ds-strip-top a { color: var(--accent); text-decoration: none; } .ds-strip-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; margin-top: 6px; } .ds-strip span { display: block; color: var(--faint); font: 700 9px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; } .ds-strip b { display: block; font: 800 24px/1.04 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; } .ds-strip-net { text-align: right; } .ds-strip-net b { font-size: 11px; letter-spacing: 0; } .ds-strip-foot { display: flex; align-items: center; gap: 6px; margin-top: 7px; } .ds-stamp { padding: 3px 7px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); font: 750 10px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0.01em; } .ds-strip-count { margin-left: auto; color: var(--faint); font: 400 11px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; }"
+    },
+    {
+      "name": "History Row",
+      "kind": "card",
+      "refersTo": "history-row",
+      "description": "A ruled ledger row inside the Recent entries binder page.",
+      "html": "<article class=\"ds-row\"><div><b>Demo Grocer</b><span class=\"ds-badge\">Expense</span><p>Weekly groceries</p><small>6 Nov · Groceries</small></div><strong>Rp210.000</strong></article>",
+      "css": ".ds-row { display: flex; justify-content: space-between; gap: 12px; padding: 14px 2px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); } .ds-row:last-child { border-bottom: 0; } .ds-row b { font: 750 15px/1.25 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.015em; } .ds-row strong { font: 800 18px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; white-space: nowrap; } .ds-row p { margin: 3px 0 0; color: var(--muted); font: 400 13px/1.5 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-row small { display: block; margin-top: 5px; color: var(--faint); font: 400 11px/1.4 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-badge { display: inline-block; margin-left: 8px; padding: 3px 6px; border-radius: 4px; color: var(--muted); font: 750 10px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line); }"
+    },
+    {
+      "name": "Bottom Navigation",
+      "kind": "nav",
+      "description": "Four-tab binder navigation fixed above the phone safe area.",
+      "html": "<nav class=\"ds-nav\"><button class=\"is-active\">Entry</button><button>Overview</button><button>History</button><button>Settings</button></nav>",
+      "css": ".ds-nav { display: flex; gap: 2px; padding: 7px 8px 9px; border-top: 1px solid var(--line); background: var(--surface-strong); } .ds-nav button { flex: 1 1 0; min-height: 48px; padding: 5px 4px; border: 0; border-radius: 14px; background: transparent; color: var(--muted); font: 700 11px/1.2 ui-sans-serif, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-nav button.is-active { color: var(--accent); background: var(--accent-soft); } .ds-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Family Envelope Binder",
+    "overview": "Cashflow Log looks like the household budget binder that already lives on the kitchen shelf: a graphite desk, matte envelopes, amber index tabs, and stamped states. The surface is precise rather than scrapbooked. Money is the loudest thing on the page, set in tight tabular sans; everything else is a hairline, a label, or a quiet note. The binder metaphor is structural, not decorative: the spread holds a cover, a capture envelope, and the month's page, and the navigation behaves like the tabs that divide them.\n\nThe system is dark by default because the primary scene is a family member logging a receipt at the kitchen table after the shops, often in low light; the graphite desk keeps the receipt and the numbers calm. A warm paper theme is available for daylight and for the owner's desktop. Both themes use the same material logic, so a theme change does not change the composition.\n\nThe app is an Operate surface: scanning, capture, and correction outrank expression. The amber tab, the stamped reimbursement badge, and the big tabular numerals carry the brand; everything else stays quiet so a receipt can become a verified row without the interface asking for attention.",
+    "keyCharacteristics": [
+      "Graphite desk with matte envelope panels and one warm amber accent.",
+      "Binder tabs, stamped states, and tabular numerals as the recurring signature.",
+      "Hairlines and spacing carry hierarchy; shadows belong only to floating surfaces.",
+      "Phone-first capture with a four-tab binder shell; desktop keeps a sticky rail.",
+      "System sans in a tight, confident scale; no serif revival."
+    ],
+    "rules": [
+      {
+        "name": "The One Tab Rule",
+        "body": "Amber is a state, not a wash. It marks the active tab, the active navigation item, the primary action, and the reimbursement stamp; it never becomes the page background or a decorative gradient.",
+        "section": "colors"
+      },
+      {
+        "name": "The Stamp Contrast Rule",
+        "body": "Every amber fill carries Stamp Ink (#1B1207), never white. Every green fill carries the dark income ink; every red fill carries white only where the fill is dark enough.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Money Rule",
+        "body": "Every amount, count, and date column uses font-variant-numeric: tabular-nums and tight tracking; money never wobbles between rows.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Serif Rule",
+        "body": "There is no serif in the system. The binder's authority comes from weight, spacing, and the amber tab, not from an editorial face.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-Envelope Rule",
+        "body": "If a surface is part of the page, it is flat and hairline-bordered. Shadow is reserved for something that can be dismissed, dragged, or floats above the spread.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the amber tab as the only raised gesture on the capture envelope, at 68×6px.",
+      "Do use tabular numerals for every amount, count, and date.",
+      "Do clamp long merchant names to two lines and let the amount hold the right edge.",
+      "Do keep Camera and Gallery above the sticky commit dock at 390px and 320px.",
+      "Do use hairlines, dashed rules, and spacing before reaching for a shadow.",
+      "Do flatten history entries into ruled ledger rows with a 1px bottom hairline.",
+      "Do theme the browser surface: focus rings, selection, caret, scrollbars, and file inputs come from the same palette."
+    ],
+    "donts": [
+      "Don't use gradients, glass, or backdrop blur; the world is matte.",
+      "Don't turn every section into a same-size icon/heading/text card, or nest cards inside the history page; the spread is the structure.",
+      "Don't use amber for body copy or large background fields; it is a state and an action color.",
+      "Don't use a serif or a decorative display face; the system sans is the voice.",
+      "Don't hide the month entirely on phones without leaving it available in Overview."
+    ]
+  }
+}

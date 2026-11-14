@@ -36,22 +36,40 @@ assert.equal((css.match(/backdrop-filter/g) || []).length, 0, 'no backdrop blur 
 assert.equal((css.match(/radial-gradient/g) || []).length, 0, 'no decorative background gradients');
 assert.doesNotMatch(shell + layout, /class="bg"/, 'no background effect layer');
 assert.doesNotMatch(css, /\.bg\s*\{/, 'no background effect styles');
-assert.match(css, /--radius-xl:\s*12px/, 'small edge curves');
+assert.match(css, /--radius-xl:\s*24px/, 'binder-scale edge curves');
 assert.match(css, /\.trow \{[\s\S]*?border: 1px solid var\(--line\)/, 'table rows use hairline borders');
-assert.match(css, /\.hist-item \{[\s\S]*?border-bottom: 1px solid var\(--line\)/, 'history renders as ledger rows');
-assert.match(css, /\.card \{[\s\S]*?box-shadow: none/, 'cards are flat, not floating');
+assert.match(css, /\.hist-item \{[\s\S]*?border-bottom: 1px solid var\(--line\)/, 'history renders as ruled ledger rows');
+assert.match(css, /\.card \{[\s\S]*?box-shadow: none/, 'cards are matte, not floating');
 
-// --- Visual system: warm paper + one burnt-orange accent -------------------
+// --- Visual system: graphite desk + amber stamps ---------------------------------
 assert.doesNotMatch(css, /#e60023|#ff6a00|--accent-grad|linear-gradient\(135deg/i, 'no old neon red/orange palette');
-assert.match(css, /--accent:\s*#e08a5a/, 'orange accent');
-assert.match(css, /--accent-solid:\s*#b4562a/, 'burnt-orange action');
-assert.match(css, /--bg:\s*#121110/, 'warm graphite dark background');
-assert.match(css, /--bg:\s*#f3f1ec/, 'warm paper light background');
-assert.match(css, /--surface:\s*#ffffff/, 'white flat cards');
-assert.match(css, /--serif:\s*Georgia/, 'editorial serif display face');
-assert.match(css, /\.tab\.active::after/, 'tabs are underlined, not pills');
-assert.match(shell, /data-theme="light"/, 'light is the default theme');
-assert.match(shell, /localStorage\.getItem\('cf-theme'\)\|\|'light'/, 'no-flash boot defaults to light');
+assert.match(css, /--accent:\s*#f0a44b/, 'amber accent');
+assert.match(css, /--accent-solid:\s*#e08a32/, 'amber action');
+assert.match(css, /--bg:\s*#0e0d0c/, 'graphite desk background');
+assert.match(css, /--bg:\s*#eceae5/, 'warm paper light background');
+assert.match(css, /--surface:\s*#faf8f4/, 'matte light envelopes');
+assert.match(css, /--serif:\s*var\(--font\)/, 'display face is the system sans, not a serif');
+assert.match(css, /\.tab\.active \{ background: var\(--surface-strong\)/, 'tabs are raised pills');
+assert.match(css, /\.entry-card::before/, 'active envelope carries a binder tab');
+assert.match(shell, /data-theme="dark"/, 'dark is the default theme');
+assert.match(shell, /localStorage\.getItem\('cf-theme'\)\|\|'dark'/, 'no-flash boot defaults to dark');
+
+// --- Binder shell: rail, mobile tabs, strip, settings panel ----------------
+assert.match(layout, /class="binder-body"/, 'binder spread wrapper');
+assert.match(layout, /id="binder-rail" aria-label="Sections"/, 'desktop rail');
+assert.match(layout, /id="binder-nav" aria-label="Sections"/, 'mobile bottom nav');
+for (const target of ['entry', 'overview', 'history', 'settings']) {
+  assert.equal((layout.match(new RegExp('data-binder-target="' + target + '"', 'g')) || []).length >= 2, true, 'rail and nav target: ' + target);
+  assert.match(layout, new RegExp('data-binder-panel="' + target + '"'), 'panel: ' + target);
+}
+assert.match(css, /body\[data-binder-tab="overview"\] \[data-binder-panel="overview"\]/, 'mobile shows the selected panel');
+assert.match(css, /\.binder-nav \{[\s\S]*?position: fixed;/, 'bottom nav is fixed');
+assert.match(css, /\.binder-rail \{[\s\S]*?position: sticky;/, 'desktop rail follows the spread');
+assert.match(js, /function initBinderShell\(\)/, 'shell controller exists');
+assert.match(js, /settings-panel-list/, 'settings panel mirrors menu actions');
+assert.match(layout, /class="month-strip is-loading" id="month-strip"/, 'month strip starts in a loading state');
+assert.match(layout, /id="strip-spent"/, 'strip carries the month spend');
+assert.match(css, /body\.locked \.binder-rail, body\.locked \.binder-nav/, 'locked gate hides the shell');
 
 // --- Client rendering: batch DOM writes, reuse object URLs ----------------
 assert.match(js, /insertAdjacentHTML\('beforeend', markup\)/, 'history page inserted in one write');

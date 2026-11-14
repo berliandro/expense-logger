@@ -819,7 +819,7 @@
         try {
           document.documentElement.style.colorScheme = t;
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', t === 'dark' ? '#121110' : '#f3f1ec');
+          if (meta) meta.setAttribute('content', t === 'dark' ? '#0E0D0C' : '#ECEAE5');
         } catch (e) {}
       }
       paint();
@@ -901,6 +901,7 @@
         menu.classList.add('hidden');
         btn.setAttribute('aria-expanded', 'false');
         if (restoreFocus) { try { btn.focus(); } catch (e) {} }
+        try { window.dispatchEvent(new CustomEvent('cf:settings-menu-closed')); } catch (e2) {}
       }
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -941,6 +942,131 @@
         });
       });
       window.addEventListener('cf:close-settings', function () { close(false); });
+    })();
+
+    /* Binder shell — mobile tabs, desktop rail, settings panel, month strip */
+    (function initBinderShell() {
+      var nav = document.getElementById('binder-nav');
+      var rail = document.getElementById('binder-rail');
+      var menu = document.getElementById('settings-menu');
+      var settingsBtn = document.getElementById('settings-btn');
+      var panelList = document.getElementById('settings-panel-list');
+      var media = window.matchMedia('(max-width: 920px)');
+      var current = 'entry';
+      if (!nav && !rail) return;
+
+      function target(name) {
+        if (name === 'overview') return document.getElementById('dashboard-card');
+        if (name === 'history') return document.getElementById('history-card');
+        if (name === 'settings') return document.getElementById('settings-panel');
+        return document.getElementById('panel-entry');
+      }
+      function paint(name) {
+        current = name;
+        document.body.setAttribute('data-binder-tab', name);
+        Array.prototype.forEach.call(document.querySelectorAll('.binder-nav-item, .binder-rail-item'), function (b) {
+          var on = b.getAttribute('data-binder-target') === name;
+          b.classList.toggle('is-active', on);
+          if (on) b.setAttribute('aria-current', 'page');
+          else b.removeAttribute('aria-current');
+        });
+      }
+      function showPanel(name) {
+        var el = target(name);
+        if (!el) return;
+        if (name === 'overview' || name === 'history') el.classList.remove('hidden');
+        paint(name);
+        if (media.matches) {
+          try { window.scrollTo(0, 0); } catch (e) {}
+        }
+      }
+      function openRailTarget(name) {
+        if (name === 'settings') {
+          paint('settings');
+          if (settingsBtn) { try { settingsBtn.click(); } catch (e) {} }
+          return;
+        }
+        var el = target(name);
+        if (!el) return;
+        if (el.classList.contains('hidden')) el.classList.remove('hidden');
+        paint(name);
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e2) { try { el.scrollIntoView(); } catch (e3) {} }
+      }
+
+      Array.prototype.forEach.call(document.querySelectorAll('.binder-nav-item'), function (b) {
+        b.addEventListener('click', function () { showPanel(b.getAttribute('data-binder-target')); });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.binder-rail-item'), function (b) {
+        b.addEventListener('click', function (e) {
+          if (b.getAttribute('data-binder-target') === 'settings') e.stopPropagation();
+          openRailTarget(b.getAttribute('data-binder-target'));
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.strip-link[data-binder-target]'), function (b) {
+        b.addEventListener('click', function () { showPanel(b.getAttribute('data-binder-target')); });
+      });
+
+      /* Desktop rail follows the spread while scrolling. */
+      var railTicking = false;
+      function railFromScroll() {
+        railTicking = false;
+        if (media.matches) return;
+        var y = window.scrollY + 150;
+        var active = 'entry';
+        var order = [['entry', target('entry')], ['overview', target('overview')], ['history', target('history')]];
+        order.forEach(function (pair) {
+          var el = pair[1];
+          if (el && !el.classList.contains('hidden') && el.getBoundingClientRect().top + window.scrollY <= y) active = pair[0];
+        });
+        paint(active);
+      }
+      window.addEventListener('scroll', function () {
+        if (railTicking) return;
+        railTicking = true;
+        try { window.requestAnimationFrame(railFromScroll); } catch (e) { railFromScroll(); }
+      }, { passive: true });
+
+      /* The mobile Settings tab is built from the same menu actions. */
+      function refreshSettingsPanel() {
+        if (!menu || !panelList) return;
+        var nodes = Array.prototype.slice.call(menu.children).filter(function (n) {
+          if (n.classList.contains('menu-item')) return !n.classList.contains('hidden');
+          return n.classList.contains('menu-sep');
+        });
+        while (nodes.length && nodes[0].classList.contains('menu-sep')) nodes.shift();
+        while (nodes.length && nodes[nodes.length - 1].classList.contains('menu-sep')) nodes.pop();
+        panelList.innerHTML = '';
+        nodes.forEach(function (n, i) {
+          if (n.classList.contains('menu-sep')) {
+            var sep = document.createElement('div');
+            sep.className = 'settings-panel-sep';
+            sep.setAttribute('aria-hidden', 'true');
+            panelList.appendChild(sep);
+            return;
+          }
+          var clone = n.cloneNode(true);
+          clone.removeAttribute('id');
+          clone.removeAttribute('role');
+          clone.removeAttribute('aria-haspopup');
+          clone.classList.add('settings-panel-item');
+          clone.addEventListener('click', function () { try { n.click(); } catch (e) {} });
+          panelList.appendChild(clone);
+          if (i < nodes.length - 1 && !nodes[i + 1].classList.contains('menu-sep')) clone.style.borderBottom = '';
+        });
+      }
+      if (menu && panelList) {
+        refreshSettingsPanel();
+        try {
+          new MutationObserver(refreshSettingsPanel).observe(menu, {
+            subtree: true, childList: true, attributes: true, characterData: true
+          });
+        } catch (e) {}
+        window.addEventListener('cf:unlocked', function () { setTimeout(refreshSettingsPanel, 80); });
+      }
+
+      paint('entry');
+      window.addEventListener('resize', function () { if (!media.matches) railFromScroll(); });
+      window.addEventListener('cf:settings-menu-closed', function () { if (!media.matches) railFromScroll(); });
     })();
 
     /* Pill tabs */

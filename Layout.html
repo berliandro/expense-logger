@@ -36,11 +36,47 @@
 
   <div class="cfg-note hidden" id="cfg-note" role="status" aria-live="polite"></div>
 
-  <div class="shell">
+  <div class="binder-body">
+    <nav class="binder-rail" id="binder-rail" aria-label="Sections">
+      <div class="binder-rail-label" aria-hidden="true">Binder</div>
+      <button type="button" class="binder-rail-item is-active" data-binder-target="entry" aria-current="page">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg>
+        <span>Entry</span>
+      </button>
+      <button type="button" class="binder-rail-item" data-binder-target="overview">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span>Overview</span>
+      </button>
+      <button type="button" class="binder-rail-item" data-binder-target="history">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span>History</span>
+      </button>
+      <button type="button" class="binder-rail-item" data-binder-target="settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="binder-panels">
+      <div id="panel-entry" data-binder-panel="entry">
+        <div class="shell">
+          <section class="month-strip is-loading" id="month-strip" aria-label="This month">
+            <div class="month-strip-top">
+              <span class="month-tab" id="strip-month">This month</span>
+              <button type="button" class="strip-link" data-binder-target="overview">View month</button>
+            </div>
+            <div class="month-strip-main">
+              <div class="strip-hero"><span>Spent</span><b id="strip-spent">—</b></div>
+              <div class="strip-mini">
+                <span>Income <b id="strip-income">—</b></span>
+                <span>Net <b id="strip-net">—</b></span>
+              </div>
+            </div>
+            <div class="strip-foot"><span class="stamp stamp-warn hidden" id="strip-reimb"></span><span class="strip-count" id="strip-count"></span></div>
+          </section>
     <!-- Reference: Pinterest "Minimal Finance App UI" / "Expense Tracker UI" —
          soft neutral bg, white rounded cards, pill CTA, left editorial + right form. -->
     <section class="hero" aria-label="About">
-      <div class="eyebrow">Receipt &rarr; Sheet in seconds</div>
       <h1>Log cashflow <span class="thin">without the spreadsheet chore.</span></h1>
       <p class="lede">Add a receipt photo or a note below. Each photo becomes its own receipt: Gemini extracts the items, checks them against the printed total, and saves them to your month sheet.</p>
       <p class="hero-compact-note">Snap a receipt or type a line — the app fills the details.</p>
@@ -69,10 +105,10 @@
       <div class="tip"><b>Tip:</b> no date on the receipt? Leave it out — it is logged under today automatically.</div>
     </section>
 
-    <main class="card" aria-label="Log entry form">
+    <main class="card entry-card" aria-label="Log entry form">
       <div class="card-head">
         <div>
-          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="How logging works">i</button></div>
+          <div class="entry-heading-row"><h2>New entry</h2><button type="button" class="info-btn" data-info="entry" aria-label="How logging works"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button></div>
           <p>Add a photo or a note.</p>
         </div>
         <div class="head-actions">
@@ -87,7 +123,7 @@
 
       <div class="entry-advanced-head">
         <button type="button" class="adv-toggle" id="advanced-toggle" aria-expanded="false" aria-controls="entry-meta">
-          <span class="adv-chevron" aria-hidden="true">›</span>
+          <span class="adv-chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
           <span>Advanced options</span>
           <span class="adv-summary" id="advanced-summary">IDR · Household</span>
         </button>
@@ -126,7 +162,7 @@
       </div>
 
       <fieldset class="recon-toggles hidden" id="recon-options" aria-label="Receipt check">
-        <legend><span class="recon-legend-label">Receipt check</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="How the receipt check works">i</button></legend>
+        <legend><span class="recon-legend-label">Receipt check</span><button type="button" class="info-btn" data-info="reconciliation" aria-label="How the receipt check works"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button></legend>
         <label class="switch">
           <span class="txt"><b>Save anyway</b></span>
           <input type="checkbox" id="toggle-force" aria-label="Save anyway">
@@ -137,7 +173,7 @@
       <div id="tab-standard" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-standard">
       <form id="expense-form" novalidate>
         <div class="form-group">
-          <div class="field-heading"><label class="label" id="upload-label">Photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="How receipt photos are read">i</button></div>
+          <div class="field-heading"><label class="label" id="upload-label">Photos <span class="opt" id="photo-count-label">JPG · PNG · WEBP · HEIC</span></label><button type="button" class="info-btn" data-info="photos" aria-label="How receipt photos are read"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button></div>
           <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-labelledby="upload-label" aria-describedby="drop-hint">
             <div id="upload-placeholder" class="upload-placeholder">
               <div class="upload-icon">
@@ -178,25 +214,27 @@
         </div>
 
         <div class="form-group">
-          <div class="field-heading"><label class="label" for="note">Note <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="How the note applies">i</button></div>
+          <div class="field-heading"><label class="label" for="note">Note <span class="opt" id="counter">0 / 1000</span></label><button type="button" class="info-btn" data-info="note" aria-label="How the note applies"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button></div>
           <div class="textarea-wrap">
             <textarea id="note" maxlength="1000" dir="auto" placeholder="Optional note for these receipts…"></textarea>
             <div class="char-count" aria-hidden="true"></div>
           </div>
-          <div class="chips-label" id="chips-label">Templates</div>
+          <div class="chips-head">
+            <div class="chips-label" id="chips-label">Templates</div>
+            <div class="note-shortcut">
+              <button type="button" class="link-quiet" id="quick-text-btn">Or log a single line</button>
+            </div>
+          </div>
           <div class="chips" role="group" aria-labelledby="chips-label">
             <button type="button" class="chip" data-text="Lunch and dinner">Meals</button>
             <button type="button" class="chip" data-text="Work expense">Work</button>
             <button type="button" class="chip" data-text="Weekly groceries">Weekly</button>
             <button type="button" class="chip" data-text="Monthly groceries">Monthly</button>
           </div>
-          <div class="note-shortcut">
-            <button type="button" class="link-quiet" id="quick-text-btn">Or log a single line</button>
-          </div>
         </div>
 
         <div class="switch one-row-switch" style="margin-top:12px">
-          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>Save as one entry per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="How one entry per receipt works">i</button></span><span class="switch-note">Item detail goes in Notes.</span></span>
+          <span class="txt"><span class="switch-title-row"><label for="toggle-onerow"><b>Save as one entry per receipt</b></label><button type="button" class="info-btn" data-info="one-row" aria-label="How one entry per receipt works"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button></span><span class="switch-note">Item detail goes in Notes.</span></span>
           <input type="checkbox" id="toggle-onerow" aria-label="Save as one entry per receipt">
           <label for="toggle-onerow" class="track" aria-hidden="true"><span class="thumb"></span></label>
         </div>
@@ -237,23 +275,24 @@
           </button>
         </div>
         <div class="lightbox-stage">
-          <img id="trow-lightbox-img" src="" alt="Receipt full view">
+          <img id="trow-lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Receipt full view">
         </div>
       </div>
 
       <div id="status" role="status" aria-live="polite"></div>
     </main>
   </div>
+      </div>
 
-  <section id="dashboard-card" class="card dashboard-card hidden" aria-label="Monthly overview">
+  <section id="dashboard-card" class="card dashboard-card hidden" data-binder-panel="overview" aria-label="Monthly overview">
     <div class="dashboard-head">
       <div>
         <h2 id="dash-title" aria-live="polite" aria-atomic="true">This month</h2>
         <p id="dash-sub">Loading this month…</p>
       </div>
       <div class="dash-actions">
-        <button type="button" class="btn-choice" id="dash-prev" aria-label="Previous month">‹</button>
-        <button type="button" class="btn-choice" id="dash-next" aria-label="Next month">›</button>
+        <button type="button" class="btn-choice" id="dash-prev" aria-label="Previous month"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <button type="button" class="btn-choice" id="dash-next" aria-label="Next month"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
         <button type="button" class="btn-choice" id="dash-budget">Budgets</button>
         <button type="button" class="btn-choice" id="dash-recurring">Recurring</button>
         <button type="button" class="btn-choice" id="dash-report">Report</button>
@@ -269,7 +308,7 @@
     <div id="dash-recurring-list" class="dash-section"></div>
   </section>
 
-  <section id="history-card" class="card history-card hidden" aria-label="Recent entries">
+  <section id="history-card" class="card history-card hidden" data-binder-panel="history" aria-label="Recent entries">
     <div class="history-head">
       <div>
         <h2>Recent entries</h2>
@@ -308,6 +347,34 @@
     </div>
   </section>
 
+      <section id="settings-panel" class="card settings-panel" data-binder-panel="settings" aria-label="Settings">
+        <div class="settings-panel-head">
+          <div><h2>Settings</h2><p>Household, security, and setup.</p></div>
+        </div>
+        <div id="settings-panel-list" class="settings-panel-list"></div>
+      </section>
+    </div>
+  </div>
+
+  <nav class="binder-nav" id="binder-nav" aria-label="Sections">
+    <button type="button" class="binder-nav-item is-active" data-binder-target="entry" aria-current="page">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg>
+      <span>Entry</span>
+    </button>
+    <button type="button" class="binder-nav-item" data-binder-target="overview">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Overview</span>
+    </button>
+    <button type="button" class="binder-nav-item" data-binder-target="history">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>History</span>
+    </button>
+    <button type="button" class="binder-nav-item" data-binder-target="settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
   <footer>
     <span>Cashflow Log · Apps Script + Gemini + Sheets</span>
     <span id="foot-date"></span>
@@ -327,7 +394,7 @@
       <button type="button" class="lightbox-nav" id="lightbox-prev" aria-label="Previous photo">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <img id="lightbox-img" src="" alt="Receipt full view">
+      <img id="lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Receipt full view">
       <button type="button" class="lightbox-nav" id="lightbox-next" aria-label="Next photo">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
       </button>

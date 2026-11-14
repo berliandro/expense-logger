@@ -3,12 +3,12 @@
 Snap a receipt → Gemini structures it → rows land in Google Sheets. Self-hosted expense-and-income logging for individuals and families, running entirely on Google Apps Script + Google Sheets.
 
 <p align="center">
-  <img src="docs/screenshots/cashflow-desktop.png" alt="Cashflow Log desktop interface in dark theme showing the New entry form with the Receipt photos tab, photo upload zone, optional note, and submit button">
+  <img src="docs/screenshots/cashflow-desktop.png" alt="Cashflow Log desktop interface in dark theme showing the envelope-binder rail, the New entry envelope with its month summary, and the Overview and Recent entries sections below">
   <br><em>Desktop preview · dark theme</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/cashflow-mobile.png" alt="Cashflow Log on a narrow mobile viewport in dark theme showing the Receipt photos form, monthly overview, and recent entries stacked and readable" width="300">
+  <img src="docs/screenshots/cashflow-mobile.png" alt="Cashflow Log on a phone in dark theme showing the compact month strip, the New entry envelope with camera and gallery actions, and the four-tab binder navigation" width="300">
   <br><em>Mobile preview · dark theme</em>
 </p>
 

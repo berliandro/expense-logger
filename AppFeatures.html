@@ -88,7 +88,7 @@
     wrap.innerHTML = '<div class="lock-card">' +
       '<div class="info-modal-head"><h2 id="fm-title">' + esc(title) + '</h2>' +
       '<span class="feature-head-actions">' +
-      (helpText ? '<button type="button" class="info-btn" data-fm-help aria-label="Information about ' + esc(title) + '">i</button>' : '') +
+      (helpText ? '<button type="button" class="info-btn" data-fm-help aria-label="Information about ' + esc(title) + '"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button>' : '') +
       '<button type="button" class="btn-choice" data-fm-close>Close</button></span></div>' +
       (helpText ? '<p class="feature-help hidden" data-fm-helpbody>' + esc(helpText) + '</p>' : '') +
       '<div data-fm-body>' + bodyHtml + '</div>' +
@@ -589,8 +589,8 @@
     if (!d) return;
     var title = document.getElementById('dash-title');
     var sub = document.getElementById('dash-sub');
+    var titleText = d.monthLabel || monthLabel(d.month);
     if (title) {
-      var titleText = d.monthLabel || monthLabel(d.month);
       if (title.textContent !== titleText) title.textContent = titleText;
     }
     if (sub) {
@@ -598,6 +598,27 @@
       var countText = count ? Number(count).toLocaleString('en-US') : '';
       sub.textContent = (count ? countText + (count === 1 ? ' entry' : ' entries') : 'No entries this month') +
         (d.reimbursements && d.reimbursements.outstanding ? ' · ' + money(d.reimbursements.outstanding) + ' to be reimbursed' : '');
+    }
+    var stripMonth = document.getElementById('strip-month');
+    if (stripMonth) stripMonth.textContent = titleText;
+    var monthStrip = document.getElementById('month-strip');
+    if (monthStrip) monthStrip.classList.remove('is-loading');
+    var stripSpent = document.getElementById('strip-spent');
+    if (stripSpent) stripSpent.textContent = money(d.totals ? d.totals.expense : 0);
+    var stripIncome = document.getElementById('strip-income');
+    if (stripIncome) stripIncome.textContent = money(d.totals ? d.totals.income : 0);
+    var stripNet = document.getElementById('strip-net');
+    if (stripNet) stripNet.textContent = money(d.totals ? d.totals.net : 0);
+    var stripCount = document.getElementById('strip-count');
+    if (stripCount) {
+      var c = (d.totals && d.totals.count) || 0;
+      stripCount.textContent = c ? Number(c).toLocaleString('en-US') + (c === 1 ? ' entry' : ' entries') : 'No entries this month';
+    }
+    var stripReimb = document.getElementById('strip-reimb');
+    if (stripReimb) {
+      var owed = Number((d.reimbursements && d.reimbursements.outstanding) || 0);
+      stripReimb.textContent = owed ? money(owed) + ' to be reimbursed' : '';
+      stripReimb.classList.toggle('hidden', !owed);
     }
     var stats = document.getElementById('dash-stats');
     if (stats) {
