@@ -182,7 +182,7 @@ The palette is a warm graphite desk with amber index tabs and two functional ink
 - **Title** (750, 15px, 1.25, −0.015em): merchant names, row titles, menu labels.
 - **Body** (400, 15px, 1.6, 0): explanatory copy, form text, settings descriptions; measure stays near 40ch in the cover column.
 - **Label** (700, 10–12px, 1.2, 0.08–0.12em, uppercase): field labels, stamps, month tabs, section labels.
-- **Data** (800, 32px, 1.05, −0.045em, tabular): month spend and stat values. The strip hero runs 24px on phones and 20px in the desktop month index.
+- **Data** (800, 32px, 1.05, −0.045em, tabular): month spend and stat values. The strip hero runs 24px on phones and 18–20px in the desktop month index.
 
 ### Named Rules
 **The Tabular Money Rule.** Every amount, count, and date column uses `font-variant-numeric: tabular-nums` and tight tracking; money never wobbles between rows.
@@ -191,11 +191,11 @@ The palette is a warm graphite desk with amber index tabs and two functional ink
 
 ## Layout
 
-The desktop is a two-part spread: a 168px sticky binder rail on the left and a fluid binder panel on the right, capped at 1280px. Inside the panel, the entry spread is a cover column plus a 1.15fr capture envelope; a compact month strip occupies the top of the envelope column, directly above the capture envelope. Overview and History sit below as full-width binder pages. The mobile shell is a single column: a compact month strip, the capture envelope, and a fixed four-tab bottom nav. At ≤360px the month strip yields entirely so the camera and gallery stay above the sticky commit dock; the month remains available in Overview.
+The desktop is a two-part spread: a 168px sticky binder rail on the left and a fluid binder panel on the right, capped at 1280px. Inside the panel, the entry spread is a cover column plus a 1.15fr capture envelope; a compact month strip occupies the top of the envelope column, directly above the capture envelope. At 921–1220px the strip wraps to two rows so the spent amount and reimbursement stamp never clip; at 1221px and above it is a single row. Overview and History sit below as full-width binder pages. The mobile shell is a single column: a compact month strip, the capture envelope, and a fixed four-tab bottom nav. At ≤360px the month strip yields entirely so the camera and gallery stay above the sticky commit dock; the month remains available in Overview.
 
 Spacing follows a tight rhythm: 6–8px inside a control, 12–14px between related fields, 18–26px between groups, and 32px between the cover and the envelope. Desktop cards use 16–20px of padding in the compact laptop range and 26px for the binder pages below. The phone uses 20px card padding and a 68px bottom-nav reserve plus the safe-area inset.
 
-Breakpoints: 360px (strip yields), 480px (phone typography), 920px (rail becomes bottom nav), 921px (rail returns), 1366px (laptop compacting ends).
+Breakpoints: 360px (strip yields), 480px (phone typography), 920px (rail becomes bottom nav), 921px (rail returns), 1220px (desktop strip returns to one row), 1366px (laptop compacting ends).
 
 ## Elevation & Depth
 
@@ -243,7 +243,7 @@ Envelopes and binder pages use 24px corners; phone cards use 22px; modals use 28
 
 ### Signature Components
 - **Capture Envelope:** a 24px card with a 68×6px amber tab clipped to the top edge, a pill tab switcher, a dashed photo pocket, and a commit dock. The photo pocket always keeps Camera and Gallery visible above the dock on phones.
-- **Month Strip:** the compact first-screen summary: month tab, spent hero in tabular numerals, net at right, a reimbursement stamp, and an entry count. On phones it is a 124px card above the capture envelope; on desktop it becomes a 40px horizontal index above the envelope, with the entry count in the dashboard sub. It yields at ≤360px.
+- **Month Strip:** the compact first-screen summary: month tab, spent hero in tabular numerals, net at right, a reimbursement stamp, and an entry count. On phones it is a 124px card above the capture envelope; on desktop it becomes a 40px horizontal index above the envelope (two rows at 921–1220px), with the entry count in the dashboard sub. It yields at ≤360px.
 - **Stamped State:** a 4px-radius rectangle with 10px uppercase text; amber for reimbursement, green for income, red for danger.
 
 ## Do's and Don'ts
